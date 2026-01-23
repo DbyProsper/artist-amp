@@ -7,6 +7,7 @@ interface PlayerContextType {
   isPlaying: boolean;
   queue: Track[];
   isExpanded: boolean;
+  isMiniPlayerVisible: boolean;
   progress: number;
   volume: number;
   isShuffled: boolean;
@@ -22,6 +23,8 @@ interface PlayerContextType {
   toggleShuffle: () => void;
   toggleRepeat: () => void;
   addToQueue: (track: Track) => void;
+  closeMiniPlayer: () => void;
+  openMiniPlayer: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -31,6 +34,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [queue, setQueue] = useState<Track[]>(mockTracks);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isMiniPlayerVisible, setIsMiniPlayerVisible] = useState(true);
   const [progress, setProgress] = useState(0);
   const [volume, setVolume] = useState(80);
   const [isShuffled, setIsShuffled] = useState(false);
@@ -40,6 +44,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentTrack(track);
     setIsPlaying(true);
     setProgress(0);
+    setIsMiniPlayerVisible(true);
+  };
+
+  const closeMiniPlayer = () => {
+    setIsMiniPlayerVisible(false);
+    setIsPlaying(false);
+  };
+
+  const openMiniPlayer = () => {
+    setIsMiniPlayerVisible(true);
   };
 
   const pauseTrack = () => {
@@ -85,6 +99,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         isPlaying,
         queue,
         isExpanded,
+        isMiniPlayerVisible,
         progress,
         volume,
         isShuffled,
@@ -100,6 +115,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         toggleShuffle,
         toggleRepeat,
         addToQueue,
+        closeMiniPlayer,
+        openMiniPlayer,
       }}
     >
       {children}

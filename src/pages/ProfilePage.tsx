@@ -7,6 +7,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrackRow } from '@/components/tracks/TrackRow';
+import { YouTubeEmbed } from '@/components/artists/YouTubeEmbed';
 import { currentUserArtist, mockTracks, mockPlaylists } from '@/data/mockData';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -204,6 +205,10 @@ export default function ProfilePage() {
             <Music2 className="w-4 h-4" />
             Tracks
           </TabsTrigger>
+          <TabsTrigger value="videos" className="flex-1 gap-2">
+            <Youtube className="w-4 h-4" />
+            Videos
+          </TabsTrigger>
           <TabsTrigger value="posts" className="flex-1 gap-2">
             <Grid3X3 className="w-4 h-4" />
             Posts
@@ -229,6 +234,20 @@ export default function ProfilePage() {
               <TrackRow key={track.id} track={track} index={index + 1} showIndex />
             ))}
           </div>
+        </TabsContent>
+
+        <TabsContent value="videos" className="mt-4">
+          {artist.socialLinks?.youtube ? (
+            <YouTubeEmbed 
+              channelUrl={artist.socialLinks.youtube} 
+              artistName={artist.name} 
+            />
+          ) : (
+            <div className="py-12 text-center">
+              <Youtube className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+              <p className="text-sm text-muted-foreground">No YouTube channel linked</p>
+            </div>
+          )}
         </TabsContent>
         
         <TabsContent value="posts" className="mt-4">

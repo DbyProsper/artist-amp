@@ -3,7 +3,7 @@ import {
   Play, Pause, SkipBack, SkipForward, 
   Shuffle, Repeat, Repeat1, Volume2, 
   ChevronDown, Heart, Share2, MoreHorizontal,
-  ListMusic
+  ListMusic, X
 } from 'lucide-react';
 import { usePlayer } from '@/context/PlayerContext';
 import { cn } from '@/lib/utils';
@@ -22,17 +22,19 @@ export function MiniPlayer() {
     pauseTrack, 
     resumeTrack, 
     setExpanded,
-    progress 
+    progress,
+    isMiniPlayerVisible,
+    closeMiniPlayer
   } = usePlayer();
 
-  if (!currentTrack) return null;
+  if (!currentTrack || !isMiniPlayerVisible) return null;
 
   return (
     <motion.div
       initial={{ y: 100 }}
       animate={{ y: 0 }}
+      exit={{ y: 100 }}
       className="fixed bottom-16 left-0 right-0 z-40 glass border-t border-border mx-2 rounded-xl overflow-hidden"
-      onClick={() => setExpanded(true)}
     >
       {/* Progress bar */}
       <div className="absolute top-0 left-0 right-0 h-0.5 bg-muted">
@@ -46,10 +48,11 @@ export function MiniPlayer() {
         {/* Album art */}
         <motion.div 
           className={cn(
-            "w-12 h-12 rounded-lg overflow-hidden flex-shrink-0",
+            "w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer",
             isPlaying && "animate-pulse-slow"
           )}
           whileTap={{ scale: 0.95 }}
+          onClick={() => setExpanded(true)}
         >
           <img 
             src={currentTrack.coverArt} 
@@ -59,7 +62,10 @@ export function MiniPlayer() {
         </motion.div>
         
         {/* Track info */}
-        <div className="flex-1 min-w-0">
+        <div 
+          className="flex-1 min-w-0 cursor-pointer" 
+          onClick={() => setExpanded(true)}
+        >
           <p className="font-medium text-sm truncate">{currentTrack.title}</p>
           <p className="text-xs text-muted-foreground truncate">
             {currentTrack.artist.name}
@@ -67,7 +73,7 @@ export function MiniPlayer() {
         </div>
         
         {/* Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <button 
             className="p-2 rounded-full hover:bg-muted transition-colors"
             onClick={(e) => {
@@ -80,6 +86,15 @@ export function MiniPlayer() {
             ) : (
               <Play className="w-5 h-5" fill="currentColor" />
             )}
+          </button>
+          <button 
+            className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              closeMiniPlayer();
+            }}
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
