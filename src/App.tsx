@@ -7,11 +7,13 @@ import { PlayerProvider } from "@/context/PlayerContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { MiniPlayer, FullPlayer } from "@/components/player/MusicPlayer";
+import { FloatingPlayerButton } from "@/components/player/FloatingPlayerButton";
 import HomePage from "./pages/HomePage";
 import DiscoverPage from "./pages/DiscoverPage";
 import UploadPage from "./pages/UploadPage";
 import MessagesPage from "./pages/MessagesPage";
 import ProfilePage from "./pages/ProfilePage";
+import PlaylistsPage from "./pages/PlaylistsPage";
 import AuthPage from "./pages/AuthPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import NotFound from "./pages/NotFound";
@@ -33,12 +35,14 @@ const App = () => (
                 <Route path="/upload" element={<UploadPage />} />
                 <Route path="/messages" element={<MessagesPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/playlists" element={<PlaylistsPage />} />
                 <Route path="/auth" element={<AuthPage />} />
                 <Route path="/onboarding" element={<OnboardingPage />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
               <MiniPlayer />
               <FullPlayer />
+              <FloatingPlayerButton />
               <BottomNav />
             </div>
           </BrowserRouter>
