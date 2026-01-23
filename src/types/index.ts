@@ -11,6 +11,14 @@ export interface Artist {
   followers: number;
   following: number;
   tracks: number;
+  socialLinks?: {
+    youtube?: string;
+    spotify?: string;
+    appleMusic?: string;
+    instagram?: string;
+    facebook?: string;
+    website?: string;
+  };
 }
 
 export interface Track {
@@ -75,4 +83,13 @@ export interface Notification {
   message: string;
   timestamp: Date;
   read: boolean;
+}
+
+export interface SocialLinks {
+  youtube?: string;
+  spotify?: string;
+  appleMusic?: string;
+  instagram?: string;
+  facebook?: string;
+  website?: string;
 }
