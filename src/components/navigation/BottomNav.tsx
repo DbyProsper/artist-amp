@@ -2,6 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { Home, Search, PlusSquare, MessageCircle, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
+import { useAuth } from '@/context/AuthContext';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
@@ -11,8 +12,18 @@ const navItems = [
   { path: '/profile', icon: User, label: 'Profile' },
 ];
 
+// Routes where bottom nav should be hidden
+const hiddenRoutes = ['/landing', '/auth', '/onboarding'];
+
 export function BottomNav() {
   const location = useLocation();
+  const { user, loading } = useAuth();
+
+  // Hide on landing, auth, and onboarding pages
+  const shouldHide = hiddenRoutes.some(route => location.pathname.startsWith(route));
+  
+  // Also hide if not logged in and on landing page
+  if (shouldHide) return null;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border">
