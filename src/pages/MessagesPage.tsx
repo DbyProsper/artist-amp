@@ -1,7 +1,13 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, BadgeCheck } from 'lucide-react';
+import { Search, BadgeCheck, PenSquare } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { mockArtists } from '@/data/mockData';
+import { useAuth } from '@/context/AuthContext';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { ChatWindow } from '@/components/chat/ChatWindow';
+import { Artist } from '@/types';
 
 function formatTimeAgo(date: Date): string {
   const now = new Date();
@@ -12,19 +18,59 @@ function formatTimeAgo(date: Date): string {
   return `${days}d`;
 }
 
-const mockConversations = mockArtists.map((artist, index) => ({
-  id: `conv-${index}`,
-  artist,
-  lastMessage: index === 0 
-    ? "Hey! Love your latest track 🔥" 
-    : index === 1 
-    ? "Collab soon?" 
-    : "Thanks for the support!",
-  timestamp: new Date(Date.now() - (index * 1000 * 60 * 60 * 4)),
-  unread: index < 2,
-}));
-
 export default function MessagesPage() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedArtist, setSelectedArtist] = useState<Artist | null>(() => {
+    const toId = searchParams.get('to');
+    if (toId) {
+      return mockArtists.find(a => a.id === toId) || null;
+    }
+    return null;
+  });
+
+  const mockConversations = mockArtists.slice(0, 5).map((artist, index) => ({
+    id: `conv-${index}`,
+    artist,
+    lastMessage: index === 0 
+      ? "Hey! Love your latest track 🔥" 
+      : index === 1 
+      ? "Collab soon?" 
+      : "Thanks for the support!",
+    timestamp: new Date(Date.now() - (index * 1000 * 60 * 60 * 4)),
+    unread: index < 2,
+  }));
+
+  const filteredConversations = mockConversations.filter(conv =>
+    conv.artist.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (!user) {
+    return (
+      <div className="min-h-screen pb-36 flex items-center justify-center">
+        <div className="text-center p-8">
+          <PenSquare className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+          <h2 className="font-display font-bold text-xl mb-2">Messages</h2>
+          <p className="text-muted-foreground mb-6">Sign in to message artists</p>
+          <Button onClick={() => navigate('/auth')}>Sign In</Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedArtist) {
+    return (
+      <div className="min-h-screen pb-16">
+        <ChatWindow
+          recipient={selectedArtist}
+          onBack={() => setSelectedArtist(null)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen pb-36">
       {/* Header */}
@@ -37,7 +83,9 @@ export default function MessagesPage() {
               animate={{ scale: [1, 1.2, 1] }}
               transition={{ repeat: Infinity, duration: 2 }}
             />
-            <span className="text-xs text-muted-foreground">3 new</span>
+            <span className="text-xs text-muted-foreground">
+              {mockConversations.filter(c => c.unread).length} new
+            </span>
           </div>
         </div>
       </header>
@@ -49,6 +97,8 @@ export default function MessagesPage() {
           <Input
             type="text"
             placeholder="Search messages..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 bg-muted border-none h-11 rounded-xl"
           />
         </div>
@@ -56,12 +106,13 @@ export default function MessagesPage() {
 
       {/* Conversations */}
       <div className="divide-y divide-border">
-        {mockConversations.map((conv, index) => (
+        {filteredConversations.map((conv, index) => (
           <motion.button
             key={conv.id}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: index * 0.05 }}
+            onClick={() => setSelectedArtist(conv.artist)}
             className="w-full flex items-center gap-3 p-4 hover:bg-muted/50 transition-colors text-left"
           >
             <div className="relative">

@@ -39,13 +39,18 @@ export function StoryCircle({ story, onClick }: StoryCircleProps) {
 
 interface StoriesRowProps {
   stories: Story[];
+  onStoryClick?: (story: Story) => void;
 }
 
-export function StoriesRow({ stories }: StoriesRowProps) {
+export function StoriesRow({ stories, onStoryClick }: StoriesRowProps) {
   return (
     <div className="flex gap-3 overflow-x-auto scrollbar-hide py-4 px-4">
       {stories.map((story) => (
-        <StoryCircle key={story.id} story={story} />
+        <StoryCircle
+          key={story.id}
+          story={story}
+          onClick={() => onStoryClick?.(story)}
+        />
       ))}
     </div>
   );
