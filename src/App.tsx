@@ -40,6 +40,21 @@ function LandingRedirect() {
   return <LandingPage />;
 }
 
+// Wrapper for player components - only show when user is signed in
+function PlayerComponents() {
+  const { user } = useAuth();
+  
+  if (!user) return null;
+  
+  return (
+    <>
+      <MiniPlayer />
+      <FullPlayer />
+      <FloatingPlayerButton />
+    </>
+  );
+}
+
 const AppRoutes = () => {
   const { user, loading } = useAuth();
 
@@ -65,9 +80,7 @@ const AppRoutes = () => {
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
-      <MiniPlayer />
-      <FullPlayer />
-      <FloatingPlayerButton />
+      <PlayerComponents />
       <BottomNav />
     </div>
   );
