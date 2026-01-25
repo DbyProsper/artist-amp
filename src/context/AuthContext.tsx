@@ -13,6 +13,7 @@ interface Profile {
   location: string | null;
   is_artist: boolean;
   is_verified: boolean;
+  onboarding_completed: boolean | null;
 }
 
 interface AuthContextType {

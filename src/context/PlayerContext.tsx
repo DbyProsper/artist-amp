@@ -23,6 +23,7 @@ interface PlayerContextType {
   toggleShuffle: () => void;
   toggleRepeat: () => void;
   addToQueue: (track: Track) => void;
+  setQueue: (tracks: Track[]) => void;
   closeMiniPlayer: () => void;
   openMiniPlayer: () => void;
 }
@@ -115,6 +116,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         toggleShuffle,
         toggleRepeat,
         addToQueue,
+        setQueue,
         closeMiniPlayer,
         openMiniPlayer,
       }}

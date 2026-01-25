@@ -27,11 +27,12 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [genres, setGenres] = useState<Genre[]>([]);
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
   
   const [formData, setFormData] = useState({
     isArtist: true,
-    name: profile?.name || '',
-    username: profile?.username || '',
+    name: '',
+    username: '',
     bio: '',
     location: '',
     avatarFile: null as File | null,
@@ -69,9 +70,19 @@ export default function OnboardingPage() {
         ...prev,
         name: profile.name || '',
         username: profile.username || '',
+        bio: profile.bio || '',
+        location: profile.location || '',
+        avatarPreview: profile.avatar_url || '',
+        coverPreview: profile.cover_url || '',
+        isArtist: profile.is_artist || true,
       }));
+      
+      // If onboarding is already completed, redirect to home
+      if (profile.onboarding_completed) {
+        navigate('/');
+      }
     }
-  }, [profile]);
+  }, [profile, navigate]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -146,7 +157,7 @@ export default function OnboardingPage() {
         if (url) coverUrl = url;
       }
       
-      // Update profile
+      // Update profile with onboarding_completed flag
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
@@ -157,6 +168,7 @@ export default function OnboardingPage() {
           avatar_url: avatarUrl,
           cover_url: coverUrl,
           is_artist: formData.isArtist,
+          onboarding_completed: true,
         })
         .eq('id', profile.id);
       
@@ -164,6 +176,12 @@ export default function OnboardingPage() {
       
       // Add genres
       if (formData.selectedGenres.length > 0) {
+        // First delete existing genres
+        await supabase
+          .from('artist_genres')
+          .delete()
+          .eq('profile_id', profile.id);
+
         const genreInserts = formData.selectedGenres.map(genreId => ({
           profile_id: profile.id,
           genre_id: genreId,
@@ -192,9 +210,14 @@ export default function OnboardingPage() {
       
       if (socialError) throw socialError;
       
+      setOnboardingComplete(true);
       await refreshProfile();
       toast.success('Profile setup complete!');
-      navigate('/profile');
+      
+      // Navigate after a short delay to show success state
+      setTimeout(() => {
+        navigate('/');
+      }, 1000);
     } catch (error: any) {
       console.error('Onboarding error:', error);
       toast.error(error.message || 'Failed to complete setup');
@@ -218,8 +241,32 @@ export default function OnboardingPage() {
     }
   };
 
+  // Show success screen
+  if (onboardingComplete) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="text-center"
+        >
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: 'spring' }}
+            className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-primary via-accent to-secondary flex items-center justify-center"
+          >
+            <Check className="w-10 h-10 text-white" />
+          </motion.div>
+          <h2 className="font-display font-bold text-2xl mb-2">You're all set!</h2>
+          <p className="text-muted-foreground">Redirecting to your feed...</p>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen pb-8">
+    <div className="min-h-screen pb-24">
       {/* Background */}
       <div className="fixed inset-0 -z-10">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-accent/10" />
@@ -235,7 +282,21 @@ export default function OnboardingPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate('/')}
+            onClick={() => {
+              // Mark onboarding as skipped but allow access
+              if (profile) {
+                supabase
+                  .from('profiles')
+                  .update({ onboarding_completed: true })
+                  .eq('id', profile.id)
+                  .then(() => {
+                    refreshProfile();
+                    navigate('/');
+                  });
+              } else {
+                navigate('/');
+              }
+            }}
             className="text-muted-foreground"
           >
             Skip for now
@@ -580,7 +641,7 @@ export default function OnboardingPage() {
       </div>
 
       {/* Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 glass border-t border-border">
+      <div className="fixed bottom-0 left-0 right-0 p-4 glass border-t border-border safe-bottom">
         <div className="flex gap-3">
           {step > 0 && (
             <Button

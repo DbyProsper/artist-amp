@@ -182,6 +182,71 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          created_at: string | null
+          from_profile_id: string | null
+          id: string
+          message: string | null
+          post_id: string | null
+          profile_id: string
+          read: boolean | null
+          track_id: string | null
+          type: string
+        }
+        Insert: {
+          created_at?: string | null
+          from_profile_id?: string | null
+          id?: string
+          message?: string | null
+          post_id?: string | null
+          profile_id: string
+          read?: boolean | null
+          track_id?: string | null
+          type: string
+        }
+        Update: {
+          created_at?: string | null
+          from_profile_id?: string | null
+          id?: string
+          message?: string | null
+          post_id?: string | null
+          profile_id?: string
+          read?: boolean | null
+          track_id?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_from_profile_id_fkey"
+            columns: ["from_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_track_id_fkey"
+            columns: ["track_id"]
+            isOneToOne: false
+            referencedRelation: "tracks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       playlist_collaborators: {
         Row: {
           created_at: string | null
@@ -424,6 +489,7 @@ export type Database = {
           is_verified: boolean | null
           location: string | null
           name: string | null
+          onboarding_completed: boolean | null
           updated_at: string
           user_id: string
           username: string | null
@@ -438,6 +504,7 @@ export type Database = {
           is_verified?: boolean | null
           location?: string | null
           name?: string | null
+          onboarding_completed?: boolean | null
           updated_at?: string
           user_id: string
           username?: string | null
@@ -452,6 +519,7 @@ export type Database = {
           is_verified?: boolean | null
           location?: string | null
           name?: string | null
+          onboarding_completed?: boolean | null
           updated_at?: string
           user_id?: string
           username?: string | null

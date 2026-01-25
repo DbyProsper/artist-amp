@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   DragDropContext, 
@@ -8,7 +8,7 @@ import {
 } from '@hello-pangea/dnd';
 import { 
   X, GripVertical, Play, Trash2, Plus, 
-  Globe, Lock, Save, Music2, Image as ImageIcon
+  Globe, Lock, Save, Music2, Image as ImageIcon, Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,7 +32,9 @@ export function PlaylistEditor({ playlist, creator, onSave, onClose }: PlaylistE
   const [isPublic, setIsPublic] = useState(playlist?.isPublic ?? true);
   const [tracks, setTracks] = useState<Track[]>(playlist?.tracks || []);
   const [coverImage, setCoverImage] = useState(playlist?.coverImage || '');
+  const [coverPreview, setCoverPreview] = useState(playlist?.coverImage || '');
   const [showTrackPicker, setShowTrackPicker] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { playTrack } = usePlayer();
 
   const handleDragEnd = useCallback((result: DropResult) => {
@@ -55,6 +57,15 @@ export function PlaylistEditor({ playlist, creator, onSave, onClose }: PlaylistE
     setTracks(tracks.filter(t => t.id !== trackId));
   };
 
+  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const previewUrl = URL.createObjectURL(file);
+      setCoverPreview(previewUrl);
+      setCoverImage(previewUrl); // In real app, would upload to storage
+    }
+  };
+
   const handleSave = () => {
     if (!name.trim()) return;
     
@@ -63,7 +74,7 @@ export function PlaylistEditor({ playlist, creator, onSave, onClose }: PlaylistE
       description,
       isPublic,
       tracks,
-      coverImage: coverImage || tracks[0]?.coverArt || '/placeholder.svg',
+      coverImage: coverImage || coverPreview || tracks[0]?.coverArt || '/placeholder.svg',
       creator,
     });
     onClose();
@@ -97,16 +108,34 @@ export function PlaylistEditor({ playlist, creator, onSave, onClose }: PlaylistE
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {/* Cover & Name */}
           <div className="flex gap-4">
-            <div className="w-24 h-24 rounded-xl bg-muted/50 flex items-center justify-center overflow-hidden flex-shrink-0">
-              {coverImage || tracks[0]?.coverArt ? (
-                <img 
-                  src={coverImage || tracks[0]?.coverArt} 
-                  alt="Playlist cover" 
-                  className="w-full h-full object-cover"
-                />
+            <div 
+              className="w-28 h-28 rounded-xl bg-muted/50 flex items-center justify-center overflow-hidden flex-shrink-0 relative group cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {coverPreview || tracks[0]?.coverArt ? (
+                <>
+                  <img 
+                    src={coverPreview || tracks[0]?.coverArt} 
+                    alt="Playlist cover" 
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Upload className="w-6 h-6 text-white" />
+                  </div>
+                </>
               ) : (
-                <Music2 className="w-8 h-8 text-muted-foreground" />
+                <div className="flex flex-col items-center gap-2">
+                  <ImageIcon className="w-8 h-8 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Add Cover</span>
+                </div>
               )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleCoverUpload}
+              />
             </div>
             <div className="flex-1 space-y-3">
               <Input
