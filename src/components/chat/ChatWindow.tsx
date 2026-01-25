@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Send, BadgeCheck, Image, Smile } from 'lucide-react';
+import { ArrowLeft, Send, BadgeCheck, Image } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Artist } from '@/types';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
+import { EmojiPicker } from './EmojiPicker';
 
 interface Message {
   id: string;
@@ -42,6 +42,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
   ]);
   const [newMessage, setNewMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -79,15 +80,20 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
     const replies = [
       'Thanks for reaching out! 🙏',
       'Appreciate that! 💜',
-      "That's awesome! Let's connect soon",
+      "That's awesome! Let's connect soon 🎵",
       "Love it! Thanks for the support! 🔥",
-      'Great to hear from you!',
+      'Great to hear from you! 😊',
     ];
     return replies[Math.floor(Math.random() * replies.length)];
   };
 
+  const handleEmojiSelect = (emoji: string) => {
+    setNewMessage(prev => prev + emoji);
+    inputRef.current?.focus();
+  };
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-screen">
       {/* Header */}
       <div className="flex items-center gap-3 p-4 border-b border-border bg-card">
         <button
@@ -144,21 +150,20 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-border bg-card">
+      <div className="p-4 border-t border-border bg-card safe-bottom">
         <div className="flex items-center gap-2">
           <button className="p-2 rounded-full hover:bg-muted transition-colors">
             <Image className="w-5 h-5 text-muted-foreground" />
           </button>
           <Input
+            ref={inputRef}
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Type a message..."
             className="flex-1 bg-muted border-none"
           />
-          <button className="p-2 rounded-full hover:bg-muted transition-colors">
-            <Smile className="w-5 h-5 text-muted-foreground" />
-          </button>
+          <EmojiPicker onEmojiSelect={handleEmojiSelect} />
           <Button
             size="icon"
             onClick={handleSend}

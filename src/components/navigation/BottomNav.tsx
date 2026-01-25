@@ -1,14 +1,15 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Home, Search, PlusSquare, MessageCircle, User } from 'lucide-react';
+import { Home, Compass, PlusSquare, Library, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
+import { usePlayer } from '@/context/PlayerContext';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
-  { path: '/discover', icon: Search, label: 'Discover' },
+  { path: '/discover', icon: Compass, label: 'Discover' },
   { path: '/upload', icon: PlusSquare, label: 'Upload' },
-  { path: '/messages', icon: MessageCircle, label: 'Messages' },
+  { path: '/library', icon: Library, label: 'Library' },
   { path: '/profile', icon: User, label: 'Profile' },
 ];
 
@@ -18,15 +19,16 @@ const hiddenRoutes = ['/landing', '/auth', '/onboarding'];
 export function BottomNav() {
   const location = useLocation();
   const { user, loading } = useAuth();
+  const { isExpanded } = usePlayer();
 
   // Hide on landing, auth, and onboarding pages
   const shouldHide = hiddenRoutes.some(route => location.pathname.startsWith(route));
   
-  // Also hide if not logged in and on landing page
-  if (shouldHide) return null;
+  // Hide when full player is expanded
+  if (shouldHide || isExpanded) return null;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border safe-bottom">
       <div className="flex items-center justify-around h-16">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Play, Pause, SkipBack, SkipForward, 
@@ -6,13 +7,22 @@ import {
   ListMusic, X
 } from 'lucide-react';
 import { usePlayer } from '@/context/PlayerContext';
+import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
+import { PlayerSettingsModal } from '@/components/modals/PlayerSettingsModal';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Extract dominant color from image (simplified - returns theme color)
+function useDominantColor(imageUrl: string) {
+  // In a real app, we'd use a color extraction library
+  // For now, return a themed gradient
+  return 'hsl(330, 85%, 60%)';
 }
 
 export function MiniPlayer() {
@@ -26,8 +36,10 @@ export function MiniPlayer() {
     isMiniPlayerVisible,
     closeMiniPlayer
   } = usePlayer();
+  const { user } = useAuth();
 
-  if (!currentTrack || !isMiniPlayerVisible) return null;
+  // Only show mini player when user is signed in and has a track
+  if (!currentTrack || !isMiniPlayerVisible || !user) return null;
 
   return (
     <motion.div
@@ -45,12 +57,9 @@ export function MiniPlayer() {
       </div>
       
       <div className="flex items-center gap-3 p-3">
-        {/* Album art */}
+        {/* Album art - no spinning */}
         <motion.div 
-          className={cn(
-            "w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer",
-            isPlaying && "animate-pulse-slow"
-          )}
+          className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 cursor-pointer shadow-lg"
           whileTap={{ scale: 0.95 }}
           onClick={() => setExpanded(true)}
         >
@@ -74,19 +83,36 @@ export function MiniPlayer() {
         
         {/* Controls */}
         <div className="flex items-center gap-1">
-          <button 
+          <motion.button
+            whileTap={{ scale: 0.9 }}
             className="p-2 rounded-full hover:bg-muted transition-colors"
             onClick={(e) => {
               e.stopPropagation();
               isPlaying ? pauseTrack() : resumeTrack();
             }}
           >
-            {isPlaying ? (
-              <Pause className="w-5 h-5" fill="currentColor" />
-            ) : (
-              <Play className="w-5 h-5" fill="currentColor" />
-            )}
-          </button>
+            <AnimatePresence mode="wait">
+              {isPlaying ? (
+                <motion.div
+                  key="pause"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0 }}
+                >
+                  <Pause className="w-5 h-5" fill="currentColor" />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="play"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0 }}
+                >
+                  <Play className="w-5 h-5" fill="currentColor" />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.button>
           <button 
             className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
             onClick={(e) => {
@@ -121,8 +147,11 @@ export function FullPlayer() {
     toggleShuffle,
     toggleRepeat,
   } = usePlayer();
+  const { user } = useAuth();
+  const [showSettings, setShowSettings] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
 
-  if (!currentTrack) return null;
+  if (!currentTrack || !user) return null;
 
   const currentTime = (progress / 100) * currentTrack.duration;
 
@@ -134,38 +163,48 @@ export function FullPlayer() {
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
           transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-          className="fixed inset-0 z-50 bg-background flex flex-col"
+          className="fixed inset-0 z-50 flex flex-col overflow-hidden"
         >
+          {/* Dynamic background based on album art */}
+          <div className="absolute inset-0 -z-10">
+            <img
+              src={currentTrack.coverArt}
+              alt=""
+              className="w-full h-full object-cover scale-110 blur-3xl opacity-30"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/90 to-background" />
+          </div>
+
           {/* Header */}
-          <div className="flex items-center justify-between p-4">
+          <div className="flex items-center justify-between p-4 safe-top">
             <button
               onClick={() => setExpanded(false)}
-              className="p-2 rounded-full hover:bg-muted transition-colors"
+              className="p-2 rounded-full hover:bg-muted/50 transition-colors"
             >
               <ChevronDown className="w-6 h-6" />
             </button>
             <span className="text-sm font-medium text-muted-foreground">
               NOW PLAYING
             </span>
-            <button className="p-2 rounded-full hover:bg-muted transition-colors">
+            <button 
+              className="p-2 rounded-full hover:bg-muted/50 transition-colors"
+              onClick={() => setShowSettings(true)}
+            >
               <MoreHorizontal className="w-6 h-6" />
             </button>
           </div>
 
-          {/* Album Art */}
+          {/* Album Art - No spinning, just scale animation */}
           <div className="flex-1 flex items-center justify-center px-8">
             <motion.div
               className={cn(
-                "w-full max-w-sm aspect-square rounded-2xl overflow-hidden shadow-2xl",
-                isPlaying && "glow-primary"
+                "w-full max-w-sm aspect-square rounded-2xl overflow-hidden shadow-2xl"
               )}
               animate={{ 
                 scale: isPlaying ? 1 : 0.95,
-                rotate: isPlaying ? [0, 360] : 0 
               }}
               transition={{ 
                 scale: { duration: 0.3 },
-                rotate: { duration: 20, repeat: Infinity, ease: 'linear' }
               }}
             >
               <img
@@ -186,10 +225,17 @@ export function FullPlayer() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <button className="p-3 rounded-full hover:bg-muted transition-colors">
-                  <Heart className="w-6 h-6" />
-                </button>
-                <button className="p-3 rounded-full hover:bg-muted transition-colors">
+                <motion.button 
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setIsLiked(!isLiked)}
+                  className="p-3 rounded-full hover:bg-muted/50 transition-colors"
+                >
+                  <Heart 
+                    className={cn("w-6 h-6", isLiked && "text-red-500")} 
+                    fill={isLiked ? "currentColor" : "none"}
+                  />
+                </motion.button>
+                <button className="p-3 rounded-full hover:bg-muted/50 transition-colors">
                   <Share2 className="w-6 h-6" />
                 </button>
               </div>
@@ -225,7 +271,7 @@ export function FullPlayer() {
             
             <button
               onClick={previousTrack}
-              className="p-3 rounded-full hover:bg-muted transition-colors"
+              className="p-3 rounded-full hover:bg-muted/50 transition-colors"
             >
               <SkipBack className="w-7 h-7" fill="currentColor" />
             </button>
@@ -235,16 +281,32 @@ export function FullPlayer() {
               onClick={() => isPlaying ? pauseTrack() : resumeTrack()}
               className="w-16 h-16 rounded-full bg-primary flex items-center justify-center glow-primary"
             >
-              {isPlaying ? (
-                <Pause className="w-7 h-7 text-primary-foreground" fill="currentColor" />
-              ) : (
-                <Play className="w-7 h-7 text-primary-foreground ml-1" fill="currentColor" />
-              )}
+              <AnimatePresence mode="wait">
+                {isPlaying ? (
+                  <motion.div
+                    key="pause"
+                    initial={{ scale: 0, rotate: -180 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    exit={{ scale: 0, rotate: 180 }}
+                  >
+                    <Pause className="w-7 h-7 text-primary-foreground" fill="currentColor" />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="play"
+                    initial={{ scale: 0, rotate: 180 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    exit={{ scale: 0, rotate: -180 }}
+                  >
+                    <Play className="w-7 h-7 text-primary-foreground ml-1" fill="currentColor" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.button>
             
             <button
               onClick={nextTrack}
-              className="p-3 rounded-full hover:bg-muted transition-colors"
+              className="p-3 rounded-full hover:bg-muted/50 transition-colors"
             >
               <SkipForward className="w-7 h-7" fill="currentColor" />
             </button>
@@ -265,7 +327,7 @@ export function FullPlayer() {
           </div>
 
           {/* Volume & Queue */}
-          <div className="flex items-center justify-between px-8 pb-8">
+          <div className="flex items-center justify-between px-8 pb-8 safe-bottom">
             <div className="flex items-center gap-3 w-32">
               <Volume2 className="w-5 h-5 text-muted-foreground" />
               <Slider
@@ -276,10 +338,17 @@ export function FullPlayer() {
                 className="flex-1"
               />
             </div>
-            <button className="p-3 rounded-full hover:bg-muted transition-colors">
+            <button className="p-3 rounded-full hover:bg-muted/50 transition-colors">
               <ListMusic className="w-5 h-5" />
             </button>
           </div>
+
+          {/* Settings Modal */}
+          <PlayerSettingsModal
+            track={currentTrack}
+            isOpen={showSettings}
+            onClose={() => setShowSettings(false)}
+          />
         </motion.div>
       )}
     </AnimatePresence>
