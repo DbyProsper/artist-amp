@@ -11,6 +11,7 @@ import { FloatingPlayerButton } from "@/components/player/FloatingPlayerButton";
 import LandingPage from "./pages/LandingPage";
 import HomePage from "./pages/HomePage";
 import DiscoverPage from "./pages/DiscoverPage";
+import SearchPage from "./pages/SearchPage";
 import UploadPage from "./pages/UploadPage";
 import MessagesPage from "./pages/MessagesPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -63,6 +64,9 @@ const AppRoutes = () => {
       <Routes>
         {/* Landing page for new users */}
         <Route path="/landing" element={<LandingRedirect />} />
+        
+        {/* Search page - accessible without login */}
+        <Route path="/search" element={<SearchPage />} />
         
         {/* Main app routes */}
         <Route path="/" element={user ? <HomePage /> : <Navigate to="/landing" replace />} />

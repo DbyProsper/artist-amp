@@ -7,7 +7,7 @@ import { usePlayer } from '@/context/PlayerContext';
 
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
-  { path: '/discover', icon: Compass, label: 'Discover' },
+  { path: '/search', icon: Compass, label: 'Search' },
   { path: '/upload', icon: PlusSquare, label: 'Upload' },
   { path: '/library', icon: Library, label: 'Library' },
   { path: '/profile', icon: User, label: 'Profile' },
