@@ -4,10 +4,10 @@ import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc } from 'lucide-reac
 import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FeedPost } from '@/components/feed/FeedPost';
 import { StoryViewer } from '@/components/stories/StoryViewer';
-import { ArtistCard } from '@/components/artists/ArtistCard';
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel';
-import { mockStories, mockPosts, mockArtists, mockTracks } from '@/data/mockData';
+import { mockStories, mockArtists, mockTracks } from '@/data/mockData';
+import { useFeedPosts } from '@/hooks/useFeedPosts';
 import { Story } from '@/types';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -17,6 +17,7 @@ export default function HomePage() {
   const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const navigate = useNavigate();
+  const { posts, loading: postsLoading } = useFeedPosts();
   const { user } = useAuth();
 
   const handleStoryClick = (story: Story) => {
@@ -172,16 +173,22 @@ export default function HomePage() {
         <div className="px-4 py-3">
           <h2 className="font-display font-bold text-lg">Feed</h2>
         </div>
-        {mockPosts.map((post, index) => (
-          <motion.div
-            key={post.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
-          >
-            <FeedPost post={post} />
-          </motion.div>
-        ))}
+        {postsLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
+          </div>
+        ) : (
+          posts.map((post, index) => (
+            <motion.div
+              key={post.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(index * 0.05, 0.3) }}
+            >
+              <FeedPost post={post} />
+            </motion.div>
+          ))
+        )}
       </section>
 
       {/* Story Viewer Modal */}

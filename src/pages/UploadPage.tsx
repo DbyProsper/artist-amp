@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Camera, Image, Music2, Video, X, Upload, Loader2 } from 'lucide-react';
+import { Camera, Image, Music2, Video, X, Upload, Loader2, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,9 @@ export default function UploadPage() {
     coverFile: null as File | null,
     coverPreview: '',
   });
+
+  // Check if user is an artist
+  const isArtist = profile?.is_artist ?? false;
 
   if (!user || !profile) {
     return (
@@ -157,7 +160,7 @@ export default function UploadPage() {
 
         if (error) throw error;
       } else {
-        // Create regular post
+        // Create regular post (image or video)
         const { error } = await supabase
           .from('posts')
           .insert({
@@ -196,6 +199,14 @@ export default function UploadPage() {
     });
   };
 
+  // Upload options based on user type
+  const uploadOptions = [
+    ...(isArtist ? [{ type: 'audio' as UploadType, icon: Music2, label: 'Audio', color: 'text-primary' }] : []),
+    { type: 'video' as UploadType, icon: Video, label: 'Video', color: 'text-accent' },
+    { type: 'image' as UploadType, icon: Image, label: 'Image', color: 'text-secondary' },
+    { type: 'story' as UploadType, icon: Camera, label: 'Story', color: 'text-muted-foreground' },
+  ];
+
   return (
     <div className="min-h-screen pb-36">
       {/* Header */}
@@ -233,43 +244,43 @@ export default function UploadPage() {
             </div>
             <h3 className="font-display font-bold text-lg mb-2">What would you like to share?</h3>
             <p className="text-sm text-muted-foreground mb-6">
-              Share your music, videos, or photos with your fans
+              {isArtist 
+                ? 'Share your music, videos, or photos with your fans'
+                : 'Share videos, photos, or stories with the community'}
             </p>
             
-            <div className="flex justify-center gap-4">
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setUploadType('audio')}
-                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted hover:bg-muted/80 transition-colors"
-              >
-                <Music2 className="w-6 h-6 text-primary" />
-                <span className="text-xs">Audio</span>
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setUploadType('video')}
-                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted hover:bg-muted/80 transition-colors"
-              >
-                <Video className="w-6 h-6 text-accent" />
-                <span className="text-xs">Video</span>
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setUploadType('image')}
-                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted hover:bg-muted/80 transition-colors"
-              >
-                <Image className="w-6 h-6 text-secondary" />
-                <span className="text-xs">Image</span>
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setUploadType('story')}
-                className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted hover:bg-muted/80 transition-colors"
-              >
-                <Camera className="w-6 h-6 text-muted-foreground" />
-                <span className="text-xs">Story</span>
-              </motion.button>
+            <div className="flex justify-center gap-4 flex-wrap">
+              {uploadOptions.map((option) => (
+                <motion.button
+                  key={option.type}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setUploadType(option.type)}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted hover:bg-muted/80 transition-colors"
+                >
+                  <option.icon className={`w-6 h-6 ${option.color}`} />
+                  <span className="text-xs">{option.label}</span>
+                </motion.button>
+              ))}
             </div>
+
+            {/* Show message for non-artists about audio */}
+            {!isArtist && (
+              <div className="mt-6 p-4 rounded-xl bg-muted/50 text-left">
+                <div className="flex items-center gap-2 mb-2">
+                  <Lock className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Audio Upload</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Audio uploads are available for verified artists only. 
+                  <button 
+                    onClick={() => navigate('/settings')}
+                    className="text-primary hover:underline ml-1"
+                  >
+                    Apply for artist status
+                  </button>
+                </p>
+              </div>
+            )}
           </motion.div>
         ) : (
           // Upload form
@@ -290,6 +301,12 @@ export default function UploadPage() {
                         <p className="text-sm text-muted-foreground">Audio file selected</p>
                       </div>
                     </div>
+                  ) : uploadType === 'video' ? (
+                    <video
+                      src={formData.filePreview}
+                      className="w-full aspect-video object-cover rounded-xl"
+                      controls
+                    />
                   ) : (
                     <img
                       src={formData.filePreview}
@@ -309,7 +326,7 @@ export default function UploadPage() {
                   <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
                   <p className="font-medium">Tap to upload</p>
                   <p className="text-sm text-muted-foreground">
-                    {uploadType === 'audio' ? 'MP3, WAV, FLAC' : 'JPG, PNG, GIF, MP4'}
+                    {uploadType === 'audio' ? 'MP3, WAV, FLAC' : uploadType === 'video' ? 'MP4, MOV, WebM' : 'JPG, PNG, GIF'}
                   </p>
                   <input
                     type="file"
@@ -374,11 +391,14 @@ export default function UploadPage() {
               <Label htmlFor="caption">Caption</Label>
               <Textarea
                 id="caption"
-                placeholder="Write a caption for your post..."
+                placeholder="Write a caption for your post... Use #hashtags to reach more people"
                 className="min-h-[100px] bg-muted/50 border-none resize-none"
                 value={formData.caption}
                 onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
               />
+              <p className="text-xs text-muted-foreground">
+                Tip: Add hashtags like #music #newrelease to increase visibility
+              </p>
             </div>
 
             {/* Add to Story toggle */}
