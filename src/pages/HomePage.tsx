@@ -130,7 +130,7 @@ export default function HomePage() {
             <motion.div
               key={artist.id}
               whileTap={{ scale: 0.95 }}
-              onClick={() => navigate(`/user/${artist.id}`)}
+              onClick={() => navigate(`/user/f671f1d1-85e5-4ee4-baa0-965e851936e4`)}
               className="flex-shrink-0 w-28"
             >
               <div className="w-28 h-28 rounded-xl overflow-hidden mb-2">

@@ -397,7 +397,7 @@ export default function UploadPage() {
                 onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
               />
               <p className="text-xs text-muted-foreground">
-                Tip: Add hashtags like #music #newrelease to increase visibility
+                Tip: Use @username to tag users and #hashtags to increase visibility
               </p>
             </div>
 

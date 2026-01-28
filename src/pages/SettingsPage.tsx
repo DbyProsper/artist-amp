@@ -1,20 +1,44 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, User, Bell, Mail, Music2, Info, LogOut, 
-  BadgeCheck, ChevronRight, Shield
+  BadgeCheck, ChevronRight, Shield, BarChart3
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { BackButton } from '@/components/ui/BackButton';
 import { useAuth } from '@/context/AuthContext';
+import { useUserRole } from '@/hooks/useUserRole';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
   const { user, profile, signOut } = useAuth();
+  const { isAdminOrModerator } = useUserRole();
   const navigate = useNavigate();
   const [pushNotifications, setPushNotifications] = useState(true);
   const [emailNotifications, setEmailNotifications] = useState(true);
+  const [pendingRequest, setPendingRequest] = useState(false);
+
+  useEffect(() => {
+    if (profile) {
+      checkPendingRequest();
+    }
+  }, [profile]);
+
+  const checkPendingRequest = async () => {
+    if (!profile) return;
+
+    const { data } = await supabase
+      .from('verification_requests')
+      .select('status')
+      .eq('profile_id', profile.id)
+      .eq('status', 'pending')
+      .maybeSingle();
+
+    setPendingRequest(!!data);
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -22,8 +46,30 @@ export default function SettingsPage() {
     navigate('/');
   };
 
-  const handleVerificationRequest = () => {
-    toast.success('Verification request submitted! We\'ll review your profile and get back to you.');
+  const handleVerificationRequest = async () => {
+    if (!profile) return;
+
+    if (pendingRequest) {
+      toast.info('You already have a pending verification request');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('verification_requests')
+        .insert({
+          profile_id: profile.id,
+          reason: 'Artist verification request submitted via Settings',
+        });
+
+      if (error) throw error;
+
+      setPendingRequest(true);
+      toast.success('Verification request submitted! We\'ll review your profile and get back to you.');
+    } catch (err) {
+      console.error('Error submitting request:', err);
+      toast.error('Failed to submit verification request');
+    }
   };
 
   if (!user) {
@@ -42,10 +88,23 @@ export default function SettingsPage() {
           onClick: () => navigate('/settings/edit-profile'),
         },
         ...(profile?.is_artist ? [{
+          icon: BarChart3,
+          label: 'Analytics',
+          description: 'View your performance metrics',
+          onClick: () => navigate('/analytics'),
+        }] : []),
+        ...(profile?.is_artist && !profile?.is_verified ? [{
           icon: BadgeCheck,
-          label: 'Request Verification',
-          description: 'Get verified as an artist',
+          label: pendingRequest ? 'Verification Pending' : 'Request Verification',
+          description: pendingRequest ? 'Your request is being reviewed' : 'Get verified as an artist',
           onClick: handleVerificationRequest,
+          disabled: pendingRequest,
+        }] : []),
+        ...(isAdminOrModerator ? [{
+          icon: Shield,
+          label: 'Admin Panel',
+          description: 'Manage users and verification requests',
+          onClick: () => navigate('/admin'),
         }] : []),
       ],
     },
@@ -105,12 +164,7 @@ export default function SettingsPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-border">
         <div className="flex items-center gap-3 px-4 h-14">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 rounded-full hover:bg-muted transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
+          <BackButton />
           <h1 className="font-display font-bold text-lg">Settings</h1>
         </div>
       </header>
@@ -134,6 +188,9 @@ export default function SettingsPage() {
               <h2 className="font-display font-bold">{profile?.name || 'User'}</h2>
               {profile?.is_verified && (
                 <BadgeCheck className="w-5 h-5 text-primary" fill="currentColor" />
+              )}
+              {isAdminOrModerator && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary">Admin</span>
               )}
             </div>
             <p className="text-sm text-muted-foreground">@{profile?.username || 'user'}</p>
@@ -159,7 +216,8 @@ export default function SettingsPage() {
                 <button
                   key={item.label}
                   onClick={item.toggle ? undefined : item.onClick}
-                  className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors text-left"
+                  disabled={(item as any).disabled}
+                  className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors text-left disabled:opacity-50"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
