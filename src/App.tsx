@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { MiniPlayer, FullPlayer } from "@/components/player/MusicPlayer";
 import { FloatingPlayerButton } from "@/components/player/FloatingPlayerButton";
+import { useScrollToTop } from "@/hooks/useScrollToTop";
 import LandingPage from "./pages/LandingPage";
 import HomePage from "./pages/HomePage";
 import DiscoverPage from "./pages/DiscoverPage";
@@ -23,6 +24,8 @@ import EditProfilePage from "./pages/EditProfilePage";
 import PreferencesPage from "./pages/PreferencesPage";
 import AuthPage from "./pages/AuthPage";
 import OnboardingPage from "./pages/OnboardingPage";
+import AdminPage from "./pages/AdminPage";
+import AnalyticsDashboardPage from "./pages/AnalyticsDashboardPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,11 +59,18 @@ function PlayerComponents() {
   );
 }
 
+// ScrollToTop component
+function ScrollToTop() {
+  useScrollToTop();
+  return null;
+}
+
 const AppRoutes = () => {
   const { user, loading } = useAuth();
 
   return (
     <div className="min-h-screen bg-background">
+      <ScrollToTop />
       <Routes>
         {/* Landing page for new users */}
         <Route path="/landing" element={<LandingRedirect />} />
@@ -82,6 +92,8 @@ const AppRoutes = () => {
         <Route path="/settings/preferences" element={<PreferencesPage />} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/analytics" element={<AnalyticsDashboardPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
       <PlayerComponents />

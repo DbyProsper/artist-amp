@@ -1,16 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Settings, Grid3X3, Music2, Bookmark, ListMusic,
-  MapPin, Link2, BadgeCheck, Play, Youtube, ExternalLink
+  MapPin, Link2, BadgeCheck, Play, Youtube, ExternalLink, BarChart3
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrackRow } from '@/components/tracks/TrackRow';
+import { FeedPost } from '@/components/feed/FeedPost';
 import { YouTubeEmbed } from '@/components/artists/YouTubeEmbed';
-import { mockTracks, mockPlaylists, mockArtists } from '@/data/mockData';
+import { SocialLinksModal } from '@/components/ui/SocialLinksModal';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useProfilePosts } from '@/hooks/useProfilePosts';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 function formatCount(num: number): string {
@@ -19,21 +22,58 @@ function formatCount(num: number): string {
   return num.toString();
 }
 
-// Email for Dby Prosper account
-const DBY_PROSPER_EMAIL = 'mthabisisebata113@gmail.com';
+interface SocialLinks {
+  youtube?: string | null;
+  apple_music?: string | null;
+  spotify?: string | null;
+}
 
 export default function ProfilePage() {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
-  const [isFollowing, setIsFollowing] = useState(false);
+  const [followerCount, setFollowerCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [socialLinks, setSocialLinks] = useState<SocialLinks>({});
+  const [showLinksModal, setShowLinksModal] = useState(false);
+  
+  const { posts, tracks, loading } = useProfilePosts(profile?.id);
 
-  // Check if signed in user is Dby Prosper
-  const isDbyProsper = user?.email === DBY_PROSPER_EMAIL;
-  
-  // Get artist data - only show Dby Prosper if logged in as that account
-  const dbyProsper = mockArtists[0];
-  
-  // If no user is signed in or not Dby Prosper, show empty profile state
+  useEffect(() => {
+    if (!profile) return;
+
+    const fetchCounts = async () => {
+      // Fetch followers
+      const { count: followers } = await supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('following_id', profile.id);
+
+      // Fetch following
+      const { count: following } = await supabase
+        .from('follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('follower_id', profile.id);
+
+      setFollowerCount(followers || 0);
+      setFollowingCount(following || 0);
+    };
+
+    const fetchSocialLinks = async () => {
+      const { data } = await supabase
+        .from('social_links')
+        .select('*')
+        .eq('profile_id', profile.id)
+        .maybeSingle();
+
+      if (data) {
+        setSocialLinks(data);
+      }
+    };
+
+    fetchCounts();
+    fetchSocialLinks();
+  }, [profile]);
+
   if (!user) {
     return (
       <div className="min-h-screen pb-36">
@@ -65,42 +105,15 @@ export default function ProfilePage() {
     );
   }
 
-  // Use profile data if available, otherwise use Dby Prosper for that specific account
-  const displayProfile = isDbyProsper ? {
-    name: profile?.name || dbyProsper.name,
-    username: profile?.username || dbyProsper.username,
-    avatar: profile?.avatar_url || dbyProsper.avatar,
-    coverImage: profile?.cover_url || dbyProsper.coverImage,
-    bio: profile?.bio || dbyProsper.bio,
-    location: profile?.location || dbyProsper.location,
-    isVerified: profile?.is_verified || dbyProsper.isVerified,
-    isArtist: profile?.is_artist ?? true,
-    genres: dbyProsper.genres,
-    followers: dbyProsper.followers,
-    following: dbyProsper.following,
-    tracks: dbyProsper.tracks,
-    socialLinks: dbyProsper.socialLinks,
-  } : {
+  const displayProfile = {
     name: profile?.name || 'User',
     username: profile?.username || 'user',
     avatar: profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
     coverImage: profile?.cover_url || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800',
-    bio: profile?.bio || 'Music lover',
-    location: profile?.location || 'Earth',
+    bio: profile?.bio || '',
+    location: profile?.location || '',
     isVerified: profile?.is_verified || false,
     isArtist: profile?.is_artist || false,
-    genres: [] as string[],
-    followers: 0,
-    following: 0,
-    tracks: 0,
-    socialLinks: undefined,
-  };
-
-  const artistTracks = isDbyProsper ? mockTracks.filter(t => t.artist.id === dbyProsper.id) : [];
-
-  const handleFollow = () => {
-    setIsFollowing(!isFollowing);
-    toast.success(isFollowing ? 'Unfollowed' : 'Following!');
   };
 
   return (
@@ -165,42 +178,28 @@ export default function ProfilePage() {
         {/* Stats */}
         <div className="flex items-center justify-around py-4 border-y border-border my-4">
           <div className="text-center">
-            <p className="font-bold text-lg">{displayProfile.tracks}</p>
+            <p className="font-bold text-lg">{tracks.length}</p>
             <p className="text-xs text-muted-foreground">Tracks</p>
           </div>
           <div className="text-center">
-            <p className="font-bold text-lg">{formatCount(displayProfile.followers)}</p>
+            <p className="font-bold text-lg">{formatCount(followerCount)}</p>
             <p className="text-xs text-muted-foreground">Followers</p>
           </div>
           <div className="text-center">
-            <p className="font-bold text-lg">{formatCount(displayProfile.following)}</p>
+            <p className="font-bold text-lg">{formatCount(followingCount)}</p>
             <p className="text-xs text-muted-foreground">Following</p>
           </div>
         </div>
 
         {/* Bio */}
-        <p className="text-sm mb-4">{displayProfile.bio}</p>
-
-        {/* Genres */}
-        {displayProfile.genres.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {displayProfile.genres.map((genre) => (
-              <span
-                key={genre}
-                className="px-3 py-1 rounded-full bg-muted text-sm text-muted-foreground"
-              >
-                {genre}
-              </span>
-            ))}
-          </div>
-        )}
+        {displayProfile.bio && <p className="text-sm mb-4">{displayProfile.bio}</p>}
 
         {/* Social Links */}
-        {displayProfile.socialLinks && (
+        {(socialLinks.youtube || socialLinks.apple_music || socialLinks.spotify) && (
           <div className="flex flex-wrap gap-2 mb-4">
-            {displayProfile.socialLinks.youtube && (
+            {socialLinks.youtube && (
               <a
-                href={displayProfile.socialLinks.youtube}
+                href={socialLinks.youtube}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
@@ -210,16 +209,14 @@ export default function ProfilePage() {
                 <ExternalLink className="w-3 h-3" />
               </a>
             )}
-            {displayProfile.socialLinks.appleMusic && (
+            {socialLinks.apple_music && (
               <a
-                href={displayProfile.socialLinks.appleMusic}
+                href={socialLinks.apple_music}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 px-3 py-2 rounded-xl bg-pink-500/10 text-pink-500 hover:bg-pink-500/20 transition-colors"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-                </svg>
+                <Music2 className="w-4 h-4" />
                 <span className="text-sm font-medium">Apple Music</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
@@ -236,23 +233,40 @@ export default function ProfilePage() {
           >
             Edit Profile
           </Button>
+          {displayProfile.isArtist && (
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => navigate('/analytics')}
+            >
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Analytics
+            </Button>
+          )}
           <Button
             variant="outline"
-            className="flex-1"
+            size="icon"
             onClick={() => navigate('/playlists')}
           >
-            <ListMusic className="w-4 h-4 mr-2" />
-            Playlists
+            <ListMusic className="w-4 h-4" />
           </Button>
-          <Button variant="outline" size="icon">
+          <Button 
+            variant="outline" 
+            size="icon"
+            onClick={() => setShowLinksModal(true)}
+          >
             <Link2 className="w-4 h-4" />
           </Button>
         </div>
       </div>
 
       {/* Content Tabs */}
-      <Tabs defaultValue="tracks" className="px-4">
+      <Tabs defaultValue="posts" className="px-4">
         <TabsList className="w-full bg-muted/50">
+          <TabsTrigger value="posts" className="flex-1 gap-2">
+            <Grid3X3 className="w-4 h-4" />
+            Posts
+          </TabsTrigger>
           <TabsTrigger value="tracks" className="flex-1 gap-2">
             <Music2 className="w-4 h-4" />
             Tracks
@@ -261,18 +275,49 @@ export default function ProfilePage() {
             <Youtube className="w-4 h-4" />
             Videos
           </TabsTrigger>
-          <TabsTrigger value="posts" className="flex-1 gap-2">
-            <Grid3X3 className="w-4 h-4" />
-            Posts
-          </TabsTrigger>
           <TabsTrigger value="saved" className="flex-1 gap-2">
             <Bookmark className="w-4 h-4" />
             Saved
           </TabsTrigger>
         </TabsList>
         
+        <TabsContent value="posts" className="mt-4">
+          {loading ? (
+            <div className="py-12 text-center text-muted-foreground">Loading...</div>
+          ) : posts.length > 0 ? (
+            <div className="grid grid-cols-3 gap-1">
+              {posts.map((post) => (
+                <div key={post.id} className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer">
+                  <img
+                    src={post.imageUrl || post.track?.coverArt || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400'}
+                    alt={post.caption || 'Post'}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Play className="w-8 h-8 text-white" fill="currentColor" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-12 text-center">
+              <Grid3X3 className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+              <p className="text-muted-foreground">No posts yet</p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => navigate('/upload')}
+              >
+                Create your first post
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent value="tracks" className="mt-4">
-          {artistTracks.length > 0 ? (
+          {loading ? (
+            <div className="py-12 text-center text-muted-foreground">Loading...</div>
+          ) : tracks.length > 0 ? (
             <>
               <motion.button
                 whileTap={{ scale: 0.98 }}
@@ -283,7 +328,7 @@ export default function ProfilePage() {
               </motion.button>
               
               <div className="space-y-1">
-                {artistTracks.map((track, index) => (
+                {tracks.map((track, index) => (
                   <TrackRow key={track.id} track={track} index={index + 1} showIndex />
                 ))}
               </div>
@@ -306,70 +351,42 @@ export default function ProfilePage() {
         </TabsContent>
 
         <TabsContent value="videos" className="mt-4">
-          {displayProfile.socialLinks?.youtube ? (
+          {socialLinks.youtube ? (
             <YouTubeEmbed 
-              channelUrl={displayProfile.socialLinks.youtube} 
+              channelUrl={socialLinks.youtube} 
               artistName={displayProfile.name} 
             />
           ) : (
             <div className="py-12 text-center">
               <Youtube className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">No YouTube channel linked</p>
-            </div>
-          )}
-        </TabsContent>
-        
-        <TabsContent value="posts" className="mt-4">
-          {artistTracks.length > 0 ? (
-            <div className="grid grid-cols-3 gap-1">
-              {artistTracks.map((track) => (
-                <div key={track.id} className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer">
-                  <img
-                    src={track.coverArt}
-                    alt={track.title}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <Play className="w-8 h-8 text-white" fill="currentColor" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="py-12 text-center">
-              <Grid3X3 className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-              <p className="text-muted-foreground">No posts yet</p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => navigate('/settings/edit-profile')}
+              >
+                Add YouTube link
+              </Button>
             </div>
           )}
         </TabsContent>
         
         <TabsContent value="saved" className="mt-4">
-          <div className="space-y-4">
-            {mockPlaylists.slice(0, 2).map((playlist) => (
-              <motion.button
-                key={playlist.id}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => navigate('/playlists')}
-                className="w-full flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors text-left"
-              >
-                <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-                  <img
-                    src={playlist.coverImage}
-                    alt={playlist.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold truncate">{playlist.name}</p>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {playlist.tracks.length} tracks • {formatCount(playlist.followers)} saves
-                  </p>
-                </div>
-              </motion.button>
-            ))}
+          <div className="py-12 text-center">
+            <Bookmark className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+            <p className="text-muted-foreground">No saved items yet</p>
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Social Links Modal */}
+      {profile && (
+        <SocialLinksModal
+          isOpen={showLinksModal}
+          onClose={() => setShowLinksModal(false)}
+          profileId={profile.id}
+        />
+      )}
     </div>
   );
 }

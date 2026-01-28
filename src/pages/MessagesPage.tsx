@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, BadgeCheck, PenSquare } from 'lucide-react';
+import { Search, BadgeCheck, PenSquare, ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { BackButton } from '@/components/ui/BackButton';
 import { mockArtists } from '@/data/mockData';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -76,7 +77,10 @@ export default function MessagesPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-border">
         <div className="flex items-center justify-between px-4 h-14">
-          <h1 className="font-display font-bold text-lg">Messages</h1>
+          <div className="flex items-center gap-3">
+            <BackButton />
+            <h1 className="font-display font-bold text-lg">Messages</h1>
+          </div>
           <div className="flex items-center gap-2">
             <motion.div 
               className="w-2 h-2 rounded-full bg-primary"

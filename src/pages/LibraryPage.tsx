@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Library, ListMusic, Heart, Clock, Plus } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { BackButton } from '@/components/ui/BackButton';
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { mockTracks, mockPlaylists } from '@/data/mockData';
 import { useAuth } from '@/context/AuthContext';
@@ -38,7 +39,8 @@ export default function LibraryPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-border">
         <div className="flex items-center justify-between px-4 h-14">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <BackButton />
             <Library className="w-5 h-5 text-primary" />
             <h1 className="font-display font-bold text-lg">Your Library</h1>
           </div>
