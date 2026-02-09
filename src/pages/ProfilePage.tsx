@@ -7,13 +7,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrackRow } from '@/components/tracks/TrackRow';
-import { FeedPost } from '@/components/feed/FeedPost';
 import { YouTubeEmbed } from '@/components/artists/YouTubeEmbed';
 import { SocialLinksModal } from '@/components/ui/SocialLinksModal';
+import { PostDetailModal } from '@/components/profile/PostDetailModal';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useProfilePosts } from '@/hooks/useProfilePosts';
 import { supabase } from '@/integrations/supabase/client';
+import { Post } from '@/types';
 import { toast } from 'sonner';
 
 function formatCount(num: number): string {
@@ -35,6 +36,11 @@ export default function ProfilePage() {
   const [followingCount, setFollowingCount] = useState(0);
   const [socialLinks, setSocialLinks] = useState<SocialLinks>({});
   const [showLinksModal, setShowLinksModal] = useState(false);
+  const [savedPosts, setSavedPosts] = useState<Post[]>([]);
+  const [postDetailOpen, setPostDetailOpen] = useState(false);
+  const [selectedPostIndex, setSelectedPostIndex] = useState(0);
+  const [savedPostDetailOpen, setSavedPostDetailOpen] = useState(false);
+  const [selectedSavedIndex, setSelectedSavedIndex] = useState(0);
   
   const { posts, tracks, loading } = useProfilePosts(profile?.id);
 
@@ -42,18 +48,14 @@ export default function ProfilePage() {
     if (!profile) return;
 
     const fetchCounts = async () => {
-      // Fetch followers
       const { count: followers } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
         .eq('following_id', profile.id);
-
-      // Fetch following
       const { count: following } = await supabase
         .from('follows')
         .select('*', { count: 'exact', head: true })
         .eq('follower_id', profile.id);
-
       setFollowerCount(followers || 0);
       setFollowingCount(following || 0);
     };
@@ -64,10 +66,7 @@ export default function ProfilePage() {
         .select('*')
         .eq('profile_id', profile.id)
         .maybeSingle();
-
-      if (data) {
-        setSocialLinks(data);
-      }
+      if (data) setSocialLinks(data);
     };
 
     fetchCounts();
@@ -80,26 +79,18 @@ export default function ProfilePage() {
         <header className="sticky top-0 z-40 glass border-b border-border">
           <div className="flex items-center justify-between px-4 h-14">
             <h1 className="font-display font-bold text-lg">Profile</h1>
-            <button
-              onClick={() => navigate('/settings')}
-              className="p-2 rounded-full hover:bg-muted transition-colors"
-            >
+            <button onClick={() => navigate('/settings')} className="p-2 rounded-full hover:bg-muted transition-colors">
               <Settings className="w-5 h-5" />
             </button>
           </div>
         </header>
-
         <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
           <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center mb-6">
             <Music2 className="w-12 h-12 text-muted-foreground" />
           </div>
           <h2 className="font-display font-bold text-xl mb-2">Welcome to MusicInsta</h2>
-          <p className="text-muted-foreground mb-6 max-w-sm">
-            Sign in to view your profile, upload music, and connect with other artists and fans.
-          </p>
-          <Button onClick={() => navigate('/auth')} size="lg">
-            Sign In
-          </Button>
+          <p className="text-muted-foreground mb-6 max-w-sm">Sign in to view your profile, upload music, and connect with other artists and fans.</p>
+          <Button onClick={() => navigate('/auth')} size="lg">Sign In</Button>
         </div>
       </div>
     );
@@ -116,6 +107,11 @@ export default function ProfilePage() {
     isArtist: profile?.is_artist || false,
   };
 
+  const handlePostClick = (index: number) => {
+    setSelectedPostIndex(index);
+    setPostDetailOpen(true);
+  };
+
   return (
     <div className="min-h-screen pb-36">
       {/* Header */}
@@ -123,16 +119,8 @@ export default function ProfilePage() {
         <div className="flex items-center justify-between px-4 h-14">
           <h1 className="font-display font-bold text-lg">@{displayProfile.username}</h1>
           <div className="flex items-center gap-2">
-            <button 
-              onClick={() => signOut()}
-              className="p-2 rounded-full hover:bg-muted transition-colors text-sm text-muted-foreground"
-            >
-              Sign Out
-            </button>
-            <button
-              onClick={() => navigate('/settings')}
-              className="p-2 rounded-full hover:bg-muted transition-colors"
-            >
+            <button onClick={() => signOut()} className="p-2 rounded-full hover:bg-muted transition-colors text-sm text-muted-foreground">Sign Out</button>
+            <button onClick={() => navigate('/settings')} className="p-2 rounded-full hover:bg-muted transition-colors">
               <Settings className="w-5 h-5" />
             </button>
           </div>
@@ -141,11 +129,7 @@ export default function ProfilePage() {
 
       {/* Cover Image */}
       <div className="relative h-40">
-        <img
-          src={displayProfile.coverImage}
-          alt="Cover"
-          className="w-full h-full object-cover"
-        />
+        <img src={displayProfile.coverImage} alt="Cover" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
       </div>
 
@@ -153,23 +137,16 @@ export default function ProfilePage() {
       <div className="px-4 -mt-16 relative z-10">
         <div className="flex items-end gap-4 mb-4">
           <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-background gradient-border">
-            <img
-              src={displayProfile.avatar}
-              alt={displayProfile.name}
-              className="w-full h-full object-cover"
-            />
+            <img src={displayProfile.avatar} alt={displayProfile.name} className="w-full h-full object-cover" />
           </div>
           <div className="flex-1 mb-2">
             <div className="flex items-center gap-2">
               <h2 className="font-display font-bold text-xl">{displayProfile.name}</h2>
-              {displayProfile.isVerified && (
-                <BadgeCheck className="w-5 h-5 text-primary" fill="currentColor" />
-              )}
+              {displayProfile.isVerified && <BadgeCheck className="w-5 h-5 text-primary" fill="currentColor" />}
             </div>
             {displayProfile.location && (
               <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <MapPin className="w-4 h-4" />
-                {displayProfile.location}
+                <MapPin className="w-4 h-4" />{displayProfile.location}
               </div>
             )}
           </div>
@@ -177,84 +154,25 @@ export default function ProfilePage() {
 
         {/* Stats */}
         <div className="flex items-center justify-around py-4 border-y border-border my-4">
-          <div className="text-center">
-            <p className="font-bold text-lg">{tracks.length}</p>
-            <p className="text-xs text-muted-foreground">Tracks</p>
-          </div>
-          <div className="text-center">
-            <p className="font-bold text-lg">{formatCount(followerCount)}</p>
-            <p className="text-xs text-muted-foreground">Followers</p>
-          </div>
-          <div className="text-center">
-            <p className="font-bold text-lg">{formatCount(followingCount)}</p>
-            <p className="text-xs text-muted-foreground">Following</p>
-          </div>
+          <div className="text-center"><p className="font-bold text-lg">{tracks.length}</p><p className="text-xs text-muted-foreground">Tracks</p></div>
+          <div className="text-center"><p className="font-bold text-lg">{formatCount(followerCount)}</p><p className="text-xs text-muted-foreground">Followers</p></div>
+          <div className="text-center"><p className="font-bold text-lg">{formatCount(followingCount)}</p><p className="text-xs text-muted-foreground">Following</p></div>
         </div>
 
-        {/* Bio */}
         {displayProfile.bio && <p className="text-sm mb-4">{displayProfile.bio}</p>}
-
-        {/* Social Links */}
-        {(socialLinks.youtube || socialLinks.apple_music || socialLinks.spotify) && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {socialLinks.youtube && (
-              <a
-                href={socialLinks.youtube}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
-              >
-                <Youtube className="w-4 h-4" />
-                <span className="text-sm font-medium">YouTube</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            )}
-            {socialLinks.apple_music && (
-              <a
-                href={socialLinks.apple_music}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-pink-500/10 text-pink-500 hover:bg-pink-500/20 transition-colors"
-              >
-                <Music2 className="w-4 h-4" />
-                <span className="text-sm font-medium">Apple Music</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            )}
-          </div>
-        )}
 
         {/* Action Buttons */}
         <div className="flex gap-3 mb-6">
-          <Button
-            onClick={() => navigate('/settings/edit-profile')}
-            variant="outline"
-            className="flex-1"
-          >
-            Edit Profile
-          </Button>
+          <Button onClick={() => navigate('/settings/edit-profile')} variant="outline" className="flex-1">Edit Profile</Button>
           {displayProfile.isArtist && (
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => navigate('/analytics')}
-            >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Analytics
+            <Button variant="outline" className="flex-1" onClick={() => navigate('/analytics')}>
+              <BarChart3 className="w-4 h-4 mr-2" />Analytics
             </Button>
           )}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => navigate('/playlists')}
-          >
+          <Button variant="outline" size="icon" onClick={() => navigate('/playlists')}>
             <ListMusic className="w-4 h-4" />
           </Button>
-          <Button 
-            variant="outline" 
-            size="icon"
-            onClick={() => setShowLinksModal(true)}
-          >
+          <Button variant="outline" size="icon" onClick={() => setShowLinksModal(true)}>
             <Link2 className="w-4 h-4" />
           </Button>
         </div>
@@ -263,22 +181,10 @@ export default function ProfilePage() {
       {/* Content Tabs */}
       <Tabs defaultValue="posts" className="px-4">
         <TabsList className="w-full bg-muted/50">
-          <TabsTrigger value="posts" className="flex-1 gap-2">
-            <Grid3X3 className="w-4 h-4" />
-            Posts
-          </TabsTrigger>
-          <TabsTrigger value="tracks" className="flex-1 gap-2">
-            <Music2 className="w-4 h-4" />
-            Tracks
-          </TabsTrigger>
-          <TabsTrigger value="videos" className="flex-1 gap-2">
-            <Youtube className="w-4 h-4" />
-            Videos
-          </TabsTrigger>
-          <TabsTrigger value="saved" className="flex-1 gap-2">
-            <Bookmark className="w-4 h-4" />
-            Saved
-          </TabsTrigger>
+          <TabsTrigger value="posts" className="flex-1 gap-2"><Grid3X3 className="w-4 h-4" />Posts</TabsTrigger>
+          <TabsTrigger value="tracks" className="flex-1 gap-2"><Music2 className="w-4 h-4" />Tracks</TabsTrigger>
+          <TabsTrigger value="videos" className="flex-1 gap-2"><Youtube className="w-4 h-4" />Videos</TabsTrigger>
+          <TabsTrigger value="saved" className="flex-1 gap-2"><Bookmark className="w-4 h-4" />Saved</TabsTrigger>
         </TabsList>
         
         <TabsContent value="posts" className="mt-4">
@@ -286,8 +192,12 @@ export default function ProfilePage() {
             <div className="py-12 text-center text-muted-foreground">Loading...</div>
           ) : posts.length > 0 ? (
             <div className="grid grid-cols-3 gap-1">
-              {posts.map((post) => (
-                <div key={post.id} className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer">
+              {posts.map((post, index) => (
+                <div
+                  key={post.id}
+                  onClick={() => handlePostClick(index)}
+                  className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer"
+                >
                   <img
                     src={post.imageUrl || post.track?.coverArt || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400'}
                     alt={post.caption || 'Post'}
@@ -303,13 +213,7 @@ export default function ProfilePage() {
             <div className="py-12 text-center">
               <Grid3X3 className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
               <p className="text-muted-foreground">No posts yet</p>
-              <Button
-                variant="outline"
-                className="mt-4"
-                onClick={() => navigate('/upload')}
-              >
-                Create your first post
-              </Button>
+              <Button variant="outline" className="mt-4" onClick={() => navigate('/upload')}>Create your first post</Button>
             </div>
           )}
         </TabsContent>
@@ -319,14 +223,10 @@ export default function ProfilePage() {
             <div className="py-12 text-center text-muted-foreground">Loading...</div>
           ) : tracks.length > 0 ? (
             <>
-              <motion.button
-                whileTap={{ scale: 0.98 }}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-primary via-accent to-secondary mb-4"
-              >
+              <motion.button whileTap={{ scale: 0.98 }} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-primary via-accent to-secondary mb-4">
                 <Play className="w-5 h-5 text-white" fill="currentColor" />
                 <span className="font-semibold text-white">Play All</span>
               </motion.button>
-              
               <div className="space-y-1">
                 {tracks.map((track, index) => (
                   <TrackRow key={track.id} track={track} index={index + 1} showIndex />
@@ -338,13 +238,7 @@ export default function ProfilePage() {
               <Music2 className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
               <p className="text-muted-foreground">No tracks yet</p>
               {displayProfile.isArtist && (
-                <Button
-                  variant="outline"
-                  className="mt-4"
-                  onClick={() => navigate('/upload')}
-                >
-                  Upload your first track
-                </Button>
+                <Button variant="outline" className="mt-4" onClick={() => navigate('/upload')}>Upload your first track</Button>
               )}
             </div>
           )}
@@ -352,21 +246,12 @@ export default function ProfilePage() {
 
         <TabsContent value="videos" className="mt-4">
           {socialLinks.youtube ? (
-            <YouTubeEmbed 
-              channelUrl={socialLinks.youtube} 
-              artistName={displayProfile.name} 
-            />
+            <YouTubeEmbed channelUrl={socialLinks.youtube} artistName={displayProfile.name} />
           ) : (
             <div className="py-12 text-center">
               <Youtube className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">No YouTube channel linked</p>
-              <Button
-                variant="outline"
-                className="mt-4"
-                onClick={() => navigate('/settings/edit-profile')}
-              >
-                Add YouTube link
-              </Button>
+              <Button variant="outline" className="mt-4" onClick={() => navigate('/settings/edit-profile')}>Add YouTube link</Button>
             </div>
           )}
         </TabsContent>
@@ -374,18 +259,22 @@ export default function ProfilePage() {
         <TabsContent value="saved" className="mt-4">
           <div className="py-12 text-center">
             <Bookmark className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-            <p className="text-muted-foreground">No saved items yet</p>
+            <p className="text-muted-foreground">Saved posts coming soon</p>
           </div>
         </TabsContent>
       </Tabs>
 
+      {/* Post Detail Modal */}
+      <PostDetailModal
+        posts={posts}
+        initialIndex={selectedPostIndex}
+        isOpen={postDetailOpen}
+        onClose={() => setPostDetailOpen(false)}
+      />
+
       {/* Social Links Modal */}
       {profile && (
-        <SocialLinksModal
-          isOpen={showLinksModal}
-          onClose={() => setShowLinksModal(false)}
-          profileId={profile.id}
-        />
+        <SocialLinksModal isOpen={showLinksModal} onClose={() => setShowLinksModal(false)} profileId={profile.id} />
       )}
     </div>
   );
