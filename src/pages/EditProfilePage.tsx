@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Camera, Upload, X, MapPin, Save, Youtube, Music2, Globe, Instagram } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Camera, Upload, X, MapPin, Save, Youtube, Music2, Globe, Instagram, Maximize2, Move } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,6 +22,10 @@ export default function EditProfilePage() {
   const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [cropMode, setCropMode] = useState<'avatar' | 'cover' | null>(null);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const [cropScale, setCropScale] = useState(1);
+  const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const [formData, setFormData] = useState({
     name: '',
     username: '',
@@ -84,6 +88,9 @@ export default function EditProfilePage() {
     const file = e.target.files?.[0];
     if (file) {
       setFormData({ ...formData, avatarFile: file, avatarPreview: URL.createObjectURL(file) });
+      setCropMode('avatar');
+      setCropOffset({ x: 0, y: 0 });
+      setCropScale(1);
     }
   };
 
@@ -91,7 +98,53 @@ export default function EditProfilePage() {
     const file = e.target.files?.[0];
     if (file) {
       setFormData({ ...formData, coverFile: file, coverPreview: URL.createObjectURL(file) });
+      setCropMode('cover');
+      setCropOffset({ x: 0, y: 0 });
+      setCropScale(1);
     }
+  };
+
+  const applyCrop = () => {
+    if (!cropMode || !cropCanvasRef.current) return;
+
+    const canvas = cropCanvasRef.current;
+    const img = new Image();
+    const preview = cropMode === 'avatar' ? formData.avatarPreview : formData.coverPreview;
+    
+    img.onload = () => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      if (cropMode === 'avatar') {
+        canvas.width = 256;
+        canvas.height = 256;
+        const size = Math.min(img.width, img.height) / cropScale;
+        const x = (img.width - size) / 2 + cropOffset.x;
+        const y = (img.height - size) / 2 + cropOffset.y;
+        ctx.drawImage(img, x, y, size, size, 0, 0, 256, 256);
+      } else {
+        canvas.width = 800;
+        canvas.height = 256;
+        const width = img.width / cropScale;
+        const height = img.height / cropScale;
+        const x = (img.width - width) / 2 + cropOffset.x;
+        const y = (img.height - height) / 2 + cropOffset.y;
+        ctx.drawImage(img, x, y, width, height, 0, 0, 800, 256);
+      }
+
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const croppedFile = new File([blob], `cropped-${cropMode}.jpg`, { type: 'image/jpeg' });
+          if (cropMode === 'avatar') {
+            setFormData({ ...formData, avatarFile: croppedFile, avatarPreview: canvas.toDataURL() });
+          } else {
+            setFormData({ ...formData, coverFile: croppedFile, coverPreview: canvas.toDataURL() });
+          }
+          setCropMode(null);
+        }
+      }, 'image/jpeg', 0.95);
+    };
+    img.src = preview;
   };
 
   const uploadFile = async (file: File, bucket: string): Promise<string | null> => {
@@ -157,6 +210,105 @@ export default function EditProfilePage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Crop Modal Component
+  const CropModal = ({ isOpen, mode }: { isOpen: boolean; mode: 'avatar' | 'cover' | null }) => {
+    if (!isOpen || !mode) return null;
+
+    const preview = mode === 'avatar' ? formData.avatarPreview : formData.coverPreview;
+    const isAvatar = mode === 'avatar';
+
+    return (
+      <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
+        <div className="bg-background rounded-xl max-w-2xl w-full">
+          <div className="p-4 border-b border-border flex items-center justify-between">
+            <h2 className="font-display font-bold">
+              {isAvatar ? 'Crop Profile Picture' : 'Crop Cover Image'}
+            </h2>
+            <button onClick={() => setCropMode(null)} className="p-1 rounded-full hover:bg-muted">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <div className="p-4 space-y-4">
+            {/* Preview Container */}
+            <div className={`relative overflow-hidden bg-muted rounded-lg ${isAvatar ? 'w-64 h-64 mx-auto' : 'w-full aspect-video'}`}>
+              <img
+                src={preview}
+                alt="Crop preview"
+                style={{
+                  transform: `translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropScale})`,
+                  transformOrigin: 'center',
+                  cursor: 'grab',
+                  userSelect: 'none',
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                }}
+                draggable={true}
+                onDragStart={() => {}}
+              />
+            </div>
+
+            {/* Controls */}
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Zoom</label>
+                <input
+                  type="range"
+                  min="1"
+                  max="3"
+                  step="0.1"
+                  value={cropScale}
+                  onChange={(e) => setCropScale(parseFloat(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Move X</label>
+                  <input
+                    type="range"
+                    min="-200"
+                    max="200"
+                    value={cropOffset.x}
+                    onChange={(e) => setCropOffset({ ...cropOffset, x: parseInt(e.target.value) })}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Move Y</label>
+                  <input
+                    type="range"
+                    min="-200"
+                    max="200"
+                    value={cropOffset.y}
+                    onChange={(e) => setCropOffset({ ...cropOffset, y: parseInt(e.target.value) })}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setCropMode(null)}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={applyCrop}>
+                Apply Crop
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground text-center">
+              {isAvatar ? 'Your profile picture will be displayed as a circle' : 'Adjust the position and zoom to frame your image'}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -270,6 +422,12 @@ export default function EditProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Crop Modal */}
+      <CropModal isOpen={cropMode !== null} mode={cropMode} />
+
+      {/* Hidden Canvas for Crop Processing */}
+      <canvas ref={cropCanvasRef} className="hidden" />
     </div>
   );
 }

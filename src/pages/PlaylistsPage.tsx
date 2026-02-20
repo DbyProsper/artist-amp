@@ -72,6 +72,7 @@ export default function PlaylistsPage() {
         name: newName.trim(),
         description: newDesc.trim() || null,
         is_public: newIsPublic,
+        cover_url: editImage || null,
       })
       .select();
     
@@ -87,6 +88,9 @@ export default function PlaylistsPage() {
       setShowCreate(false);
       setNewName('');
       setNewDesc('');
+      setNewIsPublic(true);
+      setEditImage('');
+      setEditImageFile(null);
     }
   };
 
@@ -261,7 +265,32 @@ export default function PlaylistsPage() {
                 <h2 className="font-display font-bold text-lg">New Playlist</h2>
                 <Button onClick={handleCreate} size="sm" disabled={!newName.trim()}>Create</Button>
               </div>
-              <div className="p-4 space-y-4">
+              <div className="p-4 space-y-4 overflow-y-auto">
+                {/* Cover Image */}
+                <div>
+                  <Label className="mb-2 block">Playlist Cover (Optional)</Label>
+                  <div 
+                    className="w-full h-40 rounded-xl overflow-hidden bg-muted/30 border-2 border-dashed border-border flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors group mb-2"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {editImage ? (
+                      <img src={editImage} alt="Cover preview" className="w-full h-full object-cover group-hover:opacity-80 transition-opacity" />
+                    ) : (
+                      <div className="text-center">
+                        <ImageIcon className="w-8 h-8 text-muted-foreground mx-auto mb-2 group-hover:text-primary transition-colors" />
+                        <p className="text-sm text-muted-foreground group-hover:text-primary transition-colors">Click to upload image</p>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <Label>Name</Label>
                   <Input placeholder="Playlist name" className="h-12 bg-muted/50" value={newName} onChange={(e) => setNewName(e.target.value)} />

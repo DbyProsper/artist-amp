@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Library, ListMusic, Heart, Clock, Plus } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { BackButton } from '@/components/ui/BackButton';
 import { TrackRow } from '@/components/tracks/TrackRow';
-import { mockTracks, mockPlaylists } from '@/data/mockData';
+import { mockTracks } from '@/data/mockData';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
 
 function formatCount(num: number): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -20,6 +21,27 @@ export default function LibraryPage() {
   const navigate = useNavigate();
   const [likedTracks] = useState(mockTracks.slice(0, 5));
   const [recentlyPlayed] = useState(mockTracks.slice(2, 8));
+  const [playlists, setPlaylists] = useState<any[]>([]);
+  const [playlistsLoading, setPlaylistsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchPlaylists = async () => {
+      if (!profile) return;
+      setPlaylistsLoading(true);
+      const { data, error } = await supabase
+        .from('playlists')
+        .select('*')
+        .eq('creator_id', profile.id)
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        setPlaylists(data);
+      }
+      setPlaylistsLoading(false);
+    };
+
+    fetchPlaylists();
+  }, [profile?.id]);
 
   if (!user) {
     return (
@@ -68,37 +90,57 @@ export default function LibraryPage() {
         </TabsList>
 
         <TabsContent value="playlists" className="mt-4 space-y-3">
-          {mockPlaylists.map((playlist) => (
-            <motion.button
-              key={playlist.id}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => navigate('/playlists')}
-              className="w-full flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors text-left"
-            >
-              <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0">
-                <img
-                  src={playlist.coverImage}
-                  alt={playlist.name}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold truncate">{playlist.name}</p>
-                <p className="text-sm text-muted-foreground truncate">
-                  {playlist.tracks.length} tracks • {formatCount(playlist.followers)} saves
-                </p>
-              </div>
-            </motion.button>
-          ))}
-          
-          <motion.button
-            whileTap={{ scale: 0.98 }}
-            onClick={() => navigate('/playlists')}
-            className="w-full flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-muted hover:border-primary/50 transition-colors text-muted-foreground hover:text-primary"
-          >
-            <Plus className="w-5 h-5" />
-            <span className="font-medium">Create New Playlist</span>
-          </motion.button>
+          {playlistsLoading ? (
+            <div className="py-12 text-center text-muted-foreground">Loading playlists...</div>
+          ) : playlists.length === 0 ? (
+            <>
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={() => navigate('/playlists')}
+                className="w-full flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-muted hover:border-primary/50 transition-colors text-muted-foreground hover:text-primary"
+              >
+                <Plus className="w-5 h-5" />
+                <span className="font-medium">Create Your First Playlist</span>
+              </motion.button>
+            </>
+          ) : (
+            <>
+              {playlists.map((playlist) => (
+                <motion.button
+                  key={playlist.id}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => navigate('/playlists')}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors text-left"
+                >
+                  <div className="w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center">
+                    {playlist.cover_url ? (
+                      <img
+                        src={playlist.cover_url}
+                        alt={playlist.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <ListMusic className="w-6 h-6 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">{playlist.name}</p>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {playlist.description || 'No description'}
+                    </p>
+                  </div>
+                </motion.button>
+              ))}
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={() => navigate('/playlists')}
+                className="w-full flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-muted hover:border-primary/50 transition-colors text-muted-foreground hover:text-primary"
+              >
+                <Plus className="w-5 h-5" />
+                <span className="font-medium">Create New Playlist</span>
+              </motion.button>
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="liked" className="mt-4 space-y-1">
