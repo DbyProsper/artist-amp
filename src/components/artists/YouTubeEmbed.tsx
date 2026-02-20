@@ -18,6 +18,10 @@ function extractChannelId(url: string): string | null {
   const handleMatch = url.match(/\/@([\w-]+)/);
   if (handleMatch) return handleMatch[1];
   
+  // Handle youtube.com/user/username format
+  const userMatch = url.match(/\/user\/([\w-]+)/);
+  if (userMatch) return userMatch[1];
+  
   return null;
 }
 
@@ -35,9 +39,15 @@ export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
   }
 
   // Use channel ID for embed - show channel videos
-  const embedUrl = channelId.startsWith('UC') 
-    ? `https://www.youtube.com/embed?listType=user_uploads&list=${channelId}`
-    : `https://www.youtube.com/embed?listType=playlist&list=UU${channelId.slice(2)}`;
+  // Handle both UC... format and username format
+  let iframeUrl = '';
+  if (channelId.startsWith('UC')) {
+    // It's a channel ID - extract uploads playlist ID
+    iframeUrl = `https://www.youtube.com/embed/videoseries?list=UU${channelId.slice(2)}`;
+  } else {
+    // It's a username - build standard upload playlist
+    iframeUrl = `https://www.youtube.com/embed/videoseries?list=UU${channelId}`;
+  }
 
   return (
     <div className="space-y-3">
@@ -82,10 +92,10 @@ export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
         
         {isLoaded && (
           <iframe
-            src={`https://www.youtube.com/embed/videoseries?list=UU${channelId.slice(2)}&autoplay=0`}
+            src={iframeUrl}
             title={`${artistName}'s YouTube Channel`}
             className="w-full h-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
           />
         )}
