@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Settings, Grid3X3, Music2, Bookmark, ListMusic,
-  MapPin, Link2, BadgeCheck, Play, Youtube, ExternalLink, BarChart3
+  MapPin, Link2, BadgeCheck, Play, Youtube, ExternalLink, BarChart3, Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -234,14 +234,24 @@ export default function ProfilePage() {
             Edit Profile
           </Button>
           {displayProfile.isArtist && (
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => navigate('/analytics')}
-            >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              Analytics
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => navigate('/studio')}
+              >
+                <Zap className="w-4 h-4 mr-2" />
+                Online Studio
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => navigate('/analytics')}
+              >
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Analytics
+              </Button>
+            </>
           )}
           <Button
             variant="outline"

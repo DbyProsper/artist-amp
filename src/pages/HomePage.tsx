@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc } from 'lucide-react';
+import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc, Sparkles, Wand2, Zap, BarChart3, ArrowRight } from 'lucide-react';
 import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FeedPost } from '@/components/feed/FeedPost';
 import { StoryViewer } from '@/components/stories/StoryViewer';
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel';
+import { Button } from '@/components/ui/button';
 import { mockStories, mockArtists, mockTracks } from '@/data/mockData';
 import { useFeedPosts } from '@/hooks/useFeedPosts';
 import { Story } from '@/types';
@@ -166,6 +167,103 @@ export default function HomePage() {
             <TrackRow key={track.id} track={track} index={index + 1} showIndex />
           ))}
         </div>
+      </section>
+
+      {/* AI Features for Artists Section */}
+      <section className="px-4 py-4 border-b border-border">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-primary" />
+            <h2 className="font-display font-bold text-lg">AI Studio Features</h2>
+          </div>
+          <button 
+            onClick={() => navigate('/studio')}
+            className="text-sm text-primary hover:underline flex items-center gap-1"
+          >
+            Explore <ArrowRight className="w-3 h-3" />
+          </button>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Unlock professional music production tools powered by AI. Available for artists.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Lyrics Generator */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            className="p-4 rounded-xl bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20 hover:border-primary/50 transition-colors cursor-pointer"
+            onClick={() => navigate('/studio')}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+                <Wand2 className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-sm mb-1">Lyrics Generation</h3>
+                <p className="text-xs text-muted-foreground">AI-generated lyrics in any style</p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Beat Production */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            className="p-4 rounded-xl bg-gradient-to-br from-accent/10 to-secondary/10 border border-accent/20 hover:border-accent/50 transition-colors cursor-pointer"
+            onClick={() => navigate('/studio')}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0">
+                <Music2 className="w-5 h-5 text-accent" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-sm mb-1">Beat Production</h3>
+                <p className="text-xs text-muted-foreground">Create original royalty-free beats</p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Professional Mixing */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            className="p-4 rounded-xl bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20 hover:border-green-500/50 transition-colors cursor-pointer"
+            onClick={() => navigate('/studio')}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                <Zap className="w-5 h-5 text-green-500" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-sm mb-1">Mixing & Mastering</h3>
+                <p className="text-xs text-muted-foreground">Professional mixing from Free to Premium</p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* AI Analytics */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/20 hover:border-blue-500/50 transition-colors cursor-pointer"
+            onClick={() => navigate('/studio')}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+                <BarChart3 className="w-5 h-5 text-blue-500" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-sm mb-1">AI Analytics</h3>
+                <p className="text-xs text-muted-foreground">Listener insights & performance analytics</p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+        {user?.user_metadata?.is_artist && (
+          <Button 
+            className="w-full mt-4"
+            onClick={() => navigate('/studio')}
+          >
+            <Sparkles className="w-4 h-4 mr-2" />
+            Access Online Studio
+          </Button>
+        )}
       </section>
 
       {/* Feed */}

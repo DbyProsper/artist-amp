@@ -26,6 +26,7 @@ import AuthPage from "./pages/AuthPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import AdminPage from "./pages/AdminPage";
 import AnalyticsDashboardPage from "./pages/AnalyticsDashboardPage";
+import OnlineStudioPage from "./pages/OnlineStudioPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -94,6 +95,7 @@ const AppRoutes = () => {
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/analytics" element={<AnalyticsDashboardPage />} />
+        <Route path="/studio" element={<OnlineStudioPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
       <PlayerComponents />
