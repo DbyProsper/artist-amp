@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { YouTubeEmbed } from '@/components/artists/YouTubeEmbed';
+import { FullScreenAvatar } from '@/components/profile/FullScreenAvatar';
 import { SocialLinksModal } from '@/components/ui/SocialLinksModal';
 import { PostDetailModal } from '@/components/profile/PostDetailModal';
 import { useAuth } from '@/context/AuthContext';
@@ -41,6 +42,8 @@ export default function ProfilePage() {
   const [selectedPostIndex, setSelectedPostIndex] = useState(0);
   const [savedPostDetailOpen, setSavedPostDetailOpen] = useState(false);
   const [selectedSavedIndex, setSelectedSavedIndex] = useState(0);
+  const [fullScreenAvatarOpen, setFullScreenAvatarOpen] = useState(false);
+  const [fullScreenCoverOpen, setFullScreenCoverOpen] = useState(false);
   
   const { posts, tracks, loading } = useProfilePosts(profile?.id);
 
@@ -128,16 +131,28 @@ export default function ProfilePage() {
       </header>
 
       {/* Cover Image */}
-      <div className="relative h-40">
+      <div 
+        className="relative h-40 cursor-pointer hover:opacity-90 transition-opacity group"
+        onClick={() => setFullScreenCoverOpen(true)}
+      >
         <img src={displayProfile.coverImage} alt="Cover" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="bg-black/50 px-3 py-1 rounded-full text-xs text-white">Click to expand</div>
+        </div>
       </div>
 
       {/* Profile Info */}
       <div className="px-4 -mt-16 relative z-10">
         <div className="flex items-end gap-4 mb-4">
-          <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-background gradient-border">
+          <div 
+            className="w-24 h-24 rounded-full overflow-hidden border-4 border-background gradient-border cursor-pointer hover:opacity-90 transition-opacity group"
+            onClick={() => setFullScreenAvatarOpen(true)}
+          >
             <img src={displayProfile.avatar} alt={displayProfile.name} className="w-full h-full object-cover" />
+            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center bg-black/30">
+              <span className="text-xs text-white">Click to expand</span>
+            </div>
           </div>
           <div className="flex-1 mb-2">
             <div className="flex items-center gap-2">
@@ -291,6 +306,22 @@ export default function ProfilePage() {
       {profile && (
         <SocialLinksModal isOpen={showLinksModal} onClose={() => setShowLinksModal(false)} profileId={profile.id} />
       )}
+
+      {/* Full Screen Avatar */}
+      <FullScreenAvatar
+        imageUrl={displayProfile.avatar}
+        alt={displayProfile.name}
+        isOpen={fullScreenAvatarOpen}
+        onClose={() => setFullScreenAvatarOpen(false)}
+      />
+
+      {/* Full Screen Cover */}
+      <FullScreenAvatar
+        imageUrl={displayProfile.coverImage}
+        alt="Profile Cover"
+        isOpen={fullScreenCoverOpen}
+        onClose={() => setFullScreenCoverOpen(false)}
+      />
     </div>
   );
 }

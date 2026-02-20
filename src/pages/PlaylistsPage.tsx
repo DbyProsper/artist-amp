@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Play, MoreHorizontal, Edit2, Trash2, Plus, ArrowLeft, 
-  Shuffle, Heart, Share2, Globe, Lock, Music2
+  Shuffle, Heart, Share2, Globe, Lock, Music2, Image as ImageIcon, Save, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,9 +35,13 @@ export default function PlaylistsPage() {
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newIsPublic, setNewIsPublic] = useState(true);
+  const [editImage, setEditImage] = useState<string>('');
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { playTrack, setQueue } = usePlayer();
 
   const fetchPlaylists = async () => {
@@ -92,6 +96,78 @@ export default function PlaylistsPage() {
       setPlaylists(playlists.filter(p => p.id !== id));
       toast.success('Playlist deleted');
     }
+  };
+
+  const handleEditPlaylist = (playlist: any) => {
+    setEditingId(playlist.id);
+    setNewName(playlist.name);
+    setNewDesc(playlist.description || '');
+    setNewIsPublic(playlist.is_public);
+    setEditImage(playlist.cover_url || '');
+    setEditImageFile(null);
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setEditImageFile(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setEditImage(event.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSavePlaylist = async () => {
+    if (!editingId || !newName.trim()) return;
+
+    try {
+      let coverUrl = editImage;
+      
+      // If a new image was uploaded, we'd need to handle storage
+      // For now, we'll just save the data to the database
+      const { error } = await supabase
+        .from('playlists')
+        .update({
+          name: newName.trim(),
+          description: newDesc.trim() || null,
+          is_public: newIsPublic,
+          cover_url: coverUrl || null,
+        })
+        .eq('id', editingId);
+
+      if (error) {
+        toast.error('Failed to save playlist');
+        return;
+      }
+
+      // Update local state
+      setPlaylists(playlists.map(p => 
+        p.id === editingId 
+          ? { ...p, name: newName, description: newDesc, is_public: newIsPublic, cover_url: coverUrl }
+          : p
+      ));
+
+      toast.success('Playlist updated!');
+      setEditingId(null);
+      setNewName('');
+      setNewDesc('');
+      setNewIsPublic(true);
+      setEditImage('');
+      setEditImageFile(null);
+    } catch (error) {
+      toast.error('Failed to save playlist');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setNewName('');
+    setNewDesc('');
+    setNewIsPublic(true);
+    setEditImage('');
+    setEditImageFile(null);
   };
 
   return (
@@ -153,6 +229,10 @@ export default function PlaylistsPage() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleEditPlaylist(playlist)}>
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    Edit
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleDelete(playlist.id)} className="text-destructive focus:text-destructive">
                     <Trash2 className="w-4 h-4 mr-2" />
                     Delete
@@ -190,6 +270,81 @@ export default function PlaylistsPage() {
                   <Label>Description</Label>
                   <Textarea placeholder="Add a description..." className="bg-muted/50 resize-none" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} />
                 </div>
+                <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    {newIsPublic ? <Globe className="w-5 h-5 text-primary" /> : <Lock className="w-5 h-5 text-muted-foreground" />}
+                    <div>
+                      <p className="font-medium text-sm">{newIsPublic ? 'Public' : 'Private'}</p>
+                      <p className="text-xs text-muted-foreground">{newIsPublic ? 'Anyone can find this' : 'Only you can see this'}</p>
+                    </div>
+                  </div>
+                  <Switch checked={newIsPublic} onCheckedChange={setNewIsPublic} />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Playlist Modal */}
+      <AnimatePresence>
+        {editingId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm overflow-y-auto"
+          >
+            <div className="min-h-full flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b border-border sticky top-0 bg-background">
+                <button onClick={handleCancelEdit} className="p-2 rounded-full hover:bg-muted transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+                <h2 className="font-display font-bold text-lg">Edit Playlist</h2>
+                <Button onClick={handleSavePlaylist} size="sm" disabled={!newName.trim()}>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save
+                </Button>
+              </div>
+              <div className="flex-1 p-4 space-y-4">
+                {/* Cover Image */}
+                <div>
+                  <Label className="mb-2 block">Playlist Cover</Label>
+                  <div 
+                    className="w-full h-40 rounded-xl overflow-hidden bg-muted/30 border-2 border-dashed border-border flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors group mb-2"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {editImage ? (
+                      <img src={editImage} alt="Cover preview" className="w-full h-full object-cover group-hover:opacity-80 transition-opacity" />
+                    ) : (
+                      <div className="text-center">
+                        <ImageIcon className="w-8 h-8 text-muted-foreground mx-auto mb-2 group-hover:text-primary transition-colors" />
+                        <p className="text-sm text-muted-foreground group-hover:text-primary transition-colors">Click to upload image</p>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                  />
+                </div>
+
+                {/* Name */}
+                <div className="space-y-2">
+                  <Label>Name</Label>
+                  <Input placeholder="Playlist name" className="h-12 bg-muted/50" value={newName} onChange={(e) => setNewName(e.target.value)} />
+                </div>
+
+                {/* Description */}
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea placeholder="Add a description..." className="bg-muted/50 resize-none" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} />
+                </div>
+
+                {/* Privacy */}
                 <div className="flex items-center justify-between p-4 rounded-xl bg-muted/30">
                   <div className="flex items-center gap-3">
                     {newIsPublic ? <Globe className="w-5 h-5 text-primary" /> : <Lock className="w-5 h-5 text-muted-foreground" />}
