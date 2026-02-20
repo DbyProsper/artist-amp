@@ -91,13 +91,31 @@ export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
         )}
         
         {isLoaded && (
-          <iframe
-            src={iframeUrl}
-            title={`${artistName}'s YouTube Channel`}
-            className="w-full h-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-          />
+          <div className="w-full h-full bg-background flex flex-col items-center justify-center p-4">
+            <Youtube className="w-16 h-16 text-red-500 mb-4 opacity-50" />
+            <p className="text-center mb-4">
+              <span className="font-semibold">YouTube videos are embedded on their platform.</span>
+              <br />
+              <span className="text-sm text-muted-foreground">Click the button below to watch videos.</span>
+            </p>
+            <div className="flex flex-col gap-2 w-full max-w-sm">
+              <Button
+                onClick={() => window.open(`${channelUrl}/videos`, '_blank')}
+                className="w-full"
+              >
+                <Youtube className="w-4 h-4 mr-2" />
+                Watch All Videos
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => window.open(channelUrl, '_blank')}
+                className="w-full"
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Visit Channel
+              </Button>
+            </div>
+          </div>
         )}
       </motion.div>
       
