@@ -61,23 +61,29 @@ export default function PlaylistsPage() {
 
   const handleCreate = async () => {
     if (!profile || !newName.trim()) return;
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('playlists')
       .insert({
         creator_id: profile.id,
         name: newName.trim(),
         description: newDesc.trim() || null,
         is_public: newIsPublic,
-      });
+      })
+      .select();
+    
     if (error) {
       toast.error('Failed to create playlist');
       return;
     }
-    toast.success('Playlist created!');
-    setShowCreate(false);
-    setNewName('');
-    setNewDesc('');
-    fetchPlaylists();
+    
+    if (data && data.length > 0) {
+      // Optimistically add the new playlist to the state immediately
+      setPlaylists([data[0], ...playlists]);
+      toast.success('Playlist created!');
+      setShowCreate(false);
+      setNewName('');
+      setNewDesc('');
+    }
   };
 
   const handleDelete = async (id: string) => {

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Play, ArrowRight, Music2, Users, Radio, Headphones, Heart, TrendingUp, Star, Zap, Globe } from 'lucide-react';
+import { Play, ArrowRight, Music2, Users, Radio, Headphones, Heart, TrendingUp, Star, Zap, Globe, Sparkles, Wand2, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { FloatingMusicNotes } from '@/components/ui/FloatingMusicNotes';
@@ -356,6 +356,98 @@ export default function LandingPage() {
               <p className="text-sm text-muted-foreground">{item.desc}</p>
             </motion.div>
           ))}
+        </div>
+      </section>
+
+      {/* AI Features Section - For Artists */}
+      <section className="relative z-10 px-6 py-16 bg-gradient-to-b from-background to-muted/20">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+          className="text-center mb-12"
+        >
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Sparkles className="w-5 h-5 text-primary" />
+            <span className="text-sm font-medium text-primary">AI-Powered Studio</span>
+          </div>
+          <h2 className="text-2xl md:text-3xl font-display font-bold mb-3">
+            Next-Gen Music Production for{' '}
+            <motion.span 
+              className="text-gradient"
+              animate={{ 
+                textShadow: [
+                  '0 0 15px hsla(330, 85%, 60%, 0.4)',
+                  '0 0 30px hsla(330, 85%, 60%, 0.7)',
+                  '0 0 15px hsla(330, 85%, 60%, 0.4)'
+                ]
+              }}
+              transition={{ duration: 2, repeat: Infinity }}
+            >
+              Artists
+            </motion.span>
+          </h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            Unlock professional music production with AI assistance. Generate lyrics, produce beats, create full compositions, and get advanced analytics—all in one studio.
+          </p>
+        </motion.div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto mb-8">
+          {[
+            {
+              icon: Wand2,
+              title: 'AI Lyrics Generator',
+              description: 'Create original, unique lyrics in any style with AI-powered creativity',
+              color: 'from-primary/20 to-accent/20',
+            },
+            {
+              icon: Music2,
+              title: 'Beat Production',
+              description: 'Generate royalty-free beats across multiple genres and styles',
+              color: 'from-accent/20 to-secondary/20',
+            },
+            {
+              icon: Sparkles,
+              title: 'Full Song Composition',
+              description: 'Create complete songs with lyrics, melody, and instrumentation',
+              color: 'from-secondary/20 to-primary/20',
+            },
+            {
+              icon: Zap,
+              title: 'Pro Mixing & Mastering',
+              description: 'Professional mixing with Free, Pro, and Premium tiers',
+              color: 'from-green-500/20 to-emerald-500/20',
+            },
+          ].map((feature, index) => (
+            <motion.div
+              key={feature.title}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5, delay: index * 0.1 }}
+              whileHover={{ scale: 1.02 }}
+              className={`p-6 rounded-2xl bg-gradient-to-br ${feature.color} backdrop-blur-sm border border-border transition-all`}
+            >
+              <motion.div 
+                className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mb-3"
+                whileHover={{ 
+                  boxShadow: '0 0 20px hsla(330, 85%, 60%, 0.3)'
+                }}
+              >
+                <feature.icon className="w-6 h-6 text-primary" />
+              </motion.div>
+              <h3 className="font-display font-bold text-lg mb-2">{feature.title}</h3>
+              <p className="text-sm text-muted-foreground">{feature.description}</p>
+            </motion.div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-center gap-3 max-w-2xl mx-auto">
+          <BarChart3 className="w-5 h-5 text-primary flex-shrink-0" />
+          <p className="text-sm text-muted-foreground text-center">
+            <span className="font-medium text-foreground">AI Performance Analytics</span> — Get deep insights into listener behavior, engagement patterns, and revenue trends
+          </p>
         </div>
       </section>
 
