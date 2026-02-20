@@ -64,6 +64,19 @@ export function FeedPost({ post }: FeedPostProps) {
     toast.info('Comments feature coming soon!');
   };
 
+  // Determine the display image for the post
+  const getPostImage = () => {
+    if (post.type === 'image' && post.imageUrl) return post.imageUrl;
+    if (post.type === 'video' && post.videoUrl) return post.videoUrl;
+    if (post.type === 'audio' && post.track?.coverArt) return post.track.coverArt;
+    // Fallback for image posts without imageUrl
+    if (post.imageUrl) return post.imageUrl;
+    if (post.track?.coverArt) return post.track.coverArt;
+    return null;
+  };
+
+  const postImage = getPostImage();
+
   return (
     <>
       <motion.article
@@ -104,44 +117,48 @@ export function FeedPost({ post }: FeedPostProps) {
           </button>
         </div>
 
-        {/* Content */}
-        {post.type === 'audio' && post.track && (
+        {/* Content - show image for ALL post types */}
+        {postImage && (
           <div className="relative aspect-square mx-4 rounded-2xl overflow-hidden group">
             <img
-              src={post.track.coverArt}
-              alt={post.track.title}
+              src={postImage}
+              alt={post.track?.title || post.caption || 'Post'}
               className="w-full h-full object-cover"
             />
             
             {/* Overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             
-            {/* Play button */}
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={handlePlay}
-              className={cn(
-                "absolute inset-0 flex items-center justify-center",
-                "opacity-0 group-hover:opacity-100 transition-opacity"
-              )}
-            >
-              <div className={cn(
-                "w-16 h-16 rounded-full bg-primary/90 flex items-center justify-center",
-                isCurrentTrack && isPlaying && "animate-pulse"
-              )}>
-                {isCurrentTrack && isPlaying ? (
-                  <Pause className="w-7 h-7 text-primary-foreground" fill="currentColor" />
-                ) : (
-                  <Play className="w-7 h-7 text-primary-foreground ml-1" fill="currentColor" />
+            {/* Play button for audio posts */}
+            {post.type === 'audio' && post.track && (
+              <motion.button
+                whileTap={{ scale: 0.9 }}
+                onClick={handlePlay}
+                className={cn(
+                  "absolute inset-0 flex items-center justify-center",
+                  "opacity-0 group-hover:opacity-100 transition-opacity"
                 )}
-              </div>
-            </motion.button>
+              >
+                <div className={cn(
+                  "w-16 h-16 rounded-full bg-primary/90 flex items-center justify-center",
+                  isCurrentTrack && isPlaying && "animate-pulse"
+                )}>
+                  {isCurrentTrack && isPlaying ? (
+                    <Pause className="w-7 h-7 text-primary-foreground" fill="currentColor" />
+                  ) : (
+                    <Play className="w-7 h-7 text-primary-foreground ml-1" fill="currentColor" />
+                  )}
+                </div>
+              </motion.button>
+            )}
             
             {/* Track info overlay */}
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-              <p className="font-bold text-white">{post.track.title}</p>
-              <p className="text-sm text-white/70">{formatCount(post.track.plays)} plays</p>
-            </div>
+            {post.track && (
+              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+                <p className="font-bold text-white">{post.track.title}</p>
+                <p className="text-sm text-white/70">{formatCount(post.track.plays)} plays</p>
+              </div>
+            )}
             
             {/* Currently playing indicator */}
             {isCurrentTrack && isPlaying && (
