@@ -11,17 +11,158 @@ import {
   Zap,
   Sparkles,
   Check,
+  AlertCircle,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { generateMusic, generateLyrics, generateCover } from '@/lib/api';
 
 export default function OnlineStudioPage() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [selectedTab, setSelectedTab] = useState('lyrics');
+
+  // Lyrics Generator State
+  const [lyricsPrompt, setLyricsPrompt] = useState('');
+  const [lyricsLoading, setLyricsLoading] = useState(false);
+  const [lyricsResult, setLyricsResult] = useState('');
+  const [lyricsError, setLyricsError] = useState('');
+
+  // Beat/Music Generator State
+  const [beatPrompt, setBeatPrompt] = useState('');
+  const [beatLoading, setBeatLoading] = useState(false);
+  const [beatUrl, setBeatUrl] = useState('');
+  const [beatError, setBeatError] = useState('');
+
+  // Composition Generator State
+  const [compositionPrompt, setCompositionPrompt] = useState('');
+  const [compositionLoading, setCompositionLoading] = useState(false);
+  const [compositionResult, setCompositionResult] = useState('');
+  const [compositionError, setCompositionError] = useState('');
+
+  // Cover Art Generator State
+  const [coverPrompt, setCoverPrompt] = useState('');
+  const [coverLoading, setCoverLoading] = useState(false);
+  const [coverUrl, setCoverUrl] = useState('');
+  const [coverError, setCoverError] = useState('');
+
+  /**
+   * Handle lyrics generation
+   */
+  const handleGenerateLyrics = async () => {
+    if (!lyricsPrompt.trim()) {
+      setLyricsError('Please enter a prompt');
+      return;
+    }
+
+    setLyricsLoading(true);
+    setLyricsError('');
+    setLyricsResult('');
+
+    try {
+      const result = await generateLyrics(lyricsPrompt);
+      setLyricsResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate lyrics';
+      setLyricsError(message);
+      console.error('Lyrics generation error:', error);
+    } finally {
+      setLyricsLoading(false);
+    }
+  };
+
+  /**
+   * Handle beat/music generation
+   */
+  const handleGenerateBeat = async () => {
+    if (!beatPrompt.trim()) {
+      setBeatError('Please enter a prompt');
+      return;
+    }
+
+    setBeatLoading(true);
+    setBeatError('');
+    setBeatUrl('');
+
+    try {
+      const url = await generateMusic(beatPrompt);
+      setBeatUrl(url);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate beat';
+      setBeatError(message);
+      console.error('Beat generation error:', error);
+    } finally {
+      setBeatLoading(false);
+    }
+  };
+
+  /**
+   * Handle full composition generation
+   */
+  const handleGenerateComposition = async () => {
+    if (!compositionPrompt.trim()) {
+      setCompositionError('Please enter a prompt');
+      return;
+    }
+
+    setCompositionLoading(true);
+    setCompositionError('');
+    setCompositionResult('');
+
+    try {
+      const result = await generateLyrics(compositionPrompt);
+      setCompositionResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate composition';
+      setCompositionError(message);
+      console.error('Composition generation error:', error);
+    } finally {
+      setCompositionLoading(false);
+    }
+  };
+
+  /**
+   * Handle cover art generation
+   */
+  const handleGenerateCover = async () => {
+    if (!coverPrompt.trim()) {
+      setCoverError('Please enter a prompt');
+      return;
+    }
+
+    setCoverLoading(true);
+    setCoverError('');
+    setCoverUrl('');
+
+    try {
+      const url = await generateCover(coverPrompt);
+      setCoverUrl(url);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate cover';
+      setCoverError(message);
+      console.error('Cover generation error:', error);
+    } finally {
+      setCoverLoading(false);
+    }
+  };
+
+  /**
+   * Quick template handler for lyrics
+   */
+  const handleLyricsTemplate = (template: string) => {
+    setLyricsPrompt(template);
+  };
+
+  /**
+   * Quick template handler for beats
+   */
+  const handleBeatTemplate = (genre: string) => {
+    setBeatPrompt(`Create a ${genre} beat with engaging rhythm and modern production`);
+  };
 
   if (!user) {
     return (
@@ -182,49 +323,84 @@ export default function OnlineStudioPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Error Alert */}
+                {lyricsError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive">Error</p>
+                      <p className="text-sm text-destructive/80">{lyricsError}</p>
+                    </div>
+                    <button
+                      onClick={() => setLyricsError('')}
+                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="p-4 bg-muted/50 rounded-lg border border-border">
                   <p className="text-sm font-medium mb-3">Generate lyrics by describing your idea:</p>
                   <textarea
                     placeholder="e.g., A love song about summer romance, upbeat pop style..."
                     className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
                     rows={4}
+                    value={lyricsPrompt}
+                    onChange={(e) => setLyricsPrompt(e.target.value)}
+                    disabled={lyricsLoading}
                   />
-                  <Button className="mt-4 w-full" size="lg">
+                  <Button
+                    className="mt-4 w-full"
+                    size="lg"
+                    onClick={handleGenerateLyrics}
+                    disabled={lyricsLoading}
+                  >
                     <Sparkles className="w-4 h-4 mr-2" />
-                    Generate Lyrics
+                    {lyricsLoading ? 'Generating...' : 'Generate Lyrics'}
                   </Button>
                 </div>
 
+                {/* Quick Templates */}
                 <div className="grid grid-cols-2 gap-2">
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 transition-colors text-sm font-medium"
-                  >
-                    <Sparkles className="w-4 h-4 mb-2" />
-                    Love Song
-                  </motion.button>
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 transition-colors text-sm font-medium"
-                  >
-                    <Sparkles className="w-4 h-4 mb-2" />
-                    Hip Hop
-                  </motion.button>
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 transition-colors text-sm font-medium"
-                  >
-                    <Sparkles className="w-4 h-4 mb-2" />
-                    Rap Battle
-                  </motion.button>
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 transition-colors text-sm font-medium"
-                  >
-                    <Sparkles className="w-4 h-4 mb-2" />
-                    Rock Song
-                  </motion.button>
+                  {[
+                    { label: 'Love Song', template: 'A romantic love song about deep connection and commitment' },
+                    { label: 'Hip Hop', template: 'A hip-hop track with clever wordplay and strong messaging' },
+                    { label: 'Rap Battle', template: 'High-energy rap battle lyrics with competitive spirit' },
+                    { label: 'Rock Song', template: 'A powerful rock anthem with emotional depth and energy' },
+                  ].map((item) => (
+                    <motion.button
+                      key={item.label}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleLyricsTemplate(item.template)}
+                      className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={lyricsLoading}
+                    >
+                      <Sparkles className="w-4 h-4 mb-2" />
+                      {item.label}
+                    </motion.button>
+                  ))}
                 </div>
+
+                {/* Display Generated Lyrics */}
+                {lyricsResult && (
+                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-sm">Generated Lyrics</h3>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(lyricsResult);
+                        }}
+                        className="text-xs bg-primary/20 text-primary px-2 py-1 rounded hover:bg-primary/30 transition-colors"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="text-sm whitespace-pre-wrap text-muted-foreground max-h-64 overflow-y-auto">
+                      {lyricsResult}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -244,31 +420,97 @@ export default function OnlineStudioPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Error Alert */}
+                {beatError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive">Error</p>
+                      <p className="text-sm text-destructive/80">{beatError}</p>
+                    </div>
+                    <button
+                      onClick={() => setBeatError('')}
+                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="p-4 bg-muted/50 rounded-lg border border-border">
                   <p className="text-sm font-medium mb-3">Describe the beat you want:</p>
                   <textarea
                     placeholder="e.g., 120 BPM hip-hop beat with heavy bass and trap hi-hats..."
                     className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
                     rows={4}
+                    value={beatPrompt}
+                    onChange={(e) => setBeatPrompt(e.target.value)}
+                    disabled={beatLoading}
                   />
-                  <Button className="mt-4 w-full" size="lg">
+                  <Button
+                    className="mt-4 w-full"
+                    size="lg"
+                    onClick={handleGenerateBeat}
+                    disabled={beatLoading}
+                  >
                     <Music className="w-4 h-4 mr-2" />
-                    Generate Beat
+                    {beatLoading ? 'Generating...' : 'Generate Beat'}
                   </Button>
                 </div>
 
+                {/* Quick Genre Templates */}
                 <div className="grid grid-cols-2 gap-2">
                   {['Hip Hop', 'Pop', 'Electronic', 'R&B', 'Reggae', 'Rock'].map((genre) => (
                     <motion.button
                       key={genre}
                       whileTap={{ scale: 0.95 }}
-                      className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 transition-colors text-sm font-medium"
+                      onClick={() => handleBeatTemplate(genre)}
+                      className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={beatLoading}
                     >
                       <Music className="w-4 h-4 mb-2" />
                       {genre}
                     </motion.button>
                   ))}
                 </div>
+
+                {/* Display Generated Beat with Player */}
+                {beatUrl && (
+                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
+                    <h3 className="font-semibold text-sm">Generated Beat</h3>
+                    <audio
+                      controls
+                      className="w-full"
+                      src={beatUrl}
+                      controlsList="nodownload"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const a = document.createElement('a');
+                          a.href = beatUrl;
+                          a.download = 'beat.mp3';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                        }}
+                      >
+                        Download
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText(beatUrl);
+                        }}
+                      >
+                        Copy URL
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -288,16 +530,41 @@ export default function OnlineStudioPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Error Alert */}
+                {compositionError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive">Error</p>
+                      <p className="text-sm text-destructive/80">{compositionError}</p>
+                    </div>
+                    <button
+                      onClick={() => setCompositionError('')}
+                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
                 <div className="p-4 bg-muted/50 rounded-lg border border-border">
                   <p className="text-sm font-medium mb-3">Describe your song concept:</p>
                   <textarea
                     placeholder="e.g., An emotional ballad about overcoming challenges, indie folk style..."
                     className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
                     rows={4}
+                    value={compositionPrompt}
+                    onChange={(e) => setCompositionPrompt(e.target.value)}
+                    disabled={compositionLoading}
                   />
-                  <Button className="mt-4 w-full" size="lg">
+                  <Button
+                    className="mt-4 w-full"
+                    size="lg"
+                    onClick={handleGenerateComposition}
+                    disabled={compositionLoading}
+                  >
                     <Sparkles className="w-4 h-4 mr-2" />
-                    Create Full Composition
+                    {compositionLoading ? 'Generating...' : 'Create Full Composition'}
                   </Button>
                 </div>
 
@@ -318,6 +585,26 @@ export default function OnlineStudioPage() {
                     ))}
                   </ul>
                 </div>
+
+                {/* Display Generated Composition */}
+                {compositionResult && (
+                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-sm">Generated Composition</h3>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(compositionResult);
+                        }}
+                        className="text-xs bg-primary/20 text-primary px-2 py-1 rounded hover:bg-primary/30 transition-colors"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="text-sm whitespace-pre-wrap text-muted-foreground max-h-64 overflow-y-auto">
+                      {compositionResult}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
