@@ -294,6 +294,10 @@ export default function OnlineStudioPage() {
               <Music className="w-4 h-4" />
               Beats
             </TabsTrigger>
+            <TabsTrigger value="cover" className="gap-2">
+              <Sparkles className="w-4 h-4" />
+              Cover Art
+            </TabsTrigger>
             <TabsTrigger value="composition" className="gap-2">
               <Sparkles className="w-4 h-4" />
               Composition
@@ -371,12 +375,13 @@ export default function OnlineStudioPage() {
                   ].map((item) => (
                     <motion.button
                       key={item.label}
-                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: 1.02, y: -2 }}
+                      whileTap={{ scale: 0.98 }}
                       onClick={() => handleLyricsTemplate(item.template)}
-                      className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed group"
                       disabled={lyricsLoading}
                     >
-                      <Sparkles className="w-4 h-4 mb-2" />
+                      <Sparkles className="w-4 h-4 mb-2 group-hover:text-primary transition-colors" />
                       {item.label}
                     </motion.button>
                   ))}
@@ -384,7 +389,11 @@ export default function OnlineStudioPage() {
 
                 {/* Display Generated Lyrics */}
                 {lyricsResult && (
-                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
+                  >
                     <div className="flex items-center justify-between">
                       <h3 className="font-semibold text-sm">Generated Lyrics</h3>
                       <button
@@ -396,10 +405,26 @@ export default function OnlineStudioPage() {
                         Copy
                       </button>
                     </div>
-                    <div className="text-sm whitespace-pre-wrap text-muted-foreground max-h-64 overflow-y-auto">
-                      {lyricsResult}
+                    <div className="text-sm whitespace-pre-wrap text-muted-foreground max-h-64 overflow-y-auto bg-background/50 p-3 rounded border">
+                      {lyricsResult.split('\n').map((line, index) => {
+                        const trimmedLine = line.trim();
+                        if (trimmedLine.toLowerCase().includes('verse') || trimmedLine.toLowerCase().includes('hook') || trimmedLine.toLowerCase().includes('chorus')) {
+                          return (
+                            <div key={index} className="font-semibold text-primary mb-2 mt-4 first:mt-0">
+                              {trimmedLine}
+                            </div>
+                          );
+                        }
+                        return trimmedLine ? (
+                          <div key={index} className="mb-1">
+                            {trimmedLine}
+                          </div>
+                        ) : (
+                          <br key={index} />
+                        );
+                      })}
                     </div>
-                  </div>
+                  </motion.div>
                 )}
               </CardContent>
             </Card>
@@ -463,12 +488,13 @@ export default function OnlineStudioPage() {
                   {['Hip Hop', 'Pop', 'Electronic', 'R&B', 'Reggae', 'Rock'].map((genre) => (
                     <motion.button
                       key={genre}
-                      whileTap={{ scale: 0.95 }}
+                      whileHover={{ scale: 1.02, y: -2 }}
+                      whileTap={{ scale: 0.98 }}
                       onClick={() => handleBeatTemplate(genre)}
-                      className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed group"
                       disabled={beatLoading}
                     >
-                      <Music className="w-4 h-4 mb-2" />
+                      <Music className="w-4 h-4 mb-2 group-hover:text-primary transition-colors" />
                       {genre}
                     </motion.button>
                   ))}
@@ -476,25 +502,40 @@ export default function OnlineStudioPage() {
 
                 {/* Display Generated Beat with Player */}
                 {beatUrl && (
-                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
+                  >
                     <h3 className="font-semibold text-sm">Generated Beat</h3>
                     <audio
+                      key={beatUrl} // Force re-render when URL changes
                       controls
                       className="w-full"
                       src={beatUrl}
                       controlsList="nodownload"
+                      preload="metadata"
                     />
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          const a = document.createElement('a');
-                          a.href = beatUrl;
-                          a.download = 'beat.mp3';
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(beatUrl);
+                            const blob = await response.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `beat_${Date.now()}.mp3`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                          } catch (error) {
+                            console.error('Download failed:', error);
+                            setBeatError('Failed to download file');
+                          }
                         }}
                       >
                         Download
@@ -509,7 +550,147 @@ export default function OnlineStudioPage() {
                         Copy URL
                       </Button>
                     </div>
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Cover Art Generator Tab */}
+        <TabsContent value="cover" className="px-4 py-6">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  AI Cover Art Generator
+                </CardTitle>
+                <CardDescription>
+                  Generate stunning album cover art with AI-powered design
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Error Alert */}
+                {coverError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive">Error</p>
+                      <p className="text-sm text-destructive/80">{coverError}</p>
+                    </div>
+                    <button
+                      onClick={() => setCoverError('')}
+                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
+                )}
+
+                <div className="p-4 bg-muted/50 rounded-lg border border-border">
+                  <p className="text-sm font-medium mb-3">Describe your cover art concept:</p>
+                  <textarea
+                    placeholder="e.g., A futuristic cityscape with neon lights, cyberpunk style..."
+                    className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+                    rows={4}
+                    value={coverPrompt}
+                    onChange={(e) => setCoverPrompt(e.target.value)}
+                    disabled={coverLoading}
+                  />
+                  <Button
+                    className="mt-4 w-full"
+                    size="lg"
+                    onClick={handleGenerateCover}
+                    disabled={coverLoading || !coverPrompt.trim()}
+                  >
+                    {coverLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Generate Cover Art
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Quick Style Templates */}
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { label: 'Pop', template: 'Vibrant pop album cover with bright colors and modern typography' },
+                    { label: 'Hip Hop', template: 'Urban hip-hop cover with graffiti elements and bold text' },
+                    { label: 'Rock', template: 'Edgy rock album art with dark colors and dramatic lighting' },
+                    { label: 'Electronic', template: 'Futuristic electronic cover with neon lights and digital effects' },
+                  ].map((item) => (
+                    <motion.button
+                      key={item.label}
+                      whileHover={{ scale: 1.02, y: -2 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setCoverPrompt(item.template)}
+                      className="p-3 rounded-lg bg-muted/50 border border-border hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed group"
+                      disabled={coverLoading}
+                    >
+                      <Sparkles className="w-4 h-4 mb-2 group-hover:text-primary transition-colors" />
+                      {item.label}
+                    </motion.button>
+                  ))}
+                </div>
+
+                {/* Display Generated Cover Art */}
+                {coverUrl && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
+                  >
+                    <h3 className="font-semibold text-sm">Generated Cover Art</h3>
+                    <div className="flex justify-center">
+                      <img
+                        src={coverUrl}
+                        alt="Generated cover art"
+                        className="max-w-full h-auto rounded-lg shadow-lg"
+                        style={{ maxHeight: '400px' }}
+                      />
+                    </div>
+                    <div className="flex gap-2 justify-center">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={async () => {
+                          try {
+                            const response = await fetch(coverUrl);
+                            const blob = await response.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `cover_${Date.now()}.jpg`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                          } catch (error) {
+                            console.error('Download failed:', error);
+                            setCoverError('Failed to download image');
+                          }
+                        }}
+                      >
+                        Download
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          navigator.clipboard.writeText(coverUrl);
+                        }}
+                      >
+                        Copy URL
+                      </Button>
+                    </div>
+                  </motion.div>
                 )}
               </CardContent>
             </Card>
@@ -561,10 +742,19 @@ export default function OnlineStudioPage() {
                     className="mt-4 w-full"
                     size="lg"
                     onClick={handleGenerateComposition}
-                    disabled={compositionLoading}
+                    disabled={compositionLoading || !compositionPrompt.trim()}
                   >
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    {compositionLoading ? 'Generating...' : 'Create Full Composition'}
+                    {compositionLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        Create Full Composition
+                      </>
+                    )}
                   </Button>
                 </div>
 
@@ -762,24 +952,6 @@ export default function OnlineStudioPage() {
           </div>
         </TabsContent>
       </Tabs>
-
-      {/* Footer CTA */}
-      <section className="px-4 py-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          className="p-6 rounded-xl bg-gradient-to-r from-primary/20 via-accent/20 to-secondary/20 border border-primary/20 text-center"
-        >
-          <h3 className="font-display font-bold text-lg mb-2">Ready to Create?</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Start producing professional music with AI assistance today
-          </p>
-          <Button size="lg" className="w-full">
-            <Sparkles className="w-4 h-4 mr-2" />
-            Get Started Now
-          </Button>
-        </motion.div>
-      </section>
     </div>
   );
 }

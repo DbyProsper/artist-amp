@@ -2,7 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { generateMusic, generateLyrics, generateCover } from '@/lib/api';
 
 // Mock fetch globally
-global.fetch = vi.fn();
+const mockFetch = vi.fn() as any;
+global.fetch = mockFetch;
 
 describe('API Integration', () => {
   beforeEach(() => {
@@ -15,14 +16,14 @@ describe('API Integration', () => {
       file: 'outputs/music.mp3',
     };
 
-    (global.fetch as any).mockResolvedValueOnce({
+    mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve(mockResponse),
     });
 
     const result = await generateMusic('test prompt');
     expect(result).toBe('http://127.0.0.1:8000/outputs/music.mp3');
-    expect(global.fetch).toHaveBeenCalledWith('http://127.0.0.1:8000/generate-music', {
+    expect(mockFetch).toHaveBeenCalledWith('http://127.0.0.1:8000/generate-music', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: 'test prompt' }),
@@ -35,7 +36,7 @@ describe('API Integration', () => {
       file: 'Verse 1: Sample lyrics...',
     };
 
-    (global.fetch as any).mockResolvedValueOnce({
+    mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve(mockResponse),
     });
@@ -50,7 +51,7 @@ describe('API Integration', () => {
       file: 'outputs/cover.jpg',
     };
 
-    (global.fetch as any).mockResolvedValueOnce({
+    mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve(mockResponse),
     });
@@ -60,7 +61,7 @@ describe('API Integration', () => {
   });
 
   it('should handle API errors', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
+    mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 500,
       json: () => Promise.resolve({ detail: 'Server error' }),
