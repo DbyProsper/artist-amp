@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { generateMusic, generateLyrics, generateCover } from '@/lib/api';
+import { generateMusic, generateBeats, generateLyrics, generateCover } from '@/lib/api';
 
 export default function OnlineStudioPage() {
   const navigate = useNavigate();
@@ -65,7 +65,16 @@ export default function OnlineStudioPage() {
 
     try {
       const result = await generateLyrics(lyricsPrompt);
-      setLyricsResult(result);
+      if (!result.success) {
+        setLyricsError(result.error || result.message || 'Failed to generate lyrics');
+      } else {
+        const lyricText =
+          result.lyrics ||
+          (typeof result.data === 'string' ? result.data : '') ||
+          (result.data?.lyrics ?? '') ||
+          '';
+        setLyricsResult(lyricText || 'No lyrics returned');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate lyrics';
       setLyricsError(message);
@@ -89,8 +98,17 @@ export default function OnlineStudioPage() {
     setBeatUrl('');
 
     try {
-      const url = await generateMusic(beatPrompt);
-      setBeatUrl(url);
+      const result = await generateBeats(beatPrompt);
+      if (!result.success) {
+        setBeatError(result.error || result.message || 'Failed to generate beat');
+      } else {
+        const audioUrl = result.audio_url || result.data?.audio_url || result.data?.file || '';
+        if (!audioUrl) {
+          setBeatError('Backend did not return audio URL');
+        } else {
+          setBeatUrl(audioUrl);
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate beat';
       setBeatError(message);
@@ -115,7 +133,16 @@ export default function OnlineStudioPage() {
 
     try {
       const result = await generateLyrics(compositionPrompt);
-      setCompositionResult(result);
+      if (!result.success) {
+        setCompositionError(result.error || result.message || 'Failed to generate composition');
+      } else {
+        const compositionText =
+          result.lyrics ||
+          (typeof result.data === 'string' ? result.data : '') ||
+          (result.data?.lyrics ?? '') ||
+          '';
+        setCompositionResult(compositionText || 'No composition returned');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate composition';
       setCompositionError(message);
@@ -139,8 +166,17 @@ export default function OnlineStudioPage() {
     setCoverUrl('');
 
     try {
-      const url = await generateCover(coverPrompt);
-      setCoverUrl(url);
+      const result = await generateCover(coverPrompt);
+      if (!result.success) {
+        setCoverError(result.error || result.message || 'Failed to generate cover art');
+      } else {
+        const url = result.cover_url || result.data?.cover_url || result.data?.url || result.data?.file || '';
+        if (!url) {
+          setCoverError('Backend did not return cover image URL');
+        } else {
+          setCoverUrl(url);
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate cover';
       setCoverError(message);

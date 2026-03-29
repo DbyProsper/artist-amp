@@ -1,80 +1,129 @@
-/**
- * API Integration for FastAPI Backend
- * Handles all communication with the local FastAPI server at http://127.0.0.1:8000
- */
+import { API_BASE } from '@/config/api';
 
-const API_BASE_URL = 'http://127.0.0.1:8000';
-
-interface ApiResponse {
-  status: string;
-  file?: string;
+export interface ApiResponse {
+  success: boolean;
+  audio_url?: string;
+  lyrics?: string;
+  cover_url?: string;
+  data?: any;
   error?: string;
+  message?: string;
 }
 
-/**
- * Helper function to make API requests
- * @param endpoint - The endpoint path (e.g., '/generate-music')
- * @param prompt - The user prompt
- * @returns Promise with parsed JSON response
- */
-async function fetchFromAPI(endpoint: string, prompt: string): Promise<ApiResponse> {
+const DEFAULT_TIMEOUT_MS = 20000;
+
+function buildUrl(endpoint: string, prompt?: string): string {
+  const url = `${API_BASE.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  if (prompt && endpoint === '/lyrics') {
+    // keep old query style for lyrics fallback (if needed)
+    const encodedPrompt = encodeURIComponent(prompt);
+    return `${url}?prompt=${encodedPrompt}`;
+  }
+  return url;
+}
+
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'POST',
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+
+    return res;
+  } catch (error) {
+    console.error(`[API] fetch error for ${url}:`, error);
+
+    if ((error as any).name === 'AbortError') {
+      throw new Error('Request timeout');
+    }
+
+    const msg = (error as Error).message || 'Network error';
+    if (/certificate|ssl|secure/i.test(msg)) {
+      throw new Error('SSL error: secure connection issue (if using ngrok, open URL once in browser and accept cert)');
+    }
+
+    throw new Error('Network error or SSL issue');
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+async function callApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: object): Promise<ApiResponse> {
+  const url = buildUrl(endpoint, method === 'GET' && body?.hasOwnProperty('prompt') ? (body as any).prompt : undefined);
+
+  try {
+    const response = await fetchWithTimeout(url, {
+      method,
       headers: {
         'Content-Type': 'application/json',
+        Accept: 'application/json',
       },
-      body: JSON.stringify({ prompt }),
+      body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `API error: ${response.status}`);
+      const text = await response.text().catch(() => '');
+      const errorMessage = text || `HTTP ${response.status}`;
+      return { success: false, error: `API error: ${errorMessage}` };
     }
 
-    return await response.json();
+    const json = await response.json().catch((err) => {
+      console.error('[API] invalid JSON payload', err);
+      return null;
+    });
+
+    if (!json || typeof json !== 'object') {
+      return { success: false, error: 'Invalid JSON response from API' };
+    }
+
+    return {
+      success: Boolean(json.success ?? (json.status === 'success')),
+      audio_url: json.audio_url || json.file || json.data?.audio_url,
+      cover_url: json.cover_url || json.url || json.data?.cover_url,
+      lyrics: json.lyrics || json.data?.lyrics || (typeof json.data === 'string' ? json.data : undefined),
+      data: json.data ?? json,
+      message: json.message ?? '',
+      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
+    };
   } catch (error) {
-    console.error(`Error calling ${endpoint}:`, error);
-    throw error;
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: errMsg };
   }
 }
 
-/**
- * Generate music from a text prompt
- * @param prompt - Description of the beat/music to generate
- * @returns Promise with file path to generated music
- */
-export async function generateMusic(prompt: string): Promise<string> {
-  const response = await fetchFromAPI('/generate-music', prompt);
-  if (response.status !== 'success' || !response.file) {
-    throw new Error('Failed to generate music');
+export async function generateMusic(prompt: string): Promise<ApiResponse> {
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
   }
-  return `${API_BASE_URL}/${response.file}`;
+
+  return callApi('/generate', 'POST', { prompt });
 }
 
-/**
- * Generate lyrics from a text prompt
- * @param prompt - Description of the lyrics to generate
- * @returns Promise with generated lyrics
- */
-export async function generateLyrics(prompt: string): Promise<string> {
-  const response = await fetchFromAPI('/generate-lyrics', prompt);
-  if (response.status !== 'success' || !response.file) {
-    throw new Error('Failed to generate lyrics');
+export async function generateBeats(prompt: string): Promise<ApiResponse> {
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
   }
-  // The file path contains the lyrics content
-  return response.file;
+
+  return callApi('/beats', 'POST', { prompt });
 }
 
-/**
- * Generate cover art from a text prompt
- * @param prompt - Description of the cover art to generate
- * @returns Promise with file path to generated cover image
- */
-export async function generateCover(prompt: string): Promise<string> {
-  const response = await fetchFromAPI('/generate-cover', prompt);
-  if (response.status !== 'success' || !response.file) {
-    throw new Error('Failed to generate cover art');
+export async function generateLyrics(prompt: string): Promise<ApiResponse> {
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
   }
-  return `${API_BASE_URL}/${response.file}`;
+
+  return callApi('/lyrics', 'POST', { prompt });
 }
+
+export async function generateCover(prompt: string): Promise<ApiResponse> {
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
+  }
+
+  return callApi('/cover', 'POST', { prompt });
+}
+
