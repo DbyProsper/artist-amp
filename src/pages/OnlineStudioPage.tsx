@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -13,13 +13,20 @@ import {
   Check,
   AlertCircle,
   X,
+  Play,
+  Pause,
+  RotateCcw,
+  Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { generateMusic, generateBeats, generateLyrics, generateCover } from '@/lib/api';
+import { generateMusic, generateBeats, generateLyrics, generateCover, generateSmart, generateGeminiAudio } from '@/lib/api';
+import { AppLogo } from '@/components/ui/AppLogo';
+import { saveGeneratedAudio, saveCompositionAudio } from '@/lib/aiMusicStorage';
+import { toast } from 'sonner';
 
 export default function OnlineStudioPage() {
   const navigate = useNavigate();
@@ -34,15 +41,26 @@ export default function OnlineStudioPage() {
 
   // Beat/Music Generator State
   const [beatPrompt, setBeatPrompt] = useState('');
+  const [beatMode, setBeatMode] = useState<'musicgen' | 'smart' | 'gemini-audio'>('musicgen');
   const [beatLoading, setBeatLoading] = useState(false);
   const [beatUrl, setBeatUrl] = useState('');
   const [beatError, setBeatError] = useState('');
+  const [beatImprovedPrompt, setBeatImprovedPrompt] = useState('');
+  const [beatPlan, setBeatPlan] = useState('');
 
   // Composition Generator State
   const [compositionPrompt, setCompositionPrompt] = useState('');
   const [compositionLoading, setCompositionLoading] = useState(false);
-  const [compositionResult, setCompositionResult] = useState('');
+  const [compositionLyrics, setCompositionLyrics] = useState('');
+  const [compositionBeatUrl, setCompositionBeatUrl] = useState('');
   const [compositionError, setCompositionError] = useState('');
+  const [compositionSuccess, setCompositionSuccess] = useState('');
+
+  // Audio Playback State
+  const [beatIsPlaying, setBeatIsPlaying] = useState(false);
+  const [compositionBeatIsPlaying, setCompositionBeatIsPlaying] = useState(false);
+  const beatAudioRef = useRef<HTMLAudioElement>(null);
+  const compositionAudioRef = useRef<HTMLAudioElement>(null);
 
   // Cover Art Generator State
   const [coverPrompt, setCoverPrompt] = useState('');
@@ -96,17 +114,76 @@ export default function OnlineStudioPage() {
     setBeatLoading(true);
     setBeatError('');
     setBeatUrl('');
+    setBeatImprovedPrompt('');
+    setBeatPlan('');
+    setBeatIsPlaying(false);
 
     try {
-      const result = await generateBeats(beatPrompt);
+      let result;
+      if (beatMode === 'musicgen') {
+        result = await generateBeats(beatPrompt);
+      } else if (beatMode === 'smart') {
+        result = await generateSmart(beatPrompt);
+      } else if (beatMode === 'gemini-audio') {
+        result = await generateGeminiAudio(beatPrompt);
+      } else {
+        throw new Error('Invalid mode selected');
+      }
+
       if (!result.success) {
         setBeatError(result.error || result.message || 'Failed to generate beat');
       } else {
-        const audioUrl = result.audio_url || result.data?.audio_url || result.data?.file || '';
-        if (!audioUrl) {
-          setBeatError('Backend did not return audio URL');
+        // Handle base64 audio data
+        const audioBase64 = result.audio_base64;
+        if (!audioBase64) {
+          setBeatError('Backend did not return audio data');
+          console.error('[Beat Gen] No audio_base64 in response:', result);
         } else {
-          setBeatUrl(audioUrl);
+          const audioSrc = `data:audio/wav;base64,${audioBase64}`;
+          console.log('[Beat Gen] Generated audio with base64 data');
+          setBeatUrl(audioSrc);
+
+          // Store additional data if available
+          if (result.improved_prompt) {
+            setBeatImprovedPrompt(result.improved_prompt);
+          }
+          if (result.plan) {
+            setBeatPlan(result.plan);
+          }
+
+          // Save to library
+          if (profile?.id) {
+            try {
+              const timestamp = new Date().toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              await saveGeneratedAudio(profile.id, {
+                title: `🎵 ${beatMode.toUpperCase()} - ${beatPrompt.slice(0, 40)}... (${timestamp})`,
+                audio_url: audioSrc,
+                mode: beatMode,
+                improved_prompt: result.improved_prompt,
+                plan: result.plan,
+              });
+              toast.success('Beat saved to library!', {
+                description: 'Find it in your "AI Generated Music" playlist',
+              });
+            } catch (err) {
+              console.error('[Beat Gen] Failed to save to library:', err);
+              toast.error('Beat generated but failed to save to library', {
+                description: 'You can still download it below',
+              });
+            }
+          }
+
+          // Auto-play the beat
+          setTimeout(() => {
+            if (beatAudioRef.current) {
+              beatAudioRef.current.play().catch((err) => {
+                console.error('[Beat Gen] Auto-play failed:', err);
+              });
+            }
+          }, 200);
         }
       }
     } catch (error) {
@@ -119,7 +196,7 @@ export default function OnlineStudioPage() {
   };
 
   /**
-   * Handle full composition generation
+   * Handle full composition generation (lyrics + beat)
    */
   const handleGenerateComposition = async () => {
     if (!compositionPrompt.trim()) {
@@ -129,20 +206,76 @@ export default function OnlineStudioPage() {
 
     setCompositionLoading(true);
     setCompositionError('');
-    setCompositionResult('');
+    setCompositionSuccess('');
+    setCompositionLyrics('');
+    setCompositionBeatUrl('');
+    setCompositionBeatIsPlaying(false);
 
     try {
-      const result = await generateLyrics(compositionPrompt);
-      if (!result.success) {
-        setCompositionError(result.error || result.message || 'Failed to generate composition');
-      } else {
-        const compositionText =
-          result.lyrics ||
-          (typeof result.data === 'string' ? result.data : '') ||
-          (result.data?.lyrics ?? '') ||
-          '';
-        setCompositionResult(compositionText || 'No composition returned');
+      // Generate lyrics first
+      console.log('[Composition] Generating lyrics...');
+      const lyricsResult = await generateLyrics(compositionPrompt);
+      if (!lyricsResult.success) {
+        setCompositionError('Lyrics generation failed: ' + (lyricsResult.error || lyricsResult.message));
+        return;
       }
+
+      const lyrics =
+        lyricsResult.lyrics ||
+        (typeof lyricsResult.data === 'string' ? lyricsResult.data : '') ||
+        (lyricsResult.data?.lyrics ?? '') ||
+        '';
+
+      if (!lyrics) {
+        setCompositionError('No lyrics generated');
+        return;
+      }
+
+      setCompositionLyrics(lyrics);
+      console.log('[Composition] Lyrics generated successfully');
+
+      // Generate beat with same prompt
+      console.log('[Composition] Generating beat...');
+      const beatResult = await generateBeats(compositionPrompt);
+      if (!beatResult.success) {
+        setCompositionError('Beat generation failed: ' + (beatResult.error || beatResult.message));
+        return;
+      }
+
+      const audioUrl = beatResult.audio_url || beatResult.data?.audio_url || beatResult.data?.file || '';
+      if (!audioUrl) {
+        setCompositionError('No beat audio URL returned');
+        return;
+      }
+
+      setCompositionBeatUrl(audioUrl);
+      console.log('[Composition] Beat generated successfully');
+      setCompositionSuccess('✨ Full composition generated! Lyrics and beat ready.');
+
+      // Save composition to library
+      if (profile?.id) {
+        try {
+          console.log('[Composition] Saving to library...');
+          await saveCompositionAudio(profile.id, compositionPrompt, lyrics, audioUrl);
+          toast.success('Composition saved to library!', {
+            description: 'Find it in your "AI Generated Music" playlist',
+          });
+        } catch (err) {
+          console.error('[Composition] Failed to save to library:', err);
+          toast.error('Composition generated but failed to save to library', {
+            description: 'You can still download it above',
+          });
+        }
+      }
+
+      // Auto-play the beat
+      setTimeout(() => {
+        if (compositionAudioRef.current) {
+          compositionAudioRef.current.play().catch((err) => {
+            console.error('[Composition] Auto-play failed:', err);
+          });
+        }
+      }, 300);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate composition';
       setCompositionError(message);
@@ -175,6 +308,9 @@ export default function OnlineStudioPage() {
           setCoverError('Backend did not return cover image URL');
         } else {
           setCoverUrl(url);
+          toast.success('Cover art generated!', {
+            description: 'Ready to use with your tracks',
+          });
         }
       }
     } catch (error) {
@@ -291,13 +427,14 @@ export default function OnlineStudioPage() {
     <div className="min-h-screen pb-36">
       {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-border">
-        <div className="flex items-center gap-4 px-4 h-14">
+        <div className="flex items-center gap-4 px-4 h-16">
           <button
             onClick={() => navigate('/profile')}
             className="p-2 rounded-full hover:bg-muted transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
+          <AppLogo size="lg" />
           <div className="flex-1">
             <h1 className="font-display font-bold text-lg">Online Studio</h1>
             <p className="text-xs text-muted-foreground">AI-Powered Music Production</p>
@@ -499,9 +636,50 @@ export default function OnlineStudioPage() {
                 )}
 
                 <div className="p-4 bg-muted/50 rounded-lg border border-border">
-                  <p className="text-sm font-medium mb-3">Describe the beat you want:</p>
+                  <p className="text-sm font-medium mb-3">Describe the music you want:</p>
+                  
+                  {/* Mode Selector */}
+                  <div className="mb-4">
+                    <p className="text-sm font-medium mb-2">AI Mode:</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => setBeatMode('musicgen')}
+                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                          beatMode === 'musicgen'
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-background hover:border-primary/50'
+                        }`}
+                        disabled={beatLoading}
+                      >
+                        🎧 MusicGen
+                      </button>
+                      <button
+                        onClick={() => setBeatMode('smart')}
+                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                          beatMode === 'smart'
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-background hover:border-primary/50'
+                        }`}
+                        disabled={beatLoading}
+                      >
+                        🧠 Smart AI
+                      </button>
+                      <button
+                        onClick={() => setBeatMode('gemini-audio')}
+                        className={`p-3 rounded-lg border text-sm font-medium transition-all ${
+                          beatMode === 'gemini-audio'
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-background hover:border-primary/50'
+                        }`}
+                        disabled={beatLoading}
+                      >
+                        🎼 Gemini AI
+                      </button>
+                    </div>
+                  </div>
+
                   <textarea
-                    placeholder="e.g., 120 BPM hip-hop beat with heavy bass and trap hi-hats..."
+                    placeholder="e.g., An upbeat pop song with catchy melody and modern production..."
                     className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
                     rows={4}
                     value={beatPrompt}
@@ -515,7 +693,7 @@ export default function OnlineStudioPage() {
                     disabled={beatLoading}
                   >
                     <Music className="w-4 h-4 mr-2" />
-                    {beatLoading ? 'Generating...' : 'Generate Beat'}
+                    {beatLoading ? 'Generating...' : `Generate with ${beatMode === 'musicgen' ? 'MusicGen' : beatMode === 'smart' ? 'Smart AI' : 'Gemini AI'}`}
                   </Button>
                 </div>
 
@@ -541,50 +719,97 @@ export default function OnlineStudioPage() {
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-4"
                   >
-                    <h3 className="font-semibold text-sm">Generated Beat</h3>
-                    <audio
-                      key={beatUrl} // Force re-render when URL changes
-                      controls
-                      className="w-full"
-                      src={beatUrl}
-                      controlsList="nodownload"
-                      preload="metadata"
-                    />
-                    <div className="flex gap-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-sm">🎵 Generated Music ({beatMode.toUpperCase()})</h3>
                       <Button
                         size="sm"
-                        variant="outline"
-                        onClick={async () => {
-                          try {
-                            const response = await fetch(beatUrl);
-                            const blob = await response.blob();
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `beat_${Date.now()}.mp3`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            window.URL.revokeObjectURL(url);
-                          } catch (error) {
-                            console.error('Download failed:', error);
-                            setBeatError('Failed to download file');
-                          }
-                        }}
+                        variant="ghost"
+                        onClick={() => handleGenerateBeat()}
+                        disabled={beatLoading}
                       >
-                        Download
+                        <RotateCcw className="w-4 h-4 mr-1" />
+                        Regenerate
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          navigator.clipboard.writeText(beatUrl);
-                        }}
-                      >
-                        Copy URL
-                      </Button>
+                    </div>
+
+                    {/* Display improved prompt if available */}
+                    {beatImprovedPrompt && (
+                      <div className="p-3 bg-muted/50 rounded-lg border border-border">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">IMPROVED PROMPT:</p>
+                        <p className="text-sm">{beatImprovedPrompt}</p>
+                      </div>
+                    )}
+
+                    {/* Display plan if available */}
+                    {beatPlan && (
+                      <div className="p-3 bg-muted/50 rounded-lg border border-border">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">GENERATION PLAN:</p>
+                        <p className="text-sm whitespace-pre-wrap">{beatPlan}</p>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <audio
+                        ref={beatAudioRef}
+                        className="w-full"
+                        src={beatUrl}
+                        preload="metadata"
+                        onPlay={() => setBeatIsPlaying(true)}
+                        onPause={() => setBeatIsPlaying(false)}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (beatAudioRef.current) {
+                              if (beatIsPlaying) {
+                                beatAudioRef.current.pause();
+                              } else {
+                                beatAudioRef.current.play();
+                              }
+                            }
+                          }}
+                          variant="outline"
+                        >
+                          {beatIsPlaying ? (
+                            <>
+                              <Pause className="w-4 h-4 mr-1" />
+                              Pause
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-4 h-4 mr-1" />
+                              Play
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              // Convert base64 to blob for download
+                              const response = await fetch(beatUrl);
+                              const blob = await response.blob();
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `ai_music_${beatMode}_${Date.now()}.wav`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                            } catch (error) {
+                              console.error('Download failed:', error);
+                              setBeatError('Failed to download file');
+                            }
+                          }}
+                        >
+                          Download
+                        </Button>
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -813,23 +1038,139 @@ export default function OnlineStudioPage() {
                 </div>
 
                 {/* Display Generated Composition */}
-                {compositionResult && (
-                  <div className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3">
+                {compositionSuccess && (
+                  <div className="p-3 bg-green-500/10 border border-green-500/50 rounded-lg flex items-start gap-3">
+                    <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-green-600">Success</p>
+                      <p className="text-sm text-green-600/80">{compositionSuccess}</p>
+                    </div>
+                  </div>
+                )}
+
+                {compositionLyrics && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-4"
+                  >
                     <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-sm">Generated Composition</h3>
+                      <h3 className="font-semibold text-sm">✍️ Generated Lyrics</h3>
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText(compositionResult);
+                          navigator.clipboard.writeText(compositionLyrics);
                         }}
                         className="text-xs bg-primary/20 text-primary px-2 py-1 rounded hover:bg-primary/30 transition-colors"
                       >
                         Copy
                       </button>
                     </div>
-                    <div className="text-sm whitespace-pre-wrap text-muted-foreground max-h-64 overflow-y-auto">
-                      {compositionResult}
+                    <div className="text-sm whitespace-pre-wrap text-muted-foreground max-h-64 overflow-y-auto bg-background/50 p-3 rounded border">
+                      {compositionLyrics.split('\n').map((line, index) => {
+                        const trimmedLine = line.trim();
+                        if (
+                          trimmedLine.toLowerCase().includes('verse') ||
+                          trimmedLine.toLowerCase().includes('hook') ||
+                          trimmedLine.toLowerCase().includes('chorus')
+                        ) {
+                          return (
+                            <div key={index} className="font-semibold text-primary mb-2 mt-4 first:mt-0">
+                              {trimmedLine}
+                            </div>
+                          );
+                        }
+                        return trimmedLine ? (
+                          <div key={index} className="mb-1">
+                            {trimmedLine}
+                          </div>
+                        ) : (
+                          <br key={index} />
+                        );
+                      })}
                     </div>
-                  </div>
+                  </motion.div>
+                )}
+
+                {compositionBeatUrl && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-sm">🎵 Composition Beat (30s loop)</h3>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleGenerateComposition()}
+                        disabled={compositionLoading}
+                      >
+                        <RotateCcw className="w-4 h-4 mr-1" />
+                        Regenerate
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <audio
+                        ref={compositionAudioRef}
+                        className="w-full"
+                        src={compositionBeatUrl}
+                        loop
+                        preload="metadata"
+                        onPlay={() => setCompositionBeatIsPlaying(true)}
+                        onPause={() => setCompositionBeatIsPlaying(false)}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (compositionAudioRef.current) {
+                              if (compositionBeatIsPlaying) {
+                                compositionAudioRef.current.pause();
+                              } else {
+                                compositionAudioRef.current.play();
+                              }
+                            }
+                          }}
+                          variant="outline"
+                        >
+                          {compositionBeatIsPlaying ? (
+                            <>
+                              <Pause className="w-4 h-4 mr-1" />
+                              Pause
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-4 h-4 mr-1" />
+                              Play
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              const response = await fetch(compositionBeatUrl);
+                              const blob = await response.blob();
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `composition_beat_${Date.now()}.mp3`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                            } catch (error) {
+                              console.error('Download failed:', error);
+                              setCompositionError('Failed to download beat');
+                            }
+                          }}
+                        >
+                          Download Beat
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
                 )}
               </CardContent>
             </Card>

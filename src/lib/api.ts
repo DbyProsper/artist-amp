@@ -1,24 +1,26 @@
 import { API_BASE } from '@/config/api';
 
+// AI Backend URL for music generation
+const AI_BASE_URL = 'https://clinical-created-agent-ray.trycloudflare.com';
+
 export interface ApiResponse {
   success: boolean;
   audio_url?: string;
+  audio_base64?: string;
   lyrics?: string;
   cover_url?: string;
   data?: any;
   error?: string;
   message?: string;
+  improved_prompt?: string;
+  plan?: string;
 }
 
-const DEFAULT_TIMEOUT_MS = 20000;
+const DEFAULT_TIMEOUT_MS = 30000; // Increased timeout for AI generation
 
-function buildUrl(endpoint: string, prompt?: string): string {
-  const url = `${API_BASE.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-  if (prompt && endpoint === '/lyrics') {
-    // keep old query style for lyrics fallback (if needed)
-    const encodedPrompt = encodeURIComponent(prompt);
-    return `${url}?prompt=${encodedPrompt}`;
-  }
+function buildUrl(endpoint: string, isAI: boolean = false): string {
+  const baseUrl = isAI ? AI_BASE_URL : API_BASE;
+  const url = `${baseUrl.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
   return url;
 }
 
@@ -52,8 +54,8 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
-async function callApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: object): Promise<ApiResponse> {
-  const url = buildUrl(endpoint, method === 'GET' && body?.hasOwnProperty('prompt') ? (body as any).prompt : undefined);
+async function callApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: object, isAI: boolean = false): Promise<ApiResponse> {
+  const url = buildUrl(endpoint, isAI);
 
   try {
     const response = await fetchWithTimeout(url, {
@@ -81,10 +83,13 @@ async function callApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: 
     }
 
     return {
-      success: Boolean(json.success ?? (json.status === 'success')),
+      success: Boolean(json.success ?? (json.status === 'success') ?? true), // AI endpoints might not have success field
       audio_url: json.audio_url || json.file || json.data?.audio_url,
+      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64,
       cover_url: json.cover_url || json.url || json.data?.cover_url,
       lyrics: json.lyrics || json.data?.lyrics || (typeof json.data === 'string' ? json.data : undefined),
+      improved_prompt: json.improved_prompt || json.data?.improved_prompt,
+      plan: json.plan || json.data?.plan,
       data: json.data ?? json,
       message: json.message ?? '',
       error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
@@ -108,7 +113,23 @@ export async function generateBeats(prompt: string): Promise<ApiResponse> {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApi('/beats', 'POST', { prompt });
+  return callApi('/beats', 'POST', { prompt }, true);
+}
+
+export async function generateSmart(prompt: string): Promise<ApiResponse> {
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
+  }
+
+  return callApi('/generate-smart', 'POST', { prompt }, true);
+}
+
+export async function generateGeminiAudio(prompt: string): Promise<ApiResponse> {
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
+  }
+
+  return callApi('/generate-gemini-audio', 'POST', { prompt }, true);
 }
 
 export async function generateLyrics(prompt: string): Promise<ApiResponse> {
