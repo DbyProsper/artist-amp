@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { generateMusic, generateBeats, generateLyrics, generateCover, generateSmart, generateGeminiAudio } from '@/lib/api';
+import { generateMusic, generateBeats, generateLyrics, generateCover, generateSmart, generateGeminiAudio, generateSong, generateMerch } from '@/lib/api';
 import { AppLogo } from '@/components/ui/AppLogo';
 import { saveGeneratedAudio, saveCompositionAudio } from '@/lib/aiMusicStorage';
 import { toast } from 'sonner';
@@ -67,6 +67,32 @@ export default function OnlineStudioPage() {
   const [coverLoading, setCoverLoading] = useState(false);
   const [coverUrl, setCoverUrl] = useState('');
   const [coverError, setCoverError] = useState('');
+
+  // AI Music Generator State
+  const [musicPrompt, setMusicPrompt] = useState('');
+  const [musicLoading, setMusicLoading] = useState(false);
+  const [musicUrl, setMusicUrl] = useState('');
+  const [musicError, setMusicError] = useState('');
+  const [musicIsPlaying, setMusicIsPlaying] = useState(false);
+  const musicAudioRef = useRef<HTMLAudioElement>(null);
+
+  // Merch Generator State
+  const [merchPrompt, setMerchPrompt] = useState('');
+  const [merchProductType, setMerchProductType] = useState('T-shirt');
+  const [merchLoading, setMerchLoading] = useState(false);
+  const [merchUrl, setMerchUrl] = useState('');
+  const [merchError, setMerchError] = useState('');
+
+  // Saved Items State
+  const [savedItems, setSavedItems] = useState<Array<{
+    id: string;
+    prompt: string;
+    audioUrl?: string;
+    imageUrl?: string;
+    productType?: string;
+    createdAt: string;
+    type: 'audio' | 'merch';
+  }>>([]);
 
   /**
    * Handle lyrics generation
@@ -336,6 +362,122 @@ export default function OnlineStudioPage() {
     setBeatPrompt(`Create a ${genre} beat with engaging rhythm and modern production`);
   };
 
+  /**
+   * Handle music generation with presets
+   */
+  const handleMusicPreset = (preset: string) => {
+    const prompts = {
+      'Afrobeats': 'Afrobeats beat with log drums and deep bass',
+      'Amapiano': 'Amapiano beat with log drums and deep bass',
+      'RnB': 'RnB beat with smooth melodies and soulful vibes',
+      'Trap': 'Trap beat with heavy 808s and hi-hats'
+    };
+    setMusicPrompt(prompts[preset as keyof typeof prompts] || preset);
+  };
+
+  /**
+   * Handle AI music generation
+   */
+  const handleGenerateSong = async () => {
+    if (!musicPrompt.trim()) {
+      setMusicError('Please enter a prompt');
+      return;
+    }
+
+    setMusicLoading(true);
+    setMusicError('');
+    setMusicUrl('');
+    setMusicIsPlaying(false);
+
+    try {
+      const result = await generateSong(musicPrompt);
+      if (!result.success) {
+        setMusicError(result.error || result.message || 'Failed to generate song');
+      } else {
+        const audioUrl = result.audio_url || result.data?.audio_url || '';
+        if (!audioUrl) {
+          setMusicError('Backend did not return audio URL');
+        } else {
+          setMusicUrl(audioUrl);
+          toast.success('Song generated!', {
+            description: 'Ready to play',
+          });
+
+          // Auto-play the song
+          setTimeout(() => {
+            if (musicAudioRef.current) {
+              musicAudioRef.current.play().catch((err) => {
+                console.error('[Music] Auto-play failed:', err);
+              });
+            }
+          }, 300);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate song';
+      setMusicError(message);
+      console.error('Song generation error:', error);
+    } finally {
+      setMusicLoading(false);
+    }
+  };
+
+  /**
+   * Handle merch generation
+   */
+  const handleGenerateMerch = async () => {
+    if (!merchPrompt.trim()) {
+      setMerchError('Please enter a prompt');
+      return;
+    }
+
+    setMerchLoading(true);
+    setMerchError('');
+    setMerchUrl('');
+
+    try {
+      const result = await generateMerch(merchPrompt, merchProductType);
+      if (!result.success) {
+        setMerchError(result.error || result.message || 'Failed to generate merch');
+      } else {
+        const imageUrl = result.cover_url || result.data?.image_url || '';
+        if (!imageUrl) {
+          setMerchError('Backend did not return image URL');
+        } else {
+          setMerchUrl(imageUrl);
+          toast.success('Merch design generated!', {
+            description: 'Ready to save',
+          });
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate merch';
+      setMerchError(message);
+      console.error('Merch generation error:', error);
+    } finally {
+      setMerchLoading(false);
+    }
+  };
+
+  /**
+   * Save generated item
+   */
+  const handleSaveItem = (type: 'audio' | 'merch') => {
+    const newItem = {
+      id: Date.now().toString(),
+      prompt: type === 'audio' ? musicPrompt : merchPrompt,
+      [type === 'audio' ? 'audioUrl' : 'imageUrl']: type === 'audio' ? musicUrl : merchUrl,
+      ...(type === 'merch' && { productType: merchProductType }),
+      createdAt: new Date().toISOString(),
+      type,
+    };
+
+    setSavedItems(prev => [...prev, newItem]);
+    toast.success(`${type === 'audio' ? 'Song' : 'Design'} saved!`, {
+      description: 'Added to your collection',
+    });
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen pb-36">
@@ -466,6 +608,14 @@ export default function OnlineStudioPage() {
             <TabsTrigger value="beats" className="gap-2">
               <Music className="w-4 h-4" />
               Beats
+            </TabsTrigger>
+            <TabsTrigger value="music" className="gap-2">
+              <Music className="w-4 h-4" />
+              Music
+            </TabsTrigger>
+            <TabsTrigger value="merch" className="gap-2">
+              <Sparkles className="w-4 h-4" />
+              Merch
             </TabsTrigger>
             <TabsTrigger value="cover" className="gap-2">
               <Sparkles className="w-4 h-4" />
@@ -756,7 +906,14 @@ export default function OnlineStudioPage() {
                         className="w-full"
                         src={beatUrl}
                         preload="metadata"
-                        onPlay={() => setBeatIsPlaying(true)}
+                        onPlay={() => {
+                          setBeatIsPlaying(true);
+                          // Pause other audio elements
+                          if (musicAudioRef.current) musicAudioRef.current.pause();
+                          if (compositionAudioRef.current) compositionAudioRef.current.pause();
+                          setMusicIsPlaying(false);
+                          setCompositionBeatIsPlaying(false);
+                        }}
                         onPause={() => setBeatIsPlaying(false)}
                       />
                       <div className="flex gap-2">
@@ -810,6 +967,294 @@ export default function OnlineStudioPage() {
                           Download
                         </Button>
                       </div>
+                    </div>
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* AI Music Generator Tab */}
+        <TabsContent value="music" className="px-4 py-6">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Music className="w-5 h-5 text-primary" />
+                  AI Music Generator
+                </CardTitle>
+                <CardDescription>
+                  Generate complete songs with AI-powered music creation
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Error Alert */}
+                {musicError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive">Error</p>
+                      <p className="text-sm text-destructive/80">{musicError}</p>
+                    </div>
+                    <button
+                      onClick={() => setMusicError('')}
+                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="p-4 bg-muted/50 rounded-lg border border-border">
+                  <p className="text-sm font-medium mb-3">Describe the song you want:</p>
+                  
+                  {/* Preset Buttons */}
+                  <div className="mb-4">
+                    <p className="text-sm font-medium mb-2">Quick Presets:</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {['Afrobeats', 'Amapiano', 'RnB', 'Trap'].map((preset) => (
+                        <motion.button
+                          key={preset}
+                          whileHover={{ scale: 1.02, y: -2 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => handleMusicPreset(preset)}
+                          className="p-3 rounded-lg bg-background border border-border hover:border-primary/50 hover:bg-primary/5 transition-all duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed group"
+                          disabled={musicLoading}
+                        >
+                          <Music className="w-4 h-4 mb-2 group-hover:text-primary transition-colors" />
+                          {preset}
+                        </motion.button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <textarea
+                    value={musicPrompt}
+                    onChange={(e) => setMusicPrompt(e.target.value)}
+                    placeholder="e.g., Afrobeats beat with log drums and deep bass"
+                    className="w-full p-3 rounded-lg border border-border bg-background resize-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
+                    rows={3}
+                    disabled={musicLoading}
+                  />
+                </div>
+
+                <Button
+                  onClick={handleGenerateSong}
+                  disabled={musicLoading || !musicPrompt.trim()}
+                  className="w-full"
+                  size="lg"
+                >
+                  {musicLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                      Generating Song...
+                    </>
+                  ) : (
+                    <>
+                      <Music className="w-4 h-4 mr-2" />
+                      Generate Song
+                    </>
+                  )}
+                </Button>
+
+                {/* Display Generated Music */}
+                {musicUrl && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-sm">Generated Song</h3>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSaveItem('audio')}
+                      >
+                        <Save className="w-4 h-4 mr-1" />
+                        Save
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <audio
+                        ref={musicAudioRef}
+                        className="w-full"
+                        src={musicUrl}
+                        preload="metadata"
+                        onPlay={() => {
+                          setMusicIsPlaying(true);
+                          // Pause other audio elements
+                          if (beatAudioRef.current) beatAudioRef.current.pause();
+                          if (compositionAudioRef.current) compositionAudioRef.current.pause();
+                          setBeatIsPlaying(false);
+                          setCompositionBeatIsPlaying(false);
+                        }}
+                        onPause={() => setMusicIsPlaying(false)}
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (musicAudioRef.current) {
+                              if (musicIsPlaying) {
+                                musicAudioRef.current.pause();
+                              } else {
+                                musicAudioRef.current.play();
+                              }
+                            }
+                          }}
+                          variant="outline"
+                        >
+                          {musicIsPlaying ? (
+                            <>
+                              <Pause className="w-4 h-4 mr-1" />
+                              Pause
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-4 h-4 mr-1" />
+                              Play
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              const response = await fetch(musicUrl);
+                              const blob = await response.blob();
+                              const url = window.URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `ai_song_${Date.now()}.wav`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                            } catch (error) {
+                              console.error('Download failed:', error);
+                              setMusicError('Failed to download file');
+                            }
+                          }}
+                        >
+                          Download
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Merch Generator Tab */}
+        <TabsContent value="merch" className="px-4 py-6">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  AI Merch Generator
+                </CardTitle>
+                <CardDescription>
+                  Generate custom merch designs with AI-powered creativity
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Error Alert */}
+                {merchError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive">Error</p>
+                      <p className="text-sm text-destructive/80">{merchError}</p>
+                    </div>
+                    <button
+                      onClick={() => setMerchError('')}
+                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="p-4 bg-muted/50 rounded-lg border border-border">
+                  <p className="text-sm font-medium mb-3">Describe your merch design:</p>
+                  
+                  {/* Product Selector */}
+                  <div className="mb-4">
+                    <p className="text-sm font-medium mb-2">Product Type:</p>
+                    <select
+                      value={merchProductType}
+                      onChange={(e) => setMerchProductType(e.target.value)}
+                      className="w-full p-3 rounded-lg border border-border bg-background focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
+                      disabled={merchLoading}
+                    >
+                      <option value="T-shirt">T-shirt</option>
+                      <option value="Hoodie">Hoodie</option>
+                      <option value="Sweater">Sweater</option>
+                      <option value="Cap">Cap</option>
+                    </select>
+                  </div>
+
+                  <textarea
+                    value={merchPrompt}
+                    onChange={(e) => setMerchPrompt(e.target.value)}
+                    placeholder="e.g., Minimalist logo with geometric shapes and vibrant colors"
+                    className="w-full p-3 rounded-lg border border-border bg-background resize-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
+                    rows={3}
+                    disabled={merchLoading}
+                  />
+                </div>
+
+                <Button
+                  onClick={handleGenerateMerch}
+                  disabled={merchLoading || !merchPrompt.trim()}
+                  className="w-full"
+                  size="lg"
+                >
+                  {merchLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                      Generating Design...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Generate Merch
+                    </>
+                  )}
+                </Button>
+
+                {/* Display Generated Merch */}
+                {merchUrl && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-sm">Generated Design - {merchProductType}</h3>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSaveItem('merch')}
+                      >
+                        <Save className="w-4 h-4 mr-1" />
+                        Save Design
+                      </Button>
+                    </div>
+
+                    <div className="flex justify-center">
+                      <img
+                        src={merchUrl}
+                        alt={`Generated ${merchProductType} design`}
+                        className="max-w-full h-auto rounded-lg border border-border"
+                      />
                     </div>
                   </motion.div>
                 )}
@@ -1116,7 +1561,14 @@ export default function OnlineStudioPage() {
                         src={compositionBeatUrl}
                         loop
                         preload="metadata"
-                        onPlay={() => setCompositionBeatIsPlaying(true)}
+                        onPlay={() => {
+                          setCompositionBeatIsPlaying(true);
+                          // Pause other audio elements
+                          if (beatAudioRef.current) beatAudioRef.current.pause();
+                          if (musicAudioRef.current) musicAudioRef.current.pause();
+                          setBeatIsPlaying(false);
+                          setMusicIsPlaying(false);
+                        }}
                         onPause={() => setCompositionBeatIsPlaying(false)}
                       />
                       <div className="flex gap-2">

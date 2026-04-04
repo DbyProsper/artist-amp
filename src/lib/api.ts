@@ -3,6 +3,9 @@ import { API_BASE } from '@/config/api';
 // AI Backend URL for music generation
 const AI_BASE_URL = 'https://clinical-created-agent-ray.trycloudflare.com';
 
+// Cloud Run URL for new AI features
+const CLOUD_RUN_BASE_URL = 'https://YOUR-CLOUD-RUN-URL';
+
 export interface ApiResponse {
   success: boolean;
   audio_url?: string;
@@ -21,6 +24,11 @@ const DEFAULT_TIMEOUT_MS = 30000; // Increased timeout for AI generation
 function buildUrl(endpoint: string, isAI: boolean = false): string {
   const baseUrl = isAI ? AI_BASE_URL : API_BASE;
   const url = `${baseUrl.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  return url;
+}
+
+function buildCloudRunUrl(endpoint: string): string {
+  const url = `${CLOUD_RUN_BASE_URL.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
   return url;
 }
 
@@ -100,6 +108,52 @@ async function callApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: 
   }
 }
 
+async function callCloudRunApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: object): Promise<ApiResponse> {
+  const url = buildCloudRunUrl(endpoint);
+
+  try {
+    const response = await fetchWithTimeout(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      const errorMessage = text || `HTTP ${response.status}`;
+      return { success: false, error: `API error: ${errorMessage}` };
+    }
+
+    const json = await response.json().catch((err) => {
+      console.error('[CloudRun API] invalid JSON payload', err);
+      return null;
+    });
+
+    if (!json || typeof json !== 'object') {
+      return { success: false, error: 'Invalid JSON response from API' };
+    }
+
+    return {
+      success: Boolean(json.success ?? (json.status === 'success') ?? true),
+      audio_url: json.audio_url || json.file || json.data?.audio_url,
+      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64,
+      cover_url: json.cover_url || json.url || json.data?.cover_url || json.image_url,
+      lyrics: json.lyrics || json.data?.lyrics || (typeof json.data === 'string' ? json.data : undefined),
+      improved_prompt: json.improved_prompt || json.data?.improved_prompt,
+      plan: json.plan || json.data?.plan,
+      data: json.data ?? json,
+      message: json.message ?? '',
+      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
+    };
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: errMsg };
+  }
+}
+
 export async function generateMusic(prompt: string): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
@@ -146,5 +200,21 @@ export async function generateCover(prompt: string): Promise<ApiResponse> {
   }
 
   return callApi('/cover', 'POST', { prompt });
+}
+
+export async function generateSong(prompt: string): Promise<ApiResponse> {
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
+  }
+
+  return callCloudRunApi('/generate-song', 'POST', { prompt });
+}
+
+export async function generateMerch(prompt: string, productType: string): Promise<ApiResponse> {
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
+  }
+
+  return callCloudRunApi('/generate-merch', 'POST', { prompt, product_type: productType });
 }
 
