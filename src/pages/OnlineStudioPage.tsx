@@ -21,11 +21,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { generateMusic, generateBeats, generateLyrics, generateCover, generateSmart, generateGeminiAudio, generateSong, generateMerch } from '@/lib/api';
 import { AppLogo } from '@/components/ui/AppLogo';
-import { saveGeneratedAudio, saveCompositionAudio } from '@/lib/aiMusicStorage';
+import { saveGeneratedAudio, saveCompositionAudio, saveGeneratedLyrics } from '@/lib/aiMusicStorage';
 import { toast } from 'sonner';
 
 export default function OnlineStudioPage() {
@@ -38,6 +39,7 @@ export default function OnlineStudioPage() {
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [lyricsResult, setLyricsResult] = useState('');
   const [lyricsError, setLyricsError] = useState('');
+  const [lyricsModel, setLyricsModel] = useState('gemini');
 
   // Beat/Music Generator State
   const [beatPrompt, setBeatPrompt] = useState('');
@@ -108,7 +110,7 @@ export default function OnlineStudioPage() {
     setLyricsResult('');
 
     try {
-      const result = await generateLyrics(lyricsPrompt);
+      const result = await generateLyrics(lyricsPrompt, lyricsModel);
       if (!result.success) {
         setLyricsError(result.error || result.message || 'Failed to generate lyrics');
       } else {
@@ -118,6 +120,29 @@ export default function OnlineStudioPage() {
           (result.data?.lyrics ?? '') ||
           '';
         setLyricsResult(lyricText || 'No lyrics returned');
+        
+        // Save to playlist
+        if (profile?.id) {
+          try {
+            const timestamp = new Date().toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            await saveGeneratedLyrics(profile.id, {
+              title: `🎵 AI Lyrics - ${lyricsPrompt.slice(0, 40)}... (${timestamp})`,
+              content: lyricText,
+              model: lyricsModel,
+            });
+            toast.success('Lyrics saved to library!', {
+              description: 'Find it in your "AI Generated Music" playlist',
+            });
+          } catch (err) {
+            console.error('[Lyrics Gen] Failed to save to library:', err);
+            toast.error('Lyrics generated but failed to save to library', {
+              description: 'You can still copy them above',
+            });
+          }
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate lyrics';
@@ -669,6 +694,21 @@ export default function OnlineStudioPage() {
 
                 <div className="p-4 bg-muted/50 rounded-lg border border-border">
                   <p className="text-sm font-medium mb-3">Generate lyrics by describing your idea:</p>
+                  
+                  {/* Model Selection */}
+                  <div className="mb-4">
+                    <label className="text-sm font-medium mb-2 block">AI Model:</label>
+                    <Select value={lyricsModel} onValueChange={setLyricsModel}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="gemini">Gemini AI</SelectItem>
+                        <SelectItem value="musicgen">MusicGen</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
                   <textarea
                     placeholder="e.g., A love song about summer romance, upbeat pop style..."
                     className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"

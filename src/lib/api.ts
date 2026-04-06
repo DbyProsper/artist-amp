@@ -186,12 +186,12 @@ export async function generateGeminiAudio(prompt: string): Promise<ApiResponse> 
   return callApi('/generate-gemini-audio', 'POST', { prompt }, true);
 }
 
-export async function generateLyrics(prompt: string): Promise<ApiResponse> {
+export async function generateLyrics(prompt: string, model: string = 'gemini'): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApi('/lyrics', 'POST', { prompt });
+  return callApi('/lyrics/generate', 'POST', { prompt, model });
 }
 
 export async function generateCover(prompt: string): Promise<ApiResponse> {
