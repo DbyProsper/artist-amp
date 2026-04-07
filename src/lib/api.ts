@@ -4,7 +4,7 @@ import { API_BASE } from '@/config/api';
 const AI_BASE_URL = 'https://clinical-created-agent-ray.trycloudflare.com';
 
 // Cloud Run URL for new AI features
-const CLOUD_RUN_BASE_URL = 'https://YOUR-CLOUD-RUN-URL';
+const CLOUD_RUN_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://musicinsta-api-asyfiq555a-uc.a.run.app';
 
 export interface ApiResponse {
   success: boolean;
@@ -216,5 +216,181 @@ export async function generateMerch(prompt: string, productType: string): Promis
   }
 
   return callCloudRunApi('/generate-merch', 'POST', { prompt, product_type: productType });
+}
+
+export async function generateMusicFromAudio(audioFile: File, prompt: string, model: string = 'gemini'): Promise<ApiResponse> {
+  const formData = new FormData();
+  formData.append('file', audioFile);
+  formData.append('prompt', prompt);
+  formData.append('model', model);
+
+  const url = buildCloudRunUrl('/music/generate');
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      const errorMessage = text || `HTTP ${response.status}`;
+      return { success: false, error: `API error: ${errorMessage}` };
+    }
+
+    const json = await response.json().catch((err) => {
+      console.error('[API] invalid JSON payload', err);
+      return null;
+    });
+
+    if (!json || typeof json !== 'object') {
+      return { success: false, error: 'Invalid JSON response from API' };
+    }
+
+    return {
+      success: Boolean(json.success ?? true),
+      audio_url: json.audio_url || json.file || json.data?.audio_url,
+      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64,
+      data: json.data ?? json,
+      message: json.message ?? '',
+      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
+    };
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: errMsg };
+  }
+}
+
+export async function generateImageFromUpload(imageFile: File, prompt: string, model: string = 'gemini'): Promise<ApiResponse> {
+  const formData = new FormData();
+  formData.append('file', imageFile);
+  formData.append('prompt', prompt);
+  formData.append('model', model);
+
+  const url = buildCloudRunUrl('/image/generate');
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      const errorMessage = text || `HTTP ${response.status}`;
+      return { success: false, error: `API error: ${errorMessage}` };
+    }
+
+    const json = await response.json().catch((err) => {
+      console.error('[API] invalid JSON payload', err);
+      return null;
+    });
+
+    if (!json || typeof json !== 'object') {
+      return { success: false, error: 'Invalid JSON response from API' };
+    }
+
+    return {
+      success: Boolean(json.success ?? true),
+      cover_url: json.cover_url || json.url || json.image_url || json.data?.cover_url,
+      data: json.data ?? json,
+      message: json.message ?? '',
+      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
+    };
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: errMsg };
+  }
+}
+
+export async function enhanceAudio(audioFile: File, enhancementType: string = 'denoise'): Promise<ApiResponse> {
+  const formData = new FormData();
+  formData.append('file', audioFile);
+  formData.append('type', enhancementType);
+
+  const url = buildCloudRunUrl('/audio/enhance');
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      const errorMessage = text || `HTTP ${response.status}`;
+      return { success: false, error: `API error: ${errorMessage}` };
+    }
+
+    const json = await response.json().catch((err) => {
+      console.error('[API] invalid JSON payload', err);
+      return null;
+    });
+
+    if (!json || typeof json !== 'object') {
+      return { success: false, error: 'Invalid JSON response from API' };
+    }
+
+    return {
+      success: Boolean(json.success ?? true),
+      audio_url: json.audio_url || json.file || json.data?.audio_url,
+      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64,
+      data: json.data ?? json,
+      message: json.message ?? '',
+      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
+    };
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: errMsg };
+  }
+}
+
+export async function chatWithAI(message: string, model: string = 'gemini', conversationHistory?: Array<{role: string; content: string}>): Promise<ApiResponse> {
+  if (!message?.trim()) {
+    return { success: false, error: 'Message cannot be empty' };
+  }
+
+  const payload: any = {
+    message,
+    model,
+  };
+
+  if (conversationHistory && conversationHistory.length > 0) {
+    payload.conversation_history = conversationHistory;
+  }
+
+  const url = buildCloudRunUrl('/chat');
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      const errorMessage = text || `HTTP ${response.status}`;
+      return { success: false, error: `API error: ${errorMessage}` };
+    }
+
+    const json = await response.json().catch((err) => {
+      console.error('[API] invalid JSON payload', err);
+      return null;
+    });
+
+    if (!json || typeof json !== 'object') {
+      return { success: false, error: 'Invalid JSON response from API' };
+    }
+
+    return {
+      success: Boolean(json.success ?? true),
+      data: json.data ?? json,
+      message: (json.response || json.message) ?? '',
+      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
+    };
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: errMsg };
+  }
 }
 

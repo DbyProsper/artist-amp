@@ -24,9 +24,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { generateMusic, generateBeats, generateLyrics, generateCover, generateSmart, generateGeminiAudio, generateSong, generateMerch } from '@/lib/api';
+import { generateMusic, generateBeats, generateLyrics, generateCover, generateSmart, generateGeminiAudio, generateSong, generateMerch, generateMusicFromAudio, generateImageFromUpload, enhanceAudio } from '@/lib/api';
 import { AppLogo } from '@/components/ui/AppLogo';
 import { saveGeneratedAudio, saveCompositionAudio, saveGeneratedLyrics } from '@/lib/aiMusicStorage';
+import { FileUpload } from '@/components/ui/FileUpload';
+import { ImageDisplay } from '@/components/ui/ImageDisplay';
+import { AIChat } from '@/components/ui/AIChat';
 import { toast } from 'sonner';
 
 export default function OnlineStudioPage() {
@@ -95,6 +98,40 @@ export default function OnlineStudioPage() {
     createdAt: string;
     type: 'audio' | 'merch';
   }>>([]);
+
+  // File Upload State
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [uploadedAudioUrl, setUploadedAudioUrl] = useState('');
+  const [uploadedImageUrl, setUploadedImageUrl] = useState('');
+
+  // Music Generation from Audio State
+  const [musicFromAudioPrompt, setMusicFromAudioPrompt] = useState('');
+  const [musicFromAudioLoading, setMusicFromAudioLoading] = useState(false);
+  const [musicFromAudioError, setMusicFromAudioError] = useState('');
+  const [musicFromAudioUrl, setMusicFromAudioUrl] = useState('');
+  const [musicFromAudioModel, setMusicFromAudioModel] = useState('gemini');
+  const musicFromAudioRef = useRef<HTMLAudioElement>(null);
+
+  // Image Generation from Upload State
+  const [imageFromUploadPrompt, setImageFromUploadPrompt] = useState('');
+  const [imageFromUploadLoading, setImageFromUploadLoading] = useState(false);
+  const [imageFromUploadError, setImageFromUploadError] = useState('');
+  const [imageFromUploadUrl, setImageFromUploadUrl] = useState('');
+  const [imageFromUploadModel, setImageFromUploadModel] = useState('gemini');
+
+  // Audio Enhancement State
+  const [enhancementFile, setEnhancementFile] = useState<File | null>(null);
+  const [enhancementType, setEnhancementType] = useState('denoise');
+  const [enhancementLoading, setEnhancementLoading] = useState(false);
+  const [enhancementError, setEnhancementError] = useState('');
+  const [enhancedAudioUrl, setEnhancedAudioUrl] = useState('');
+  const enhancedAudioRef = useRef<HTMLAudioElement>(null);
+
+  // Generated Image URLs State
+  const [generatedImageUrl, setGeneratedImageUrl] = useState('');
+  const [generatedCoverUrl, setGeneratedCoverUrl] = useState('');
+  const [generatedMerchUrl, setGeneratedMerchUrl] = useState('');
 
   /**
    * Handle lyrics generation
@@ -503,6 +540,143 @@ export default function OnlineStudioPage() {
     });
   };
 
+  /**
+   * Handle music generation from audio file
+   */
+  const handleGenerateMusicFromAudio = async () => {
+    if (!audioFile) {
+      setMusicFromAudioError('Please upload an audio file');
+      return;
+    }
+    if (!musicFromAudioPrompt.trim()) {
+      setMusicFromAudioError('Please enter a prompt');
+      return;
+    }
+
+    setMusicFromAudioLoading(true);
+    setMusicFromAudioError('');
+    setMusicFromAudioUrl('');
+
+    try {
+      const result = await generateMusicFromAudio(audioFile, musicFromAudioPrompt, musicFromAudioModel);
+      if (!result.success) {
+        setMusicFromAudioError(result.error || 'Failed to generate music');
+      } else {
+        const audioBase64 = result.audio_base64;
+        if (!audioBase64) {
+          setMusicFromAudioError('Backend did not return audio data');
+        } else {
+          const audioSrc = `data:audio/wav;base64,${audioBase64}`;
+          setMusicFromAudioUrl(audioSrc);
+          toast.success('Music generated!', { description: 'Ready to play' });
+
+          // Save to playlist
+          if (profile?.id) {
+            try {
+              await saveGeneratedAudio(profile.id, {
+                title: `🎵 Music from Audio - ${musicFromAudioPrompt.slice(0, 40)}...`,
+                audio_url: audioSrc,
+                mode: musicFromAudioModel,
+              });
+              toast.success('Saved to library!', { description: 'Find it in your "AI Generated Music" playlist' });
+            } catch (err) {
+              console.error('Failed to save:', err);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      setMusicFromAudioError(error instanceof Error ? error.message : 'Failed to generate music');
+    } finally {
+      setMusicFromAudioLoading(false);
+    }
+  };
+
+  /**
+   * Handle image generation from upload
+   */
+  const handleGenerateImageFromUpload = async () => {
+    if (!imageFile) {
+      setImageFromUploadError('Please upload an image file');
+      return;
+    }
+    if (!imageFromUploadPrompt.trim()) {
+      setImageFromUploadError('Please enter a prompt');
+      return;
+    }
+
+    setImageFromUploadLoading(true);
+    setImageFromUploadError('');
+    setImageFromUploadUrl('');
+
+    try {
+      const result = await generateImageFromUpload(imageFile, imageFromUploadPrompt, imageFromUploadModel);
+      if (!result.success) {
+        setImageFromUploadError(result.error || 'Failed to generate image');
+      } else {
+        const imageUrl = result.cover_url || result.data?.image_url || '';
+        if (!imageUrl) {
+          setImageFromUploadError('Backend did not return image URL');
+        } else {
+          setImageFromUploadUrl(imageUrl);
+          setGeneratedImageUrl(imageUrl);
+          toast.success('Image generated!', { description: 'Ready to save' });
+        }
+      }
+    } catch (error) {
+      setImageFromUploadError(error instanceof Error ? error.message : 'Failed to generate image');
+    } finally {
+      setImageFromUploadLoading(false);
+    }
+  };
+
+  /**
+   * Handle audio enhancement
+   */
+  const handleEnhanceAudio = async () => {
+    if (!enhancementFile) {
+      setEnhancementError('Please upload an audio file');
+      return;
+    }
+
+    setEnhancementLoading(true);
+    setEnhancementError('');
+    setEnhancedAudioUrl('');
+
+    try {
+      const result = await enhanceAudio(enhancementFile, enhancementType);
+      if (!result.success) {
+        setEnhancementError(result.error || 'Failed to enhance audio');
+      } else {
+        const audioBase64 = result.audio_base64;
+        if (!audioBase64) {
+          setEnhancementError('Backend did not return audio data');
+        } else {
+          const audioSrc = `data:audio/wav;base64,${audioBase64}`;
+          setEnhancedAudioUrl(audioSrc);
+          toast.success('Audio enhanced!', { description: 'Ready to download' });
+
+          if (profile?.id) {
+            try {
+              await saveGeneratedAudio(profile.id, {
+                title: `🎵 Enhanced Audio - ${enhancementType}`,
+                audio_url: audioSrc,
+                mode: `enhancement_${enhancementType}`,
+              });
+              toast.success('Saved to library!', { description: 'Find it in your "AI Generated Music" playlist' });
+            } catch (err) {
+              console.error('Failed to save:', err);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      setEnhancementError(error instanceof Error ? error.message : 'Failed to enhance audio');
+    } finally {
+      setEnhancementLoading(false);
+    }
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen pb-36">
@@ -638,6 +812,10 @@ export default function OnlineStudioPage() {
               <Music className="w-4 h-4" />
               Music
             </TabsTrigger>
+            <TabsTrigger value="music-audio" className="gap-2">
+              <Music className="w-4 h-4" />
+              Music from Audio
+            </TabsTrigger>
             <TabsTrigger value="merch" className="gap-2">
               <Sparkles className="w-4 h-4" />
               Merch
@@ -646,13 +824,25 @@ export default function OnlineStudioPage() {
               <Sparkles className="w-4 h-4" />
               Cover Art
             </TabsTrigger>
+            <TabsTrigger value="image-upload" className="gap-2">
+              <Sparkles className="w-4 h-4" />
+              Image from Upload
+            </TabsTrigger>
             <TabsTrigger value="composition" className="gap-2">
               <Sparkles className="w-4 h-4" />
               Composition
             </TabsTrigger>
+            <TabsTrigger value="enhancement" className="gap-2">
+              <Sliders className="w-4 h-4" />
+              Enhancement
+            </TabsTrigger>
             <TabsTrigger value="mixing" className="gap-2">
               <Sliders className="w-4 h-4" />
               Mixing
+            </TabsTrigger>
+            <TabsTrigger value="chat" className="gap-2">
+              <Wand2 className="w-4 h-4" />
+              AI Chat
             </TabsTrigger>
             <TabsTrigger value="analytics" className="gap-2">
               <BarChart3 className="w-4 h-4" />
@@ -1816,6 +2006,306 @@ export default function OnlineStudioPage() {
                 <Button className="w-full" size="lg" variant="outline">
                   View Detailed Analytics Dashboard
                 </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Music from Audio Tab */}
+        <TabsContent value="music-audio" className="px-4 py-6">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Music className="w-5 h-5 text-primary" />
+                  Music from Audio
+                </CardTitle>
+                <CardDescription>
+                  Transform uploaded audio with AI-powered music generation
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {musicFromAudioError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive">Error</p>
+                      <p className="text-sm text-destructive/80">{musicFromAudioError}</p>
+                    </div>
+                    <button
+                      onClick={() => setMusicFromAudioError('')}
+                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Upload Audio File:</p>
+                  <FileUpload
+                    onFileSelect={setAudioFile}
+                    accept="audio/*"
+                    maxSizeMB={50}
+                    disabled={musicFromAudioLoading}
+                    label="Choose audio file or drag and drop"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">AI Model:</label>
+                    <Select value={musicFromAudioModel} onValueChange={setMusicFromAudioModel} disabled={musicFromAudioLoading}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="gemini">Gemini AI</SelectItem>
+                        <SelectItem value="musicgen">MusicGen</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium mb-2">Describe the transformation:</p>
+                  <textarea
+                    placeholder="e.g., Make this more upbeat, add electronic elements..."
+                    className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
+                    rows={4}
+                    value={musicFromAudioPrompt}
+                    onChange={(e) => setMusicFromAudioPrompt(e.target.value)}
+                    disabled={musicFromAudioLoading}
+                  />
+                  <Button
+                    className="mt-4 w-full"
+                    size="lg"
+                    onClick={handleGenerateMusicFromAudio}
+                    disabled={musicFromAudioLoading || !audioFile}
+                  >
+                    <Music className="w-4 h-4 mr-2" />
+                    {musicFromAudioLoading ? 'Generating...' : 'Generate Music'}
+                  </Button>
+                </div>
+
+                {musicFromAudioUrl && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
+                  >
+                    <h3 className="font-semibold text-sm">Generated Music</h3>
+                    <audio
+                      ref={musicFromAudioRef}
+                      src={musicFromAudioUrl}
+                      controls
+                      className="w-full"
+                    />
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Image from Upload Tab */}
+        <TabsContent value="image-upload" className="px-4 py-6">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  Image from Upload
+                </CardTitle>
+                <CardDescription>
+                  Generate images based on uploaded reference images
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {imageFromUploadError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive">Error</p>
+                      <p className="text-sm text-destructive/80">{imageFromUploadError}</p>
+                    </div>
+                    <button
+                      onClick={() => setImageFromUploadError('')}
+                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Upload Reference Image:</p>
+                  <FileUpload
+                    onFileSelect={setImageFile}
+                    accept="image/*"
+                    maxSizeMB={10}
+                    disabled={imageFromUploadLoading}
+                    label="Choose image file or drag and drop"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">AI Model:</label>
+                    <Select value={imageFromUploadModel} onValueChange={setImageFromUploadModel} disabled={imageFromUploadLoading}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="gemini">Gemini AI</SelectItem>
+                        <SelectItem value="musicgen">MusicGen</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium mb-2">Describe the image:</p>
+                  <textarea
+                    placeholder="e.g., Make the colors more vibrant, change the style to abstract..."
+                    className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
+                    rows={4}
+                    value={imageFromUploadPrompt}
+                    onChange={(e) => setImageFromUploadPrompt(e.target.value)}
+                    disabled={imageFromUploadLoading}
+                  />
+                  <Button
+                    className="mt-4 w-full"
+                    size="lg"
+                    onClick={handleGenerateImageFromUpload}
+                    disabled={imageFromUploadLoading || !imageFile}
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    {imageFromUploadLoading ? 'Generating...' : 'Generate Image'}
+                  </Button>
+                </div>
+
+                {imageFromUploadUrl && (
+                  <ImageDisplay
+                    imageUrl={imageFromUploadUrl}
+                    title="Generated Image"
+                    onCopy={() => {
+                      navigator.clipboard.writeText(imageFromUploadUrl);
+                      toast.success('URL copied to clipboard!');
+                    }}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Audio Enhancement Tab */}
+        <TabsContent value="enhancement" className="px-4 py-6">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-primary" />
+                  Audio Enhancement
+                </CardTitle>
+                <CardDescription>
+                  Enhance and process audio files with AI
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {enhancementError && (
+                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-destructive">Error</p>
+                      <p className="text-sm text-destructive/80">{enhancementError}</p>
+                    </div>
+                    <button
+                      onClick={() => setEnhancementError('')}
+                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Upload Audio File:</p>
+                  <FileUpload
+                    onFileSelect={setEnhancementFile}
+                    accept="audio/*"
+                    maxSizeMB={50}
+                    disabled={enhancementLoading}
+                    label="Choose audio file or drag and drop"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Enhancement Type:</label>
+                    <Select value={enhancementType} onValueChange={setEnhancementType} disabled={enhancementLoading}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="denoise">Denoise</SelectItem>
+                        <SelectItem value="enhance">Enhance</SelectItem>
+                        <SelectItem value="normalize">Normalize</SelectItem>
+                        <SelectItem value="reverb">Reverb</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Button
+                  className="w-full"
+                  size="lg"
+                  onClick={handleEnhanceAudio}
+                  disabled={enhancementLoading || !enhancementFile}
+                >
+                  <Sliders className="w-4 h-4 mr-2" />
+                  {enhancementLoading ? 'Processing...' : 'Enhance Audio'}
+                </Button>
+
+                {enhancedAudioUrl && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
+                  >
+                    <h3 className="font-semibold text-sm">Enhanced Audio</h3>
+                    <audio
+                      ref={enhancedAudioRef}
+                      src={enhancedAudioUrl}
+                      controls
+                      className="w-full"
+                    />
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* AI Chat Tab */}
+        <TabsContent value="chat" className="px-4 py-6">
+          <div className="space-y-4">
+            <Card className="h-[600px] flex flex-col">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Wand2 className="w-5 h-5 text-primary" />
+                  AI Chat Assistant
+                </CardTitle>
+                <CardDescription>
+                  Chat with AI to get creative suggestions and assistance
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-hidden">
+                <AIChat
+                  title="Music Production Assistant"
+                  description="Ask me anything about music generation and production"
+                />
               </CardContent>
             </Card>
           </div>
