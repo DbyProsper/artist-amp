@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { PlayerProvider } from "@/context/PlayerContext";
-import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/FirebaseAuthContext";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { MiniPlayer, FullPlayer } from "@/components/player/MusicPlayer";
 import { FloatingPlayerButton } from "@/components/player/FloatingPlayerButton";

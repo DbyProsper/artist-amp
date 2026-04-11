@@ -30,6 +30,7 @@ import { saveGeneratedAudio, saveCompositionAudio, saveGeneratedLyrics } from '@
 import { FileUpload } from '@/components/ui/FileUpload';
 import { ImageDisplay } from '@/components/ui/ImageDisplay';
 import { AIChat } from '@/components/ui/AIChat';
+import { SongService, Song } from '@/lib/songService';
 import { toast } from 'sonner';
 
 export default function OnlineStudioPage() {
@@ -132,6 +133,23 @@ export default function OnlineStudioPage() {
   const [generatedImageUrl, setGeneratedImageUrl] = useState('');
   const [generatedCoverUrl, setGeneratedCoverUrl] = useState('');
   const [generatedMerchUrl, setGeneratedMerchUrl] = useState('');
+
+  // Firebase Songs State
+  const [userSongs, setUserSongs] = useState<Song[]>([]);
+  const [songsLoading, setSongsLoading] = useState(false);
+
+  // Subscribe to real-time song updates
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    setSongsLoading(true);
+    const unsubscribe = SongService.subscribeToUserSongs(user.uid, (songs) => {
+      setUserSongs(songs);
+      setSongsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user?.uid]);
 
   /**
    * Handle lyrics generation
@@ -446,23 +464,60 @@ export default function OnlineStudioPage() {
       return;
     }
 
+    if (!user?.uid) {
+      setMusicError('Please sign in to generate songs');
+      return;
+    }
+
     setMusicLoading(true);
     setMusicError('');
     setMusicUrl('');
     setMusicIsPlaying(false);
 
+    let songId: string | null = null;
+
     try {
+      // Create song entry in Firestore first
+      songId = await SongService.createSongForGeneration(
+        user.uid,
+        `AI Generated Song - ${musicPrompt.slice(0, 30)}...`,
+        musicPrompt,
+        'gemini'
+      );
+
+      // Call backend API
       const result = await generateSong(musicPrompt);
+
       if (!result.success) {
         setMusicError(result.error || result.message || 'Failed to generate song');
+        if (songId) {
+          await SongService.markSongAsFailed(songId, result.error);
+        }
       } else {
         const audioUrl = result.audio_url || result.data?.audio_url || '';
+        const coverUrl = result.cover_url || result.data?.cover_url || '';
+        const lyrics = result.lyrics || result.data?.lyrics || '';
+
         if (!audioUrl) {
           setMusicError('Backend did not return audio URL');
+          if (songId) {
+            await SongService.markSongAsFailed(songId, 'No audio URL returned');
+          }
         } else {
           setMusicUrl(audioUrl);
+
+          // Update song with results
+          if (songId) {
+            await SongService.updateSongWithResults(songId, {
+              audioUrl,
+              coverUrl: coverUrl || undefined,
+              lyrics: lyrics || undefined,
+              genre: 'AI Generated',
+            });
+          }
+
           toast.success('Song generated!', {
-            description: 'Ready to play',
+            description: 'Saved to your collection',
           });
 
           // Auto-play the song
@@ -479,6 +534,10 @@ export default function OnlineStudioPage() {
       const message = error instanceof Error ? error.message : 'Failed to generate song';
       setMusicError(message);
       console.error('Song generation error:', error);
+
+      if (songId) {
+        await SongService.markSongAsFailed(songId, message);
+      }
     } finally {
       setMusicLoading(false);
     }
@@ -843,6 +902,10 @@ export default function OnlineStudioPage() {
             <TabsTrigger value="chat" className="gap-2">
               <Wand2 className="w-4 h-4" />
               AI Chat
+            </TabsTrigger>
+            <TabsTrigger value="my-songs" className="gap-2">
+              <Music className="w-4 h-4" />
+              My Songs
             </TabsTrigger>
             <TabsTrigger value="analytics" className="gap-2">
               <BarChart3 className="w-4 h-4" />
@@ -1920,6 +1983,139 @@ export default function OnlineStudioPage() {
                   <Sliders className="w-4 h-4 mr-2" />
                   Upload Track for Mixing
                 </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* My Songs Tab */}
+        <TabsContent value="my-songs" className="px-4 py-6">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Music className="w-5 h-5 text-primary" />
+                  My Generated Songs
+                </CardTitle>
+                <CardDescription>
+                  View all your AI-generated songs and music
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {songsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                    <span className="ml-2">Loading songs...</span>
+                  </div>
+                ) : userSongs.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Music className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="font-semibold mb-2">No songs yet</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Generate your first song using the Music tab
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {userSongs.map((song) => (
+                      <motion.div
+                        key={song.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="p-4 border border-border rounded-lg bg-card"
+                      >
+                        <div className="flex items-start gap-4">
+                          {/* Cover Image */}
+                          <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                            {song.coverUrl ? (
+                              <img
+                                src={song.coverUrl}
+                                alt={song.title}
+                                className="w-full h-full object-cover rounded-lg"
+                              />
+                            ) : (
+                              <Music className="w-8 h-8 text-muted-foreground" />
+                            )}
+                          </div>
+
+                          {/* Song Info */}
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold truncate">{song.title}</h3>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                              <span>{song.genre || 'AI Generated'}</span>
+                              {song.bpm && <span>• {song.bpm} BPM</span>}
+                              <span>• {song.createdAt.toLocaleDateString()}</span>
+                            </div>
+
+                            {/* Status Badge */}
+                            <div className="flex items-center gap-2 mb-3">
+                              <span
+                                className={`px-2 py-1 text-xs rounded-full ${
+                                  song.status === 'completed'
+                                    ? 'bg-green-500/10 text-green-600'
+                                    : song.status === 'generating'
+                                      ? 'bg-yellow-500/10 text-yellow-600'
+                                      : 'bg-red-500/10 text-red-600'
+                                }`}
+                              >
+                                {song.status}
+                              </span>
+                              {song.modelUsed && (
+                                <span className="px-2 py-1 text-xs bg-primary/10 text-primary rounded-full">
+                                  {song.modelUsed}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Audio Player */}
+                            {song.audioUrl && song.status === 'completed' && (
+                              <audio
+                                controls
+                                className="w-full"
+                                preload="none"
+                              >
+                                <source src={song.audioUrl} type="audio/mpeg" />
+                                Your browser does not support the audio element.
+                              </audio>
+                            )}
+
+                            {/* Lyrics Preview */}
+                            {song.lyrics && (
+                              <div className="mt-3">
+                                <details className="group">
+                                  <summary className="cursor-pointer text-sm font-medium text-primary hover:text-primary/80">
+                                    View Lyrics
+                                  </summary>
+                                  <div className="mt-2 p-3 bg-muted/50 rounded text-sm whitespace-pre-wrap max-h-32 overflow-y-auto">
+                                    {song.lyrics}
+                                  </div>
+                                </details>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex flex-col gap-2">
+                            {song.audioUrl && (
+                              <button
+                                onClick={() => {
+                                  const link = document.createElement('a');
+                                  link.href = song.audioUrl!;
+                                  link.download = `${song.title}.mp3`;
+                                  link.click();
+                                }}
+                                className="p-2 text-muted-foreground hover:text-primary transition-colors"
+                                title="Download"
+                              >
+                                <ArrowLeft className="w-4 h-4 rotate-180" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
