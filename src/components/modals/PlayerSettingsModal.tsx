@@ -8,7 +8,7 @@ import {
 import { Track } from '@/types';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 
 interface PlayerSettingsModalProps {
   track: Track;

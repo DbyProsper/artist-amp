@@ -10,7 +10,7 @@ import { TrackRow } from '@/components/tracks/TrackRow';
 import { YouTubeEmbed } from '@/components/artists/YouTubeEmbed';
 import { SocialLinksModal } from '@/components/ui/SocialLinksModal';
 import { BackButton } from '@/components/ui/BackButton';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useProfilePosts } from '@/hooks/useProfilePosts';
 import { supabase } from '@/integrations/supabase/client';

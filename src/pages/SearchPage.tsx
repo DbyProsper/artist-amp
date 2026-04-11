@@ -6,7 +6,7 @@ import { TrackRow } from '@/components/tracks/TrackRow';
 import { genres } from '@/data/mockData';
 import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Track, Artist } from '@/types';
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Heart, ChevronLeft, ChevronRight, BadgeCheck } from 'lucide-react';
 import { Story } from '@/types';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
 
 interface StoryViewerProps {

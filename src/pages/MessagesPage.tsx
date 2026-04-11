@@ -4,7 +4,7 @@ import { Search, BadgeCheck, PenSquare, ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { BackButton } from '@/components/ui/BackButton';
 import { mockArtists } from '@/data/mockData';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ChatWindow } from '@/components/chat/ChatWindow';

@@ -18,7 +18,7 @@ import {
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { Playlist, Track, Artist } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';

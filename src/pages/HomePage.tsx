@@ -11,7 +11,7 @@ import { mockStories, mockArtists, mockTracks } from '@/data/mockData';
 import { useFeedPosts } from '@/hooks/useFeedPosts';
 import { Story } from '@/types';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
 
 export default function HomePage() {

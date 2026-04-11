@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { generateMusic, generateBeats, generateLyrics, generateCover, generateSmart, generateGeminiAudio, generateSong, generateMerch, generateMusicFromAudio, generateImageFromUpload, enhanceAudio } from '@/lib/api';
 import { AppLogo } from '@/components/ui/AppLogo';
 import { saveGeneratedAudio, saveCompositionAudio, saveGeneratedLyrics } from '@/lib/aiMusicStorage';

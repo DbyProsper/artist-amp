@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { BackButton } from '@/components/ui/BackButton';
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { mockTracks } from '@/data/mockData';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 

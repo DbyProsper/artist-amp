@@ -11,7 +11,7 @@ import { YouTubeEmbed } from '@/components/artists/YouTubeEmbed';
 import { FullScreenAvatar } from '@/components/profile/FullScreenAvatar';
 import { SocialLinksModal } from '@/components/ui/SocialLinksModal';
 import { PostDetailModal } from '@/components/profile/PostDetailModal';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useProfilePosts } from '@/hooks/useProfilePosts';
 import { supabase } from '@/integrations/supabase/client';

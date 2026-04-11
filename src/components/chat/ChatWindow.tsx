@@ -4,7 +4,7 @@ import { ArrowLeft, Send, BadgeCheck, Image } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Artist } from '@/types';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { EmojiPicker } from './EmojiPicker';
