@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
+import FirebaseTest from '@/components/FirebaseTest';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -235,6 +236,16 @@ export default function AuthPage() {
             {isLogin ? 'Sign Up' : 'Sign In'}
           </button>
         </p>
+      </motion.div>
+
+      {/* Firebase Test Component */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="w-full max-w-md mt-8"
+      >
+        <FirebaseTest />
       </motion.div>
     </div>
   );
