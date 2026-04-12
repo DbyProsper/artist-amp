@@ -58,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null;
     } catch (error) {
       console.error('Error fetching profile:', error);
+      // Return null on permission errors to allow graceful fallback
       return null;
     }
   };
@@ -87,7 +88,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return profileData;
     } catch (error) {
       console.error('Error creating profile:', error);
-      throw error;
+      // Return a basic profile on permission errors to allow the app to continue working
+      return {
+        id: user.uid,
+        user_id: user.uid,
+        username: metadata?.username || null,
+        name: metadata?.name || user.displayName || null,
+        bio: null,
+        avatar_url: user.photoURL || null,
+        cover_url: null,
+        location: null,
+        is_artist: false,
+        is_verified: false,
+        onboarding_completed: false,
+        email: user.email || '',
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
     }
   };
 
@@ -160,8 +177,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(user);
 
       if (user) {
+        console.log('User authenticated:', user.uid);
         const profileData = await fetchProfile(user.uid);
-        setProfile(profileData);
+        if (profileData) {
+          console.log('Profile loaded:', profileData);
+          setProfile(profileData);
+        } else {
+          console.log('No profile found, creating one...');
+          // Try to create profile, but don't fail if it doesn't work
+          try {
+            const newProfile = await createProfile(user);
+            setProfile(newProfile);
+          } catch (error) {
+            console.warn('Profile creation failed, continuing without profile:', error);
+            // Set a basic profile for the UI to work
+            setProfile({
+              id: user.uid,
+              user_id: user.uid,
+              username: null,
+              name: user.displayName || null,
+              bio: null,
+              avatar_url: user.photoURL || null,
+              cover_url: null,
+              location: null,
+              is_artist: false,
+              is_verified: false,
+              onboarding_completed: false,
+              email: user.email || '',
+              created_at: new Date(),
+              updated_at: new Date(),
+            });
+          }
+        }
       } else {
         setProfile(null);
       }

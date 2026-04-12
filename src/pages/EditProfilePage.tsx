@@ -157,7 +157,10 @@ export default function EditProfilePage() {
   };
 
   const handleSave = async () => {
-    if (!profile) return;
+    if (!profile) {
+      toast.error('Profile not available. Please try signing in again.');
+      return;
+    }
     setLoading(true);
     try {
       let avatarUrl = profile.avatar_url;

@@ -32,7 +32,7 @@ export default function UploadPage() {
 
   const isArtist = profile?.is_artist ?? false;
 
-  if (!user || !profile) {
+  if (!user) {
     return (
       <div className="min-h-screen pb-36 flex items-center justify-center">
         <div className="text-center p-8">

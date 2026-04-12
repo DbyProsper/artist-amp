@@ -24,7 +24,7 @@ console.debug('Firebase config', {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore('musicinsta');
+export const db = getFirestore(app, 'musicinsta');
 export const storage = getStorage(app);
 
 export default app;

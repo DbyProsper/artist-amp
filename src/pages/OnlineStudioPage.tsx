@@ -767,14 +767,14 @@ export default function OnlineStudioPage() {
     );
   }
 
-  // Only allow artists to access this page
-  if (!profile?.is_artist) {
+  // Allow all authenticated users to access the studio (not just artists)
+  if (!user) {
     return (
       <div className="min-h-screen pb-36">
         <header className="sticky top-0 z-40 glass border-b border-border">
           <div className="flex items-center gap-4 px-4 h-14">
             <button
-              onClick={() => navigate('/profile')}
+              onClick={() => navigate('/auth')}
               className="p-2 rounded-full hover:bg-muted transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -785,13 +785,12 @@ export default function OnlineStudioPage() {
 
         <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
           <Lock className="w-12 h-12 text-muted-foreground mb-4" />
-          <h2 className="font-display font-bold text-xl mb-2">Artist Only Feature</h2>
+          <h2 className="font-display font-bold text-xl mb-2">Sign In Required</h2>
           <p className="text-muted-foreground mb-6 max-w-sm">
-            Online Studio is available for artists only. Please upgrade your account to access these
-            AI-powered music production tools.
+            Please sign in to access the AI-powered music studio.
           </p>
-          <Button onClick={() => navigate('/settings/edit-profile')} size="lg">
-            Upgrade to Artist
+          <Button onClick={() => navigate('/auth')} size="lg">
+            Sign In
           </Button>
         </div>
       </div>

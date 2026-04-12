@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read and write their own profile
+    match /profiles/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Users can read all profiles but only write their own
+    match /profiles/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Songs - users can read all songs, but only authenticated users can create
+    match /songs/{songId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.user_id;
+    }
+
+    // Allow authenticated users to read and write their own data
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

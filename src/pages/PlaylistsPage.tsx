@@ -45,7 +45,10 @@ export default function PlaylistsPage() {
   const { playTrack, setQueue } = usePlayer();
 
   const fetchPlaylists = async () => {
-    if (!profile) return;
+    if (!profile) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { data, error } = await supabase
       .from('playlists')
