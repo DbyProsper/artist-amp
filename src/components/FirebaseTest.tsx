@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { getAuth } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export default function FirebaseTest() {
   const [authStatus, setAuthStatus] = useState('Checking...');
@@ -21,16 +21,9 @@ export default function FirebaseTest() {
 
         // Test Firestore connection
         setFirestoreStatus('Testing Firestore...');
-        const firestore = getFirestore();
-        if (firestore.app) {
-          setFirestoreStatus('Firestore initialized successfully');
-        }
-
-        // Try a simple Firestore operation
-        setFirestoreStatus('Testing Firestore read...');
-        // This will fail if Firestore is not enabled
-        const testDoc = await firestore.collection('test').doc('test').get();
-        setFirestoreStatus('Firestore read successful');
+        const testDocRef = doc(db, 'test', 'test');
+        await getDoc(testDocRef);
+        setFirestoreStatus('Firestore read request sent');
 
       } catch (err: any) {
         setError(err.message);

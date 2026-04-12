@@ -54,8 +54,11 @@ export default function AuthPage() {
     try {
       const { error } = await signInWithGoogle();
       if (error) throw error;
+      toast.success('Google sign in successful!');
+      navigate('/');
     } catch (error: any) {
       toast.error(error.message || 'Google authentication failed');
+    } finally {
       setLoading(false);
     }
   };
