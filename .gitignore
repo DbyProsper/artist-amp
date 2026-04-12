@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment variables (sensitive keys)
+.env
+.env.local
+.env.*.local
+
 # Python virtual environment
 backend/venv/
 .venv/
