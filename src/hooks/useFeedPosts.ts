@@ -56,8 +56,9 @@ export function useFeedPosts() {
       const postsSnapshot = await getDocs(postsQuery);
 
       if (postsSnapshot.empty) {
-        // Fall back to mock data
-        setPosts(mockPosts);
+        // Fall back to mock data - sort by createdAt descending (newest first)
+        const sortedMockPosts = [...mockPosts].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        setPosts(sortedMockPosts);
         return;
       }
 

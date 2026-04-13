@@ -15,6 +15,7 @@ import { collection, doc, getDocs, query, setDoc, updateDoc, where, limit } from
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
+import { ImageCropper } from '@/components/ui/ImageCropper';
 
 interface Genre {
   id: string;
@@ -30,6 +31,9 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
+  
+  // Cropping state
+  const [cropMode, setCropMode] = useState<'avatar' | 'cover' | null>(null);
   
   const [formData, setFormData] = useState({
     isArtist: true,
@@ -123,6 +127,7 @@ export default function OnboardingPage() {
         avatarFile: file,
         avatarPreview: URL.createObjectURL(file),
       });
+      setCropMode('avatar');
     }
   };
 
@@ -134,6 +139,7 @@ export default function OnboardingPage() {
         coverFile: file,
         coverPreview: URL.createObjectURL(file),
       });
+      setCropMode('cover');
     }
   };
 
@@ -144,6 +150,21 @@ export default function OnboardingPage() {
         ? prev.selectedGenres.filter(id => id !== genreId)
         : [...prev.selectedGenres, genreId],
     }));
+  };
+
+  // Cropping functions
+  const handleCropComplete = (blob: Blob) => {
+    const croppedFile = new File([blob], cropMode === 'avatar' ? 'avatar.jpg' : 'cover.jpg', { type: 'image/jpeg' });
+    if (cropMode === 'avatar') {
+      setFormData({ ...formData, avatarFile: croppedFile, avatarPreview: URL.createObjectURL(croppedFile) });
+    } else {
+      setFormData({ ...formData, coverFile: croppedFile, coverPreview: URL.createObjectURL(croppedFile) });
+    }
+    setCropMode(null);
+  };
+
+  const handleCropCancel = () => {
+    setCropMode(null);
   };
 
   const uploadFile = async (file: File, path: string): Promise<string | null> => {
@@ -259,6 +280,105 @@ export default function OnboardingPage() {
       </div>
     );
   }
+
+  // Crop Modal Component
+  const CropModal = ({ isOpen, mode }: { isOpen: boolean; mode: 'avatar' | 'cover' | null }) => {
+    if (!isOpen || !mode) return null;
+
+    const preview = mode === 'avatar' ? formData.avatarPreview : formData.coverPreview;
+    const isAvatar = mode === 'avatar';
+
+    return (
+      <div className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center p-4">
+        <div className="bg-background rounded-xl max-w-2xl w-full">
+          <div className="p-4 border-b border-border flex items-center justify-between">
+            <h2 className="font-display font-bold">
+              {isAvatar ? 'Crop Profile Picture' : 'Crop Cover Image'}
+            </h2>
+            <button onClick={() => setCropMode(null)} className="p-1 rounded-full hover:bg-muted">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          
+          <div className="p-4 space-y-4">
+            {/* Preview Container */}
+            <div className={`relative overflow-hidden bg-muted rounded-lg ${isAvatar ? 'w-64 h-64 mx-auto' : 'w-full aspect-video'}`}>
+              <img
+                src={preview}
+                alt="Crop preview"
+                style={{
+                  transform: `translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropScale})`,
+                  transformOrigin: 'center',
+                  cursor: 'grab',
+                  userSelect: 'none',
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                }}
+                draggable={true}
+                onDragStart={() => {}}
+              />
+            </div>
+
+            {/* Controls */}
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Zoom</label>
+                <input
+                  type="range"
+                  min="1"
+                  max="3"
+                  step="0.1"
+                  value={cropScale}
+                  onChange={(e) => setCropScale(parseFloat(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Move X</label>
+                  <input
+                    type="range"
+                    min="-200"
+                    max="200"
+                    value={cropOffset.x}
+                    onChange={(e) => setCropOffset({ ...cropOffset, x: parseInt(e.target.value) })}
+                    className="w-full"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Move Y</label>
+                  <input
+                    type="range"
+                    min="-200"
+                    max="200"
+                    value={cropOffset.y}
+                    onChange={(e) => setCropOffset({ ...cropOffset, y: parseInt(e.target.value) })}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            {/* Actions */}
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setCropMode(null)}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={applyCrop}>
+                Apply Crop
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground text-center">
+              {isAvatar ? 'Your profile picture will be displayed as a circle' : 'Adjust the position and zoom to frame your image'}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen pb-24">
@@ -670,6 +790,17 @@ export default function OnboardingPage() {
           </Button>
         </div>
       </div>
+
+      {/* Image Cropper */}
+      {cropMode && (
+        <ImageCropper
+          imageSrc={cropMode === 'avatar' ? formData.avatarPreview : formData.coverPreview}
+          aspectRatio={cropMode === 'avatar' ? 1 : 16/9}
+          circularCrop={cropMode === 'avatar'}
+          onCropComplete={handleCropComplete}
+          onCancel={handleCropCancel}
+        />
+      )}
     </div>
   );
 }
