@@ -866,37 +866,21 @@ export default function OnlineStudioPage() {
               <Music className="w-4 h-4" />
               Beats
             </TabsTrigger>
-            <TabsTrigger value="music" className="gap-2">
+            <TabsTrigger value="music-composition" className="gap-2">
               <Music className="w-4 h-4" />
-              Music
-            </TabsTrigger>
-            <TabsTrigger value="music-audio" className="gap-2">
-              <Music className="w-4 h-4" />
-              Music from Audio
-            </TabsTrigger>
-            <TabsTrigger value="merch" className="gap-2">
-              <Sparkles className="w-4 h-4" />
-              Merch
+              Music Composition
             </TabsTrigger>
             <TabsTrigger value="cover" className="gap-2">
               <Sparkles className="w-4 h-4" />
               Cover Art
             </TabsTrigger>
-            <TabsTrigger value="image-upload" className="gap-2">
+            <TabsTrigger value="merch" className="gap-2">
               <Sparkles className="w-4 h-4" />
-              Image from Upload
+              Merch
             </TabsTrigger>
-            <TabsTrigger value="composition" className="gap-2">
-              <Sparkles className="w-4 h-4" />
-              Composition
-            </TabsTrigger>
-            <TabsTrigger value="enhancement" className="gap-2">
+            <TabsTrigger value="mixing-mastering" className="gap-2">
               <Sliders className="w-4 h-4" />
-              Enhancement
-            </TabsTrigger>
-            <TabsTrigger value="mixing" className="gap-2">
-              <Sliders className="w-4 h-4" />
-              Mixing
+              Mixing & Mastering
             </TabsTrigger>
             <TabsTrigger value="chat" className="gap-2">
               <Wand2 className="w-4 h-4" />
@@ -905,10 +889,6 @@ export default function OnlineStudioPage() {
             <TabsTrigger value="my-songs" className="gap-2">
               <Music className="w-4 h-4" />
               My Songs
-            </TabsTrigger>
-            <TabsTrigger value="analytics" className="gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Analytics
             </TabsTrigger>
           </TabsList>
         </div>
@@ -1267,17 +1247,17 @@ export default function OnlineStudioPage() {
           </div>
         </TabsContent>
 
-        {/* AI Music Generator Tab */}
-        <TabsContent value="music" className="px-4 py-6">
+        {/* Music Composition Tab */}
+        <TabsContent value="music-composition" className="px-4 py-6">
           <div className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Music className="w-5 h-5 text-primary" />
-                  AI Music Generator
+                  Music Composition
                 </CardTitle>
                 <CardDescription>
-                  Generate complete songs with AI-powered music creation
+                  Create complete songs with AI-powered music generation and composition tools
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1300,7 +1280,7 @@ export default function OnlineStudioPage() {
 
                 <div className="p-4 bg-muted/50 rounded-lg border border-border">
                   <p className="text-sm font-medium mb-3">Describe the song you want:</p>
-                  
+
                   {/* Preset Buttons */}
                   <div className="mb-4">
                     <p className="text-sm font-medium mb-2">Quick Presets:</p>
@@ -1329,6 +1309,25 @@ export default function OnlineStudioPage() {
                     rows={3}
                     disabled={musicLoading}
                   />
+                </div>
+
+                {/* Music from Audio Button */}
+                <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      // Show coming soon message
+                      setMusicError('Music from Audio feature is coming soon! Transform your uploaded audio with AI.');
+                      setTimeout(() => setMusicError(''), 5000);
+                    }}
+                  >
+                    <Music className="w-4 h-4 mr-2" />
+                    Music from Audio (Coming Soon)
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Upload your own audio and let AI transform it into something new
+                  </p>
                 </div>
 
                 <Button
@@ -1438,6 +1437,219 @@ export default function OnlineStudioPage() {
                     </div>
                   </motion.div>
                 )}
+
+                {/* Full Song Composition Section */}
+                <div className="border-t border-border pt-4">
+                  <h3 className="font-semibold mb-3">Full Song Composition</h3>
+
+                  {/* Error Alert */}
+                  {compositionError && (
+                    <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3 mb-4">
+                      <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-destructive">Error</p>
+                        <p className="text-sm text-destructive/80">{compositionError}</p>
+                      </div>
+                      <button
+                        onClick={() => setCompositionError('')}
+                        className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="p-4 bg-muted/50 rounded-lg border border-border mb-4">
+                    <p className="text-sm font-medium mb-3">Describe your song concept:</p>
+                    <textarea
+                      placeholder="e.g., An emotional ballad about overcoming challenges, indie folk style..."
+                      className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
+                      rows={4}
+                      value={compositionPrompt}
+                      onChange={(e) => setCompositionPrompt(e.target.value)}
+                      disabled={compositionLoading}
+                    />
+                    <Button
+                      className="mt-4 w-full"
+                      size="lg"
+                      onClick={handleGenerateComposition}
+                      disabled={compositionLoading || !compositionPrompt.trim()}
+                    >
+                      {compositionLoading ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Create Full Composition
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <p className="font-medium">Your composition will include:</p>
+                    <ul className="space-y-1">
+                      {[
+                        'Verse, Chorus & Bridge structure',
+                        'AI-generated lyrics',
+                        'Melody composition',
+                        'Instrumentation arrangement',
+                        'Production suggestions',
+                      ].map((item, idx) => (
+                        <li key={idx} className="flex items-center gap-2 text-muted-foreground">
+                          <Check className="w-4 h-4 text-primary" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Display Generated Composition */}
+                  {compositionSuccess && (
+                    <div className="p-3 bg-green-500/10 border border-green-500/50 rounded-lg flex items-start gap-3 mt-4">
+                      <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-green-600">Success</p>
+                        <p className="text-sm text-green-600/80">{compositionSuccess}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {compositionLyrics && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-4 mt-4"
+                    >
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm">✍️ Generated Lyrics</h3>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(compositionLyrics);
+                          }}
+                          className="text-xs bg-primary/20 text-primary px-2 py-1 rounded hover:bg-primary/30 transition-colors"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap text-muted-foreground max-h-64 overflow-y-auto bg-background/50 p-3 rounded border">
+                        {compositionLyrics.split('\n').map((line, index) => {
+                          const trimmedLine = line.trim();
+                          if (
+                            trimmedLine.toLowerCase().includes('verse') ||
+                            trimmedLine.toLowerCase().includes('hook') ||
+                            trimmedLine.toLowerCase().includes('chorus')
+                          ) {
+                            return (
+                              <div key={index} className="font-semibold text-primary mb-2 mt-4 first:mt-0">
+                                {trimmedLine}
+                              </div>
+                            );
+                          }
+                          return trimmedLine ? (
+                            <div key={index} className="mb-1">
+                              {trimmedLine}
+                            </div>
+                          ) : (
+                            <br key={index} />
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {compositionBeatUrl && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-4 mt-4"
+                    >
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm">🎵 Composition Beat (30s loop)</h3>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleGenerateComposition()}
+                          disabled={compositionLoading}
+                        >
+                          <RotateCcw className="w-4 h-4 mr-1" />
+                          Regenerate
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        <audio
+                          ref={compositionAudioRef}
+                          className="w-full"
+                          src={compositionBeatUrl}
+                          loop
+                          preload="metadata"
+                          onPlay={() => {
+                            setCompositionBeatIsPlaying(true);
+                            // Pause other audio elements
+                            if (beatAudioRef.current) beatAudioRef.current.pause();
+                            if (musicAudioRef.current) musicAudioRef.current.pause();
+                            setBeatIsPlaying(false);
+                            setMusicIsPlaying(false);
+                          }}
+                          onPause={() => setCompositionBeatIsPlaying(false)}
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              if (compositionAudioRef.current) {
+                                if (compositionBeatIsPlaying) {
+                                  compositionAudioRef.current.pause();
+                                } else {
+                                  compositionAudioRef.current.play();
+                                }
+                              }
+                            }}
+                            variant="outline"
+                          >
+                            {compositionBeatIsPlaying ? (
+                              <>
+                                <Pause className="w-4 h-4 mr-1" />
+                                Pause
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-4 h-4 mr-1" />
+                                Play
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              try {
+                                const response = await fetch(compositionBeatUrl);
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `composition_beat_${Date.now()}.mp3`;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                window.URL.revokeObjectURL(url);
+                              } catch (error) {
+                                console.error('Download failed:', error);
+                                setCompositionError('Failed to download beat');
+                              }
+                            }}
+                          >
+                            Download Beat
+                          </Button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -1616,6 +1828,25 @@ export default function OnlineStudioPage() {
                   </Button>
                 </div>
 
+                {/* Image from Upload Button */}
+                <div className="p-4 bg-muted/30 rounded-lg border border-border">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      // Show coming soon message
+                      setCoverError('Image from Upload feature is coming soon! Transform your photos into stunning album covers.');
+                      setTimeout(() => setCoverError(''), 5000);
+                    }}
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Image from Upload (Coming Soon)
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Upload your own images and let AI transform them into album covers
+                  </p>
+                </div>
+
                 {/* Quick Style Templates */}
                 <div className="grid grid-cols-2 gap-2">
                   {[
@@ -1695,234 +1926,8 @@ export default function OnlineStudioPage() {
           </div>
         </TabsContent>
 
-        {/* Full Song Composition Tab */}
-        <TabsContent value="composition" className="px-4 py-6">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-primary" />
-                  Full Song Composition
-                </CardTitle>
-                <CardDescription>
-                  Generate complete song compositions with lyrics, melody, and instrumentation
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Error Alert */}
-                {compositionError && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-destructive">Error</p>
-                      <p className="text-sm text-destructive/80">{compositionError}</p>
-                    </div>
-                    <button
-                      onClick={() => setCompositionError('')}
-                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-
-                <div className="p-4 bg-muted/50 rounded-lg border border-border">
-                  <p className="text-sm font-medium mb-3">Describe your song concept:</p>
-                  <textarea
-                    placeholder="e.g., An emotional ballad about overcoming challenges, indie folk style..."
-                    className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
-                    rows={4}
-                    value={compositionPrompt}
-                    onChange={(e) => setCompositionPrompt(e.target.value)}
-                    disabled={compositionLoading}
-                  />
-                  <Button
-                    className="mt-4 w-full"
-                    size="lg"
-                    onClick={handleGenerateComposition}
-                    disabled={compositionLoading || !compositionPrompt.trim()}
-                  >
-                    {compositionLoading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4 mr-2" />
-                        Create Full Composition
-                      </>
-                    )}
-                  </Button>
-                </div>
-
-                <div className="space-y-2 text-sm">
-                  <p className="font-medium">Your composition will include:</p>
-                  <ul className="space-y-1">
-                    {[
-                      'Verse, Chorus & Bridge structure',
-                      'AI-generated lyrics',
-                      'Melody composition',
-                      'Instrumentation arrangement',
-                      'Production suggestions',
-                    ].map((item, idx) => (
-                      <li key={idx} className="flex items-center gap-2 text-muted-foreground">
-                        <Check className="w-4 h-4 text-primary" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Display Generated Composition */}
-                {compositionSuccess && (
-                  <div className="p-3 bg-green-500/10 border border-green-500/50 rounded-lg flex items-start gap-3">
-                    <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-green-600">Success</p>
-                      <p className="text-sm text-green-600/80">{compositionSuccess}</p>
-                    </div>
-                  </div>
-                )}
-
-                {compositionLyrics && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-sm">✍️ Generated Lyrics</h3>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(compositionLyrics);
-                        }}
-                        className="text-xs bg-primary/20 text-primary px-2 py-1 rounded hover:bg-primary/30 transition-colors"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                    <div className="text-sm whitespace-pre-wrap text-muted-foreground max-h-64 overflow-y-auto bg-background/50 p-3 rounded border">
-                      {compositionLyrics.split('\n').map((line, index) => {
-                        const trimmedLine = line.trim();
-                        if (
-                          trimmedLine.toLowerCase().includes('verse') ||
-                          trimmedLine.toLowerCase().includes('hook') ||
-                          trimmedLine.toLowerCase().includes('chorus')
-                        ) {
-                          return (
-                            <div key={index} className="font-semibold text-primary mb-2 mt-4 first:mt-0">
-                              {trimmedLine}
-                            </div>
-                          );
-                        }
-                        return trimmedLine ? (
-                          <div key={index} className="mb-1">
-                            {trimmedLine}
-                          </div>
-                        ) : (
-                          <br key={index} />
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-
-                {compositionBeatUrl && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-sm">🎵 Composition Beat (30s loop)</h3>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleGenerateComposition()}
-                        disabled={compositionLoading}
-                      >
-                        <RotateCcw className="w-4 h-4 mr-1" />
-                        Regenerate
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      <audio
-                        ref={compositionAudioRef}
-                        className="w-full"
-                        src={compositionBeatUrl}
-                        loop
-                        preload="metadata"
-                        onPlay={() => {
-                          setCompositionBeatIsPlaying(true);
-                          // Pause other audio elements
-                          if (beatAudioRef.current) beatAudioRef.current.pause();
-                          if (musicAudioRef.current) musicAudioRef.current.pause();
-                          setBeatIsPlaying(false);
-                          setMusicIsPlaying(false);
-                        }}
-                        onPause={() => setCompositionBeatIsPlaying(false)}
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            if (compositionAudioRef.current) {
-                              if (compositionBeatIsPlaying) {
-                                compositionAudioRef.current.pause();
-                              } else {
-                                compositionAudioRef.current.play();
-                              }
-                            }
-                          }}
-                          variant="outline"
-                        >
-                          {compositionBeatIsPlaying ? (
-                            <>
-                              <Pause className="w-4 h-4 mr-1" />
-                              Pause
-                            </>
-                          ) : (
-                            <>
-                              <Play className="w-4 h-4 mr-1" />
-                              Play
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async () => {
-                            try {
-                              const response = await fetch(compositionBeatUrl);
-                              const blob = await response.blob();
-                              const url = window.URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `composition_beat_${Date.now()}.mp3`;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              window.URL.revokeObjectURL(url);
-                            } catch (error) {
-                              console.error('Download failed:', error);
-                              setCompositionError('Failed to download beat');
-                            }
-                          }}
-                        >
-                          Download Beat
-                        </Button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
         {/* Mixing & Mastering Tab */}
-        <TabsContent value="mixing" className="px-4 py-6">
+        <TabsContent value="mixing-mastering" className="px-4 py-6">
           <div className="space-y-4">
             <Card>
               <CardHeader>
@@ -1935,6 +1940,23 @@ export default function OnlineStudioPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {/* Free Tier Notice */}
+                <div className="p-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Lock className="w-5 h-5 text-yellow-600" />
+                    <div>
+                      <p className="font-medium text-yellow-600">You are currently on "free" tier</p>
+                      <p className="text-sm text-yellow-600/80">
+                        Upgrade to unlock professional mixing & mastering, longer music generation, and licensing options.
+                      </p>
+                    </div>
+                  </div>
+                  <Button className="w-full mt-3" variant="outline">
+                    <Star className="w-4 h-4 mr-2" />
+                    View Upgrade Options
+                  </Button>
+                </div>
+
                 {/* Pricing Tiers */}
                 <div>
                   <h3 className="font-display font-bold mb-4">Choose Your Plan</h3>
@@ -1978,9 +2000,51 @@ export default function OnlineStudioPage() {
                   </div>
                 </div>
 
-                <Button className="w-full" size="lg">
+                {/* What You Get */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold">Mixing & Mastering Includes:</h3>
+                  <ul className="space-y-2">
+                    {[
+                      'AI-powered audio enhancement',
+                      'Professional mixing algorithms',
+                      'Multi-band compression & EQ',
+                      'Reverb & spatial processing',
+                      'Mastering for all platforms',
+                      'Stem separation & isolation',
+                      'Loudness optimization',
+                      'Format conversion & export',
+                    ].map((feature, idx) => (
+                      <li key={idx} className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Check className="w-4 h-4 text-primary" />
+                        {feature}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Additional Benefits */}
+                <div className="space-y-3">
+                  <h3 className="font-semibold">Upgrade Benefits:</h3>
+                  <ul className="space-y-2">
+                    {[
+                      'Generate longer music (up to 10 minutes)',
+                      'Lyria Pro for advanced lyrics generation',
+                      'License to sell generated beats',
+                      'Commercial use rights',
+                      'High-resolution audio export',
+                      'Advanced AI models access',
+                    ].map((benefit, idx) => (
+                      <li key={idx} className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Star className="w-4 h-4 text-yellow-500" />
+                        {benefit}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <Button className="w-full" size="lg" variant="outline">
                   <Sliders className="w-4 h-4 mr-2" />
-                  Upload Track for Mixing
+                  Upgrade to Access Mixing & Mastering
                 </Button>
               </CardContent>
             </Card>
@@ -2114,369 +2178,6 @@ export default function OnlineStudioPage() {
                       </motion.div>
                     ))}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Analytics Tab */}
-        <TabsContent value="analytics" className="px-4 py-6">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-primary" />
-                  AI Performance Analytics
-                </CardTitle>
-                <CardDescription>
-                  Deep insights into listener behavior, engagement patterns, and revenue trends
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Analytics Overview */}
-                <div className="grid grid-cols-2 gap-3">
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    className="p-4 rounded-lg bg-primary/10 border border-primary/20"
-                  >
-                    <p className="text-sm text-muted-foreground mb-1">Total Plays</p>
-                    <p className="text-2xl font-bold">0</p>
-                    <p className="text-xs text-primary mt-2">Share your tracks to get started</p>
-                  </motion.div>
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    className="p-4 rounded-lg bg-accent/10 border border-accent/20"
-                  >
-                    <p className="text-sm text-muted-foreground mb-1">Engagement Rate</p>
-                    <p className="text-2xl font-bold">0%</p>
-                    <p className="text-xs text-accent mt-2">Likes, comments & shares</p>
-                  </motion.div>
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    className="p-4 rounded-lg bg-green-500/10 border border-green-500/20"
-                  >
-                    <p className="text-sm text-muted-foreground mb-1">Revenue</p>
-                    <p className="text-2xl font-bold">$0</p>
-                    <p className="text-xs text-green-500 mt-2">From streams & tips</p>
-                  </motion.div>
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/20"
-                  >
-                    <p className="text-sm text-muted-foreground mb-1">Audience Growth</p>
-                    <p className="text-2xl font-bold">0%</p>
-                    <p className="text-xs text-blue-500 mt-2">Monthly followers</p>
-                  </motion.div>
-                </div>
-
-                {/* Analytics Features */}
-                <div className="space-y-3">
-                  <p className="font-medium">AI Insights Include:</p>
-                  <ul className="space-y-2">
-                    {[
-                      'Listener demographics & location analysis',
-                      'Engagement pattern detection',
-                      'Optimal posting times & days',
-                      'Genre & mood trend analysis',
-                      'Revenue predictions',
-                      'Audience preference insights',
-                      'Competitor benchmarking',
-                      'Growth recommendations',
-                    ].map((insight, idx) => (
-                      <motion.li
-                        key={idx}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: idx * 0.05 }}
-                        className="flex items-center gap-2 text-sm text-muted-foreground"
-                      >
-                        <BarChart3 className="w-4 h-4 text-primary flex-shrink-0" />
-                        {insight}
-                      </motion.li>
-                    ))}
-                  </ul>
-                </div>
-
-                <Button className="w-full" size="lg" variant="outline">
-                  View Detailed Analytics Dashboard
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Music from Audio Tab */}
-        <TabsContent value="music-audio" className="px-4 py-6">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Music className="w-5 h-5 text-primary" />
-                  Music from Audio
-                </CardTitle>
-                <CardDescription>
-                  Transform uploaded audio with AI-powered music generation
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {musicFromAudioError && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-destructive">Error</p>
-                      <p className="text-sm text-destructive/80">{musicFromAudioError}</p>
-                    </div>
-                    <button
-                      onClick={() => setMusicFromAudioError('')}
-                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Upload Audio File:</p>
-                  <FileUpload
-                    onFileSelect={setAudioFile}
-                    accept="audio/*"
-                    maxSizeMB={50}
-                    disabled={musicFromAudioLoading}
-                    label="Choose audio file or drag and drop"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">AI Model:</label>
-                    <Select value={musicFromAudioModel} onValueChange={setMusicFromAudioModel} disabled={musicFromAudioLoading}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="gemini">Gemini AI</SelectItem>
-                        <SelectItem value="musicgen">MusicGen</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium mb-2">Describe the transformation:</p>
-                  <textarea
-                    placeholder="e.g., Make this more upbeat, add electronic elements..."
-                    className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
-                    rows={4}
-                    value={musicFromAudioPrompt}
-                    onChange={(e) => setMusicFromAudioPrompt(e.target.value)}
-                    disabled={musicFromAudioLoading}
-                  />
-                  <Button
-                    className="mt-4 w-full"
-                    size="lg"
-                    onClick={handleGenerateMusicFromAudio}
-                    disabled={musicFromAudioLoading || !audioFile}
-                  >
-                    <Music className="w-4 h-4 mr-2" />
-                    {musicFromAudioLoading ? 'Generating...' : 'Generate Music'}
-                  </Button>
-                </div>
-
-                {musicFromAudioUrl && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
-                  >
-                    <h3 className="font-semibold text-sm">Generated Music</h3>
-                    <audio
-                      ref={musicFromAudioRef}
-                      src={musicFromAudioUrl}
-                      controls
-                      className="w-full"
-                    />
-                  </motion.div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Image from Upload Tab */}
-        <TabsContent value="image-upload" className="px-4 py-6">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-primary" />
-                  Image from Upload
-                </CardTitle>
-                <CardDescription>
-                  Generate images based on uploaded reference images
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {imageFromUploadError && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-destructive">Error</p>
-                      <p className="text-sm text-destructive/80">{imageFromUploadError}</p>
-                    </div>
-                    <button
-                      onClick={() => setImageFromUploadError('')}
-                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Upload Reference Image:</p>
-                  <FileUpload
-                    onFileSelect={setImageFile}
-                    accept="image/*"
-                    maxSizeMB={10}
-                    disabled={imageFromUploadLoading}
-                    label="Choose image file or drag and drop"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">AI Model:</label>
-                    <Select value={imageFromUploadModel} onValueChange={setImageFromUploadModel} disabled={imageFromUploadLoading}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="gemini">Gemini AI</SelectItem>
-                        <SelectItem value="musicgen">MusicGen</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium mb-2">Describe the image:</p>
-                  <textarea
-                    placeholder="e.g., Make the colors more vibrant, change the style to abstract..."
-                    className="w-full p-3 rounded-lg bg-background border border-border text-sm resize-none"
-                    rows={4}
-                    value={imageFromUploadPrompt}
-                    onChange={(e) => setImageFromUploadPrompt(e.target.value)}
-                    disabled={imageFromUploadLoading}
-                  />
-                  <Button
-                    className="mt-4 w-full"
-                    size="lg"
-                    onClick={handleGenerateImageFromUpload}
-                    disabled={imageFromUploadLoading || !imageFile}
-                  >
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    {imageFromUploadLoading ? 'Generating...' : 'Generate Image'}
-                  </Button>
-                </div>
-
-                {imageFromUploadUrl && (
-                  <ImageDisplay
-                    imageUrl={imageFromUploadUrl}
-                    title="Generated Image"
-                    onCopy={() => {
-                      navigator.clipboard.writeText(imageFromUploadUrl);
-                      toast.success('URL copied to clipboard!');
-                    }}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Audio Enhancement Tab */}
-        <TabsContent value="enhancement" className="px-4 py-6">
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sliders className="w-5 h-5 text-primary" />
-                  Audio Enhancement
-                </CardTitle>
-                <CardDescription>
-                  Enhance and process audio files with AI
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {enhancementError && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/50 rounded-lg flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-destructive">Error</p>
-                      <p className="text-sm text-destructive/80">{enhancementError}</p>
-                    </div>
-                    <button
-                      onClick={() => setEnhancementError('')}
-                      className="text-destructive hover:bg-destructive/10 p-1 rounded transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Upload Audio File:</p>
-                  <FileUpload
-                    onFileSelect={setEnhancementFile}
-                    accept="audio/*"
-                    maxSizeMB={50}
-                    disabled={enhancementLoading}
-                    label="Choose audio file or drag and drop"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">Enhancement Type:</label>
-                    <Select value={enhancementType} onValueChange={setEnhancementType} disabled={enhancementLoading}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="denoise">Denoise</SelectItem>
-                        <SelectItem value="enhance">Enhance</SelectItem>
-                        <SelectItem value="normalize">Normalize</SelectItem>
-                        <SelectItem value="reverb">Reverb</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={handleEnhanceAudio}
-                  disabled={enhancementLoading || !enhancementFile}
-                >
-                  <Sliders className="w-4 h-4 mr-2" />
-                  {enhancementLoading ? 'Processing...' : 'Enhance Audio'}
-                </Button>
-
-                {enhancedAudioUrl && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-4 bg-primary/5 rounded-lg border border-primary/20 space-y-3"
-                  >
-                    <h3 className="font-semibold text-sm">Enhanced Audio</h3>
-                    <audio
-                      ref={enhancedAudioRef}
-                      src={enhancedAudioUrl}
-                      controls
-                      className="w-full"
-                    />
-                  </motion.div>
                 )}
               </CardContent>
             </Card>

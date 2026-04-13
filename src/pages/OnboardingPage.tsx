@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, query, setDoc, updateDoc, where, limit } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
@@ -55,7 +55,6 @@ export default function OnboardingPage() {
       return;
     }
 
-    // Mock genres for now - in a real app, these would come from Firebase
     const mockGenres = [
       { id: '1', name: 'Pop' },
       { id: '2', name: 'Hip Hop' },
@@ -63,14 +62,37 @@ export default function OnboardingPage() {
       { id: '4', name: 'R&B' },
       { id: '5', name: 'Jazz' },
       { id: '6', name: 'Classical' },
-      { id: '7', name: 'Reggae' }, 
+      { id: '7', name: 'Reggae' },
       { id: '8', name: 'Trap' },
       { id: '9', name: 'Amapiano' },
       { id: '10', name: 'Lekompo' },
       { id: '11', name: 'House' },
       { id: '12', name: 'Disco' },
     ];
+
     setGenres(mockGenres);
+
+    const seedGenres = async () => {
+      try {
+        const genresQuery = query(collection(db, 'genres'), limit(1));
+        const existingGenres = await getDocs(genresQuery);
+        if (!existingGenres.empty) return;
+
+        await Promise.all(
+          mockGenres.map((genre) =>
+            setDoc(doc(db, 'genres', genre.id), {
+              name: genre.name,
+              created_at: new Date(),
+              updated_at: new Date(),
+            })
+          )
+        );
+      } catch (error) {
+        console.error('Failed to seed genres:', error);
+      }
+    };
+
+    seedGenres();
   }, [user, navigate]);
 
   useEffect(() => {

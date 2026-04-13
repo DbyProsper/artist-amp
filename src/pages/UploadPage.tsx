@@ -84,18 +84,18 @@ export default function UploadPage() {
 
       if (uploadType === 'audio') {
         const fileExt = formData.file.name.split('.').pop();
-        const fileName = `audio/${user.id}/${Date.now()}.${fileExt}`;
+        const fileName = `audio/${user.uid}/${Date.now()}.${fileExt}`;
         fileUrl = await uploadFile(formData.file, fileName);
       } else {
         const fileExt = formData.file.name.split('.').pop();
-        const fileName = `uploads/${user.id}/${Date.now()}.${fileExt}`;
+        const fileName = `uploads/${user.uid}/${Date.now()}.${fileExt}`;
         fileUrl = await uploadFile(formData.file, fileName);
       }
       if (!fileUrl) throw new Error('Failed to upload file');
 
       if (uploadType === 'audio' && formData.coverFile) {
         const fileExt = formData.coverFile.name.split('.').pop();
-        const fileName = `covers/${user.id}/${Date.now()}.${fileExt}`;
+        const fileName = `covers/${user.uid}/${Date.now()}.${fileExt}`;
         coverUrl = await uploadFile(formData.coverFile, fileName);
       }
 

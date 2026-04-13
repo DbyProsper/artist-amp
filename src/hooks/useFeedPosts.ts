@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, limit, getDocs, getDoc, doc } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, getDoc, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track } from '@/types';
 import { mockPosts } from '@/data/mockData';
@@ -153,26 +153,18 @@ export function useFeedPosts() {
   useEffect(() => {
     fetchPosts();
 
-    // Subscribe to new posts
-    const channel = supabase
-      .channel('posts-feed')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'posts',
-        },
-        () => {
-          // Refetch when new post is added
-          fetchPosts();
-        }
-      )
-      .subscribe();
+    const postsQuery = query(
+      collection(db, 'posts'),
+      where('is_story', '==', false),
+      orderBy('created_at', 'desc'),
+      limit(50)
+    );
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    const unsubscribe = onSnapshot(postsQuery, () => {
+      fetchPosts();
+    });
+
+    return () => unsubscribe();
   }, []);
 
   return { posts, loading, error, refetch: fetchPosts };

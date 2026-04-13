@@ -77,7 +77,7 @@ export default function PlaylistsPage() {
     try {
       let coverUrl = null;
       if (editImageFile) {
-        const fileName = `playlists/${profile.id}/${Date.now()}.${editImageFile.name.split('.').pop()}`;
+        const fileName = `playlists/${user.uid}/${Date.now()}.${editImageFile.name.split('.').pop()}`;
         const storageRef = ref(storage, fileName);
         await uploadBytes(storageRef, editImageFile);
         coverUrl = await getDownloadURL(storageRef);
@@ -235,7 +235,8 @@ export default function PlaylistsPage() {
             <motion.div
               key={playlist.id}
               whileTap={{ scale: 0.98 }}
-              className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors"
+              onClick={() => navigate(`/playlists/${playlist.id}`)}
+              className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
             >
               <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center">
                 {playlist.cover_url ? (
