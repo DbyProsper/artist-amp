@@ -236,8 +236,7 @@ export async function saveGeneratedLyrics(profileId: string, item: GeneratedLyri
 /**
  * Save multiple generated audio items (e.g., lyrics + beat from composition)
  */
-export async function saveCompositionAudio(
-) {
+export async function saveCompositionAudio(profileId: string, prompt: string, lyrics: string, audioUrl: string) {
   try {
     const timestamp = new Date().toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -248,7 +247,10 @@ export async function saveCompositionAudio(
     console.log('[AI Music] Saving composition beat...');
     const beatResult = await saveGeneratedAudio(profileId, {
       title: `🎵 Beat - ${prompt.slice(0, 40)}... (${timestamp})`,
-      audio_url: beatAudioUrl,
+      audio_url: audioUrl,
+      mode: 'composition',
+      improved_prompt: prompt,
+      plan: lyrics,
     });
 
     console.log('[AI Music] Composition saved successfully');

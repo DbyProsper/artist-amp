@@ -15,6 +15,7 @@ import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useProfilePosts } from '@/hooks/useProfilePosts';
 import { supabase } from '@/integrations/supabase/client';
+import { isValidUUID } from '@/lib/utils';
 import { Post } from '@/types';
 import { toast } from 'sonner';
 
@@ -49,6 +50,11 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!profile) return;
+
+    if (!isValidUUID(profile.id)) {
+      toast.error('Cannot load full profile details because your current profile ID is not compatible with the database.');
+      return;
+    }
 
     const fetchCounts = async () => {
       const { count: followers } = await supabase
@@ -198,6 +204,16 @@ export default function ProfilePage() {
                 Analytics
               </Button>
             </>
+          )}
+          {profile?.is_admin && (
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => navigate('/admin')}
+            >
+              <BadgeCheck className="w-4 h-4 mr-2" />
+              Admin
+            </Button>
           )}
           <Button variant="outline" size="icon" onClick={() => navigate('/playlists')}>
             <ListMusic className="w-4 h-4" />

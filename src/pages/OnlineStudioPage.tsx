@@ -28,6 +28,7 @@ import { generateMusic, generateBeats, generateLyrics, generateCover, generateSm
 import { AppLogo } from '@/components/ui/AppLogo';
 import { saveGeneratedAudio, saveCompositionAudio, saveGeneratedLyrics } from '@/lib/aiMusicStorage';
 import { FileUpload } from '@/components/ui/FileUpload';
+import { isValidUUID } from '@/lib/utils';
 import { ImageDisplay } from '@/components/ui/ImageDisplay';
 import { AIChat } from '@/components/ui/AIChat';
 import { SongService, Song } from '@/lib/songService';
@@ -177,7 +178,7 @@ export default function OnlineStudioPage() {
         setLyricsResult(lyricText || 'No lyrics returned');
         
         // Save to playlist
-        if (profile?.id) {
+        if (profile?.id && isValidUUID(profile.id)) {
           try {
             const timestamp = new Date().toLocaleTimeString('en-US', {
               hour: '2-digit',
@@ -258,7 +259,7 @@ export default function OnlineStudioPage() {
           }
 
           // Save to library
-          if (profile?.id) {
+          if (profile?.id && isValidUUID(profile.id)) {
             try {
               const timestamp = new Date().toLocaleTimeString('en-US', {
                 hour: '2-digit',
@@ -359,7 +360,7 @@ export default function OnlineStudioPage() {
       setCompositionSuccess('✨ Full composition generated! Lyrics and beat ready.');
 
       // Save composition to library
-      if (profile?.id) {
+      if (profile?.id && isValidUUID(profile.id)) {
         try {
           console.log('[Composition] Saving to library...');
           await saveCompositionAudio(profile.id, compositionPrompt, lyrics, audioUrl);

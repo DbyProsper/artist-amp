@@ -29,10 +29,15 @@ export default function AuthPage() {
 
     try {
       if (isLogin) {
-        const { error } = await signIn(formData.email, formData.password);
+        const { error, profile } = await signIn(formData.email, formData.password);
         if (error) throw error;
+
         toast.success('Welcome back!');
-        navigate('/');
+        if (!profile || profile.onboarding_completed !== true) {
+          navigate('/onboarding');
+        } else {
+          navigate('/');
+        }
       } else {
         const { error } = await signUp(formData.email, formData.password, {
           name: formData.name,
@@ -52,10 +57,14 @@ export default function AuthPage() {
   const handleGoogleAuth = async () => {
     setLoading(true);
     try {
-      const { error } = await signInWithGoogle();
+      const { error, profile, isNew } = await signInWithGoogle();
       if (error) throw error;
       toast.success('Google sign in successful!');
-      navigate('/');
+      if (isNew || profile?.onboarding_completed !== true) {
+        navigate('/onboarding');
+      } else {
+        navigate('/');
+      }
     } catch (error: any) {
       toast.error(error.message || 'Google authentication failed');
     } finally {

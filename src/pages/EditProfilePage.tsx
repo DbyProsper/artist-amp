@@ -8,6 +8,7 @@ import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { isValidUUID } from '@/lib/utils';
 
 interface SocialLinksData {
   youtube: string;
@@ -46,37 +47,42 @@ export default function EditProfilePage() {
   });
 
   useEffect(() => {
-    if (profile) {
-      setFormData({
-        name: profile.name || '',
-        username: profile.username || '',
-        bio: profile.bio || '',
-        location: profile.location || '',
-        avatarFile: null,
-        avatarPreview: profile.avatar_url || '',
-        coverFile: null,
-        coverPreview: profile.cover_url || '',
-      });
+    if (!profile) return;
 
-      // Fetch social links
-      supabase
-        .from('social_links')
-        .select('*')
-        .eq('profile_id', profile.id)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data) {
-            setSocialLinks({
-              youtube: data.youtube || '',
-              spotify: data.spotify || '',
-              apple_music: data.apple_music || '',
-              instagram: data.instagram || '',
-              facebook: data.facebook || '',
-              website: data.website || '',
-            });
-          }
-        });
+    setFormData({
+      name: profile.name || '',
+      username: profile.username || '',
+      bio: profile.bio || '',
+      location: profile.location || '',
+      avatarFile: null,
+      avatarPreview: profile.avatar_url || '',
+      coverFile: null,
+      coverPreview: profile.cover_url || '',
+    });
+
+    if (!isValidUUID(profile.id)) {
+      toast.error('Cannot load social links because your current profile ID is not compatible with the database.');
+      return;
     }
+
+    // Fetch social links
+    supabase
+      .from('social_links')
+      .select('*')
+      .eq('profile_id', profile.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setSocialLinks({
+            youtube: data.youtube || '',
+            spotify: data.spotify || '',
+            apple_music: data.apple_music || '',
+            instagram: data.instagram || '',
+            facebook: data.facebook || '',
+            website: data.website || '',
+          });
+        }
+      });
   }, [profile]);
 
   if (!user) {
@@ -161,6 +167,12 @@ export default function EditProfilePage() {
       toast.error('Profile not available. Please try signing in again.');
       return;
     }
+
+    if (!isValidUUID(profile.id)) {
+      toast.error('Cannot update profile because your current profile ID is not compatible with the database.');
+      return;
+    }
+
     setLoading(true);
     try {
       let avatarUrl = profile.avatar_url;

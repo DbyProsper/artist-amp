@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { isValidUUID } from '@/lib/utils';
 
 interface Genre {
   id: string;
@@ -74,7 +75,7 @@ export default function OnboardingPage() {
         location: profile.location || '',
         avatarPreview: profile.avatar_url || '',
         coverPreview: profile.cover_url || '',
-        isArtist: profile.is_artist || true,
+        isArtist: profile.is_artist ?? true,
       }));
       
       // If onboarding is already completed, redirect to home
@@ -139,7 +140,12 @@ export default function OnboardingPage() {
 
   const handleComplete = async () => {
     if (!user || !profile) return;
-    
+
+    if (!isValidUUID(profile.id)) {
+      toast.error('Your current authenticated profile is not compatible with the Supabase database schema. Please sign in with a Supabase-backed account or migrate your profile.');
+      return;
+    }
+
     setLoading(true);
     
     try {

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Library, ListMusic, Heart, Clock, Plus } from 'lucide-react';
+import { toast } from 'sonner';
+import { isValidUUID } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { BackButton } from '@/components/ui/BackButton';
@@ -26,7 +28,17 @@ export default function LibraryPage() {
 
   useEffect(() => {
     const fetchPlaylists = async () => {
-      if (!profile) return;
+      if (!profile) {
+        setPlaylistsLoading(false);
+        return;
+      }
+
+      if (!isValidUUID(profile.id)) {
+        toast.error('Cannot load your library because your profile ID is not compatible with the database.');
+        setPlaylistsLoading(false);
+        return;
+      }
+
       setPlaylistsLoading(true);
       const { data, error } = await supabase
         .from('playlists')

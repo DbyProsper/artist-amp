@@ -21,6 +21,7 @@ import { usePlayer } from '@/context/PlayerContext';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { isValidUUID } from '@/lib/utils';
 import { toast } from 'sonner';
 
 function formatCount(num: number): string {
@@ -49,6 +50,13 @@ export default function PlaylistsPage() {
       setLoading(false);
       return;
     }
+
+    if (!isValidUUID(profile.id)) {
+      toast.error('Cannot load playlists because your current profile ID is not compatible with the database.');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     const { data, error } = await supabase
       .from('playlists')
@@ -68,6 +76,10 @@ export default function PlaylistsPage() {
 
   const handleCreate = async () => {
     if (!profile || !newName.trim()) return;
+    if (!isValidUUID(profile.id)) {
+      toast.error('Cannot create playlists because your current profile ID is not compatible with the database.');
+      return;
+    }
     const { data, error } = await supabase
       .from('playlists')
       .insert({

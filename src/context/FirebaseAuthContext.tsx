@@ -24,6 +24,7 @@ interface Profile {
   is_artist: boolean;
   is_verified: boolean;
   onboarding_completed: boolean | null;
+  is_admin?: boolean;
   email: string;
   created_at: Date;
   updated_at: Date;
@@ -33,9 +34,9 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string, metadata?: { name?: string; username?: string }) => Promise<{ error: Error | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, metadata?: { name?: string; username?: string }) => Promise<{ error: Error | null; profile?: Profile | null }>;
+  signIn: (email: string, password: string) => Promise<{ error: Error | null; profile?: Profile | null }>;
+  signInWithGoogle: () => Promise<{ error: Error | null; profile?: Profile | null; isNew?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -77,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         is_artist: false,
         is_verified: false,
         onboarding_completed: false,
+        is_admin: false,
         email: user.email || '',
         created_at: new Date(),
         updated_at: new Date(),
@@ -119,9 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Create profile in Firestore
-      await createProfile(user, metadata);
+      const profile = await createProfile(user, metadata);
 
-      return { error: null };
+      return { error: null, profile };
     } catch (error) {
       console.error('Sign up error:', error);
       return { error: error as Error };
@@ -130,8 +132,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      return { error: null };
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      const profile = await fetchProfile(user.uid);
+      return { error: null, profile: profile || null };
     } catch (error) {
       console.error('Sign in error:', error);
       return { error: error as Error };
@@ -147,10 +151,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Check if profile exists, create if not
       const existingProfile = await fetchProfile(user.uid);
       if (!existingProfile) {
-        await createProfile(user);
+        const profile = await createProfile(user);
+        return { error: null, profile, isNew: true };
       }
 
-      return { error: null };
+      return { error: null, profile: existingProfile, isNew: false };
     } catch (error) {
       console.error('Google sign in error:', error);
       return { error: error as Error };
