@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Post, Artist, Track } from '@/types';
 
 interface DatabasePost {
@@ -42,19 +43,15 @@ export function useProfilePosts(profileId: string | undefined) {
       setLoading(true);
       try {
         // Fetch profile data
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', profileId)
-          .single();
-
-        if (!profileData) {
+        const profileDoc = await getDoc(doc(db, 'profiles', profileId));
+        if (!profileDoc.exists()) {
           setLoading(false);
           return;
         }
 
+        const profileData = profileDoc.data();
         const artist: Artist = {
-          id: profileData.id,
+          id: profileData.id || profileId,
           name: profileData.name || 'Unknown',
           username: profileData.username || 'unknown',
           avatar: profileData.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
@@ -69,36 +66,33 @@ export function useProfilePosts(profileId: string | undefined) {
         };
 
         // Fetch posts
-        const { data: postsData } = await supabase
-          .from('posts')
-          .select(`
-            id,
-            profile_id,
-            type,
-            track_id,
-            image_url,
-            video_url,
-            caption,
-            likes,
-            comments,
-            shares,
-            is_story,
-            created_at
-          `)
-          .eq('profile_id', profileId)
-          .eq('is_story', false)
-          .order('created_at', { ascending: false });
+        const postsQuery = query(
+          collection(db, 'posts'),
+          where('profile_id', '==', profileId),
+          where('is_story', '==', false),
+          orderBy('created_at', 'desc')
+        );
+        const postsSnapshot = await getDocs(postsQuery);
+        const postsData = postsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
 
         // Fetch tracks
-        const { data: tracksData } = await supabase
-          .from('tracks')
-          .select('*')
-          .eq('profile_id', profileId)
-          .order('created_at', { ascending: false });
+        const tracksQuery = query(
+          collection(db, 'tracks'),
+          where('profile_id', '==', profileId),
+          orderBy('created_at', 'desc')
+        );
+        const tracksSnapshot = await getDocs(tracksQuery);
+        const tracksData = tracksSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
 
         // Transform tracks
         if (tracksData) {
-          const transformedTracks: Track[] = (tracksData as DatabaseTrack[]).map((track) => ({
+          const transformedTracks: Track[] = tracksData.map((track) => ({
             id: track.id,
             title: track.title,
             artist: artist,
@@ -113,11 +107,11 @@ export function useProfilePosts(profileId: string | undefined) {
 
         // Transform posts
         if (postsData) {
-          const transformedPosts: Post[] = (postsData as DatabasePost[]).map((post) => {
+          const transformedPosts: Post[] = postsData.map((post) => {
             let postTrack: Track | undefined;
-            
+
             if (post.track_id && tracksData) {
-              const track = (tracksData as DatabaseTrack[]).find((t) => t.id === post.track_id);
+              const track = tracksData.find((t) => t.id === post.track_id);
               if (track) {
                 postTrack = {
                   id: track.id,
@@ -144,7 +138,7 @@ export function useProfilePosts(profileId: string | undefined) {
               comments: post.comments || 0,
               shares: post.shares || 0,
               saves: 0,
-              createdAt: new Date(post.created_at || Date.now()),
+              createdAt: post.created_at ? new Date(post.created_at.seconds * 1000) : new Date(),
               isLiked: false,
               isSaved: false,
             };

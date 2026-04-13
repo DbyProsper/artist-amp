@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Library, ListMusic, Heart, Clock, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { isValidUUID } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { BackButton } from '@/components/ui/BackButton';
@@ -10,7 +9,8 @@ import { TrackRow } from '@/components/tracks/TrackRow';
 import { mockTracks } from '@/data/mockData';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 function formatCount(num: number): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -33,23 +33,25 @@ export default function LibraryPage() {
         return;
       }
 
-      if (!isValidUUID(profile.id)) {
-        toast.error('Cannot load your library because your profile ID is not compatible with the database.');
-        setPlaylistsLoading(false);
-        return;
-      }
-
       setPlaylistsLoading(true);
-      const { data, error } = await supabase
-        .from('playlists')
-        .select('*')
-        .eq('creator_id', profile.id)
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        setPlaylists(data);
+      try {
+        const playlistsQuery = query(
+          collection(db, 'playlists'),
+          where('creator_id', '==', profile.id),
+          orderBy('created_at', 'desc')
+        );
+        const playlistsSnapshot = await getDocs(playlistsQuery);
+        const playlistsData = playlistsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setPlaylists(playlistsData);
+      } catch (error) {
+        console.error('Error fetching playlists:', error);
+        toast.error('Failed to load playlists');
+      } finally {
+        setPlaylistsLoading(false);
       }
-      setPlaylistsLoading(false);
     };
 
     fetchPlaylists();

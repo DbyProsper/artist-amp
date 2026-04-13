@@ -7,7 +7,8 @@ import { genres } from '@/data/mockData';
 import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { collection, query, where, orderBy, limit, getDocs, getDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Track, Artist } from '@/types';
 
 interface Profile {
@@ -56,57 +57,107 @@ export default function SearchPage() {
       }
       setLoadingProfiles(true);
       try {
-        // Search profiles
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, user_id, username, name, avatar_url, is_artist, is_verified')
-          .or(`username.ilike.%${searchQuery}%,name.ilike.%${searchQuery}%`)
-          .limit(10);
-        if (profilesData) setProfiles(profilesData);
+        // Search profiles - using simple where clauses for now
+        // Note: Firestore doesn't have ilike, so this is a basic implementation
+        const profilesQuery = query(
+          collection(db, 'profiles'),
+          limit(10)
+        );
+        const profilesSnapshot = await getDocs(profilesQuery);
+        const profilesData: Profile[] = [];
+        profilesSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (
+            (data.username && data.username.toLowerCase().includes(searchQuery.toLowerCase())) ||
+            (data.name && data.name.toLowerCase().includes(searchQuery.toLowerCase()))
+          ) {
+            profilesData.push({
+              id: doc.id,
+              user_id: data.user_id,
+              username: data.username,
+              name: data.name,
+              avatar_url: data.avatar_url,
+              is_artist: data.is_artist,
+              is_verified: data.is_verified,
+            });
+          }
+        });
+        setProfiles(profilesData);
 
         // Search tracks
-        const { data: tracksData } = await supabase
-          .from('tracks')
-          .select('id, title, cover_url, audio_url, duration, plays, likes, profile_id, profiles:profile_id(id, name, username, avatar_url, is_verified)')
-          .ilike('title', `%${searchQuery}%`)
-          .eq('is_public', true)
-          .limit(10);
+        const tracksQuery = query(
+          collection(db, 'tracks'),
+          where('is_public', '==', true),
+          limit(10)
+        );
+        const tracksSnapshot = await getDocs(tracksQuery);
+        const tracksData: any[] = [];
+        tracksSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.title && data.title.toLowerCase().includes(searchQuery.toLowerCase())) {
+            tracksData.push({ id: doc.id, ...data });
+          }
+        });
 
-        if (tracksData) {
-          const transformed: Track[] = tracksData.map((t: any) => ({
-            id: t.id,
-            title: t.title,
-            coverArt: t.cover_url || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400',
-            duration: t.duration || 0,
-            plays: t.plays || 0,
-            likes: t.likes || 0,
-            audioUrl: t.audio_url || undefined,
+        // Get profile data for tracks
+        const transformed: Track[] = [];
+        for (const track of tracksData.slice(0, 10)) {
+          let profileData = null;
+          try {
+            const profileDoc = await getDoc(doc(db, 'profiles', track.profile_id));
+            profileData = profileDoc.exists() ? profileDoc.data() : null;
+          } catch (error) {
+            console.error('Error fetching profile for track:', error);
+          }
+
+          transformed.push({
+            id: track.id,
+            title: track.title,
+            coverArt: track.cover_url || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400',
+            duration: track.duration || 0,
+            plays: track.plays || 0,
+            likes: track.likes || 0,
+            audioUrl: track.audio_url || undefined,
             artist: {
-              id: t.profiles?.id || t.profile_id,
-              name: t.profiles?.name || 'Unknown',
-              username: t.profiles?.username || 'unknown',
-              avatar: t.profiles?.avatar_url || '',
+              id: profileData?.id || track.profile_id,
+              name: profileData?.name || 'Unknown',
+              username: profileData?.username || 'unknown',
+              avatar: profileData?.avatar_url || '',
               coverImage: '',
               bio: '',
               location: '',
               genres: [],
-              isVerified: t.profiles?.is_verified || false,
+              isVerified: profileData?.is_verified || false,
               followers: 0,
               following: 0,
               tracks: 0,
             } as Artist,
-          }));
-          setDbTracks(transformed);
+          });
         }
+        setDbTracks(transformed);
 
         // Search playlists
-        const { data: playlistsData } = await supabase
-          .from('playlists')
-          .select('id, name, description, cover_url, is_public, creator_id')
-          .ilike('name', `%${searchQuery}%`)
-          .eq('is_public', true)
-          .limit(10);
-        if (playlistsData) setDbPlaylists(playlistsData);
+        const playlistsQuery = query(
+          collection(db, 'playlists'),
+          where('is_public', '==', true),
+          limit(10)
+        );
+        const playlistsSnapshot = await getDocs(playlistsQuery);
+        const playlistsData: DbPlaylist[] = [];
+        playlistsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.name && data.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+            playlistsData.push({
+              id: doc.id,
+              name: data.name,
+              description: data.description,
+              cover_url: data.cover_url,
+              is_public: data.is_public,
+              creator_id: data.creator_id,
+            });
+          }
+        });
+        setDbPlaylists(playlistsData);
       } catch (err) {
         console.error('Error searching:', err);
       } finally {

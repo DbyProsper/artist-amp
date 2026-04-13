@@ -6,9 +6,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
-import { isValidUUID } from '@/lib/utils';
 
 interface SocialLinksData {
   youtube: string;
@@ -60,19 +61,12 @@ export default function EditProfilePage() {
       coverPreview: profile.cover_url || '',
     });
 
-    if (!isValidUUID(profile.id)) {
-      toast.error('Cannot load social links because your current profile ID is not compatible with the database.');
-      return;
-    }
-
     // Fetch social links
-    supabase
-      .from('social_links')
-      .select('*')
-      .eq('profile_id', profile.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) {
+    const fetchSocialLinks = async () => {
+      try {
+        const socialLinksDoc = await getDoc(doc(db, 'social_links', profile.id));
+        if (socialLinksDoc.exists()) {
+          const data = socialLinksDoc.data();
           setSocialLinks({
             youtube: data.youtube || '',
             spotify: data.spotify || '',
@@ -82,7 +76,12 @@ export default function EditProfilePage() {
             website: data.website || '',
           });
         }
-      });
+      } catch (error) {
+        console.error('Error fetching social links:', error);
+      }
+    };
+
+    fetchSocialLinks();
   }, [profile]);
 
   if (!user) {
@@ -153,13 +152,16 @@ export default function EditProfilePage() {
     img.src = preview;
   };
 
-  const uploadFile = async (file: File, bucket: string): Promise<string | null> => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-    const { error } = await supabase.storage.from(bucket).upload(fileName, file, { upsert: true });
-    if (error) { console.error('Upload error:', error); return null; }
-    const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(fileName);
-    return publicUrl;
+  const uploadFile = async (file: File, path: string): Promise<string | null> => {
+    try {
+      const fileRef = ref(storage, path);
+      await uploadBytes(fileRef, file);
+      const downloadURL = await getDownloadURL(fileRef);
+      return downloadURL;
+    } catch (error) {
+      console.error('Upload error:', error);
+      return null;
+    }
   };
 
   const handleSave = async () => {
@@ -168,52 +170,41 @@ export default function EditProfilePage() {
       return;
     }
 
-    if (!isValidUUID(profile.id)) {
-      toast.error('Cannot update profile because your current profile ID is not compatible with the database.');
-      return;
-    }
-
     setLoading(true);
     try {
       let avatarUrl = profile.avatar_url;
       let coverUrl = profile.cover_url;
+
       if (formData.avatarFile) {
-        const url = await uploadFile(formData.avatarFile, 'avatars');
+        const fileName = `avatars/${user.uid}/${Date.now()}.${formData.avatarFile.name.split('.').pop()}`;
+        const url = await uploadFile(formData.avatarFile, fileName);
         if (url) avatarUrl = url;
       }
+
       if (formData.coverFile) {
-        const url = await uploadFile(formData.coverFile, 'covers');
+        const fileName = `covers/${user.uid}/${Date.now()}.${formData.coverFile.name.split('.').pop()}`;
+        const url = await uploadFile(formData.coverFile, fileName);
         if (url) coverUrl = url;
       }
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          name: formData.name,
-          username: formData.username,
-          bio: formData.bio,
-          location: formData.location,
-          avatar_url: avatarUrl,
-          cover_url: coverUrl,
-        })
-        .eq('id', profile.id);
-      if (error) throw error;
+      // Update profile in Firestore
+      await updateDoc(doc(db, 'profiles', profile.id), {
+        name: formData.name,
+        username: formData.username,
+        bio: formData.bio,
+        location: formData.location,
+        avatar_url: avatarUrl,
+        cover_url: coverUrl,
+        updated_at: new Date(),
+      });
 
-      // Save social links - upsert
+      // Save social links
       const hasAnyLink = Object.values(socialLinks).some(v => v.trim());
       if (hasAnyLink) {
-        const { error: linksError } = await supabase
-          .from('social_links')
-          .upsert({
-            profile_id: profile.id,
-            youtube: socialLinks.youtube || null,
-            spotify: socialLinks.spotify || null,
-            apple_music: socialLinks.apple_music || null,
-            instagram: socialLinks.instagram || null,
-            facebook: socialLinks.facebook || null,
-            website: socialLinks.website || null,
-          }, { onConflict: 'profile_id' });
-        if (linksError) console.error('Social links error:', linksError);
+        await setDoc(doc(db, 'social_links', profile.id), {
+          ...socialLinks,
+          updated_at: new Date(),
+        }, { merge: true });
       }
 
       await refreshProfile();

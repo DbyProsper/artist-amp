@@ -10,7 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
-import { supabase } from '@/integrations/supabase/client';
+import { collection, query, orderBy, getDocs, updateDoc, doc, addDoc, where, limit, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
 
 interface VerificationRequest {
@@ -21,8 +22,8 @@ interface VerificationRequest {
   created_at: string;
   profile?: {
     id: string;
-    name: string | null;
     username: string | null;
+    name: string | null;
     avatar_url: string | null;
     is_artist: boolean | null;
     is_verified: boolean | null;
@@ -59,19 +60,33 @@ export default function AdminPage() {
   const fetchRequests = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('verification_requests')
-        .select(`
-          *,
-          profile:profiles!verification_requests_profile_id_fkey (
-            id, name, username, avatar_url, is_artist, is_verified
-          )
-        `)
-        .order('created_at', { ascending: false });
+      const requestsQuery = query(
+        collection(db, 'verification_requests'),
+        orderBy('created_at', 'desc')
+      );
+      const requestsSnapshot = await getDocs(requestsQuery);
 
-      if (!error && data) {
-        setRequests(data as VerificationRequest[]);
+      const requestsData: VerificationRequest[] = [];
+      for (const requestDoc of requestsSnapshot.docs) {
+        const requestData = requestDoc.data();
+        const profileDoc = await getDoc(doc(db, 'profiles', requestData.profile_id));
+        const profileData = profileDoc.exists() ? profileDoc.data() : null;
+
+        requestsData.push({
+          id: requestDoc.id,
+          ...requestData,
+          profile: profileData ? {
+            id: requestData.profile_id,
+            name: profileData.name,
+            username: profileData.username,
+            avatar_url: profileData.avatar_url,
+            is_artist: profileData.is_artist,
+            is_verified: profileData.is_verified,
+          } : undefined,
+        } as VerificationRequest);
       }
+
+      setRequests(requestsData);
     } catch (err) {
       console.error('Error fetching requests:', err);
     } finally {
@@ -81,15 +96,17 @@ export default function AdminPage() {
 
   const fetchProfiles = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (!error && data) {
-        setProfiles(data);
-      }
+      const profilesQuery = query(
+        collection(db, 'profiles'),
+        orderBy('created_at', 'desc'),
+        limit(100)
+      );
+      const profilesSnapshot = await getDocs(profilesQuery);
+      const profilesData = profilesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Profile[];
+      setProfiles(profilesData);
     } catch (err) {
       console.error('Error fetching profiles:', err);
     }
@@ -105,25 +122,24 @@ export default function AdminPage() {
   const handleApprove = async (request: VerificationRequest) => {
     try {
       // Update verification request
-      await supabase
-        .from('verification_requests')
-        .update({ status: 'verified', updated_at: new Date().toISOString() })
-        .eq('id', request.id);
+      await updateDoc(doc(db, 'verification_requests', request.id), {
+        status: 'verified',
+        updated_at: new Date(),
+      });
 
       // Update profile
-      await supabase
-        .from('profiles')
-        .update({ is_verified: true })
-        .eq('id', request.profile_id);
+      await updateDoc(doc(db, 'profiles', request.profile_id), {
+        is_verified: true,
+      });
 
       // Create notification for the user
-      await supabase
-        .from('notifications')
-        .insert({
-          profile_id: request.profile_id,
-          type: 'verification',
-          message: 'Congratulations! Your verification request has been approved. You are now a verified artist.',
-        });
+      await addDoc(collection(db, 'notifications'), {
+        profile_id: request.profile_id,
+        type: 'verification',
+        message: 'Congratulations! Your verification request has been approved. You are now a verified artist.',
+        created_at: new Date(),
+        read: false,
+      });
 
       toast.success('Verification approved!');
       fetchRequests();
@@ -135,19 +151,19 @@ export default function AdminPage() {
 
   const handleReject = async (request: VerificationRequest) => {
     try {
-      await supabase
-        .from('verification_requests')
-        .update({ status: 'rejected', updated_at: new Date().toISOString() })
-        .eq('id', request.id);
+      await updateDoc(doc(db, 'verification_requests', request.id), {
+        status: 'rejected',
+        updated_at: new Date(),
+      });
 
       // Create notification
-      await supabase
-        .from('notifications')
-        .insert({
-          profile_id: request.profile_id,
-          type: 'verification',
-          message: 'Your verification request was not approved at this time. Please try again later with more information.',
-        });
+      await addDoc(collection(db, 'notifications'), {
+        profile_id: request.profile_id,
+        type: 'verification',
+        message: 'Your verification request was not approved at this time. Please try again later with more information.',
+        created_at: new Date(),
+        read: false,
+      });
 
       toast.success('Request rejected');
       fetchRequests();
@@ -159,10 +175,9 @@ export default function AdminPage() {
 
   const toggleArtistStatus = async (profile: Profile) => {
     try {
-      await supabase
-        .from('profiles')
-        .update({ is_artist: !profile.is_artist })
-        .eq('id', profile.id);
+      await updateDoc(doc(db, 'profiles', profile.id), {
+        is_artist: !profile.is_artist,
+      });
 
       toast.success(`Artist status ${profile.is_artist ? 'removed' : 'granted'}`);
       fetchProfiles();
@@ -174,10 +189,9 @@ export default function AdminPage() {
 
   const toggleVerification = async (profile: Profile) => {
     try {
-      await supabase
-        .from('profiles')
-        .update({ is_verified: !profile.is_verified })
-        .eq('id', profile.id);
+      await updateDoc(doc(db, 'profiles', profile.id), {
+        is_verified: !profile.is_verified,
+      });
 
       toast.success(`Verification ${profile.is_verified ? 'removed' : 'granted'}`);
       fetchProfiles();

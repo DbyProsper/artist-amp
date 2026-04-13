@@ -10,7 +10,8 @@ import { BackButton } from '@/components/ui/BackButton';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
@@ -30,14 +31,17 @@ export default function SettingsPage() {
   const checkPendingRequest = async () => {
     if (!profile) return;
 
-    const { data } = await supabase
-      .from('verification_requests')
-      .select('status')
-      .eq('profile_id', profile.id)
-      .eq('status', 'pending')
-      .maybeSingle();
-
-    setPendingRequest(!!data);
+    try {
+      const requestsQuery = query(
+        collection(db, 'verification_requests'),
+        where('profile_id', '==', profile.id),
+        where('status', '==', 'pending')
+      );
+      const querySnapshot = await getDocs(requestsQuery);
+      setPendingRequest(!querySnapshot.empty);
+    } catch (error) {
+      console.error('Error checking pending request:', error);
+    }
   };
 
   const handleSignOut = async () => {
@@ -55,14 +59,12 @@ export default function SettingsPage() {
     }
 
     try {
-      const { error } = await supabase
-        .from('verification_requests')
-        .insert({
-          profile_id: profile.id,
-          reason: 'Artist verification request submitted via Settings',
-        });
-
-      if (error) throw error;
+      await addDoc(collection(db, 'verification_requests'), {
+        profile_id: profile.id,
+        reason: 'Artist verification request submitted via Settings',
+        status: 'pending',
+        created_at: new Date(),
+      });
 
       setPendingRequest(true);
       toast.success('Verification request submitted! We\'ll review your profile and get back to you.');

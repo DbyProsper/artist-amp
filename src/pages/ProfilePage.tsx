@@ -14,8 +14,8 @@ import { PostDetailModal } from '@/components/profile/PostDetailModal';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useProfilePosts } from '@/hooks/useProfilePosts';
-import { supabase } from '@/integrations/supabase/client';
-import { isValidUUID } from '@/lib/utils';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Post } from '@/types';
 import { toast } from 'sonner';
 
@@ -51,31 +51,38 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!profile) return;
 
-    if (!isValidUUID(profile.id)) {
-      toast.error('Cannot load full profile details because your current profile ID is not compatible with the database.');
-      return;
-    }
-
     const fetchCounts = async () => {
-      const { count: followers } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('following_id', profile.id);
-      const { count: following } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('follower_id', profile.id);
-      setFollowerCount(followers || 0);
-      setFollowingCount(following || 0);
+      try {
+        // Fetch followers count
+        const followersQuery = query(
+          collection(db, 'follows'),
+          where('following_id', '==', profile.id)
+        );
+        const followersSnapshot = await getDocs(followersQuery);
+        setFollowerCount(followersSnapshot.size);
+
+        // Fetch following count
+        const followingQuery = query(
+          collection(db, 'follows'),
+          where('follower_id', '==', profile.id)
+        );
+        const followingSnapshot = await getDocs(followingQuery);
+        setFollowingCount(followingSnapshot.size);
+      } catch (error) {
+        console.error('Error fetching follow counts:', error);
+        toast.error('Failed to load follow counts');
+      }
     };
 
     const fetchSocialLinks = async () => {
-      const { data } = await supabase
-        .from('social_links')
-        .select('*')
-        .eq('profile_id', profile.id)
-        .maybeSingle();
-      if (data) setSocialLinks(data);
+      try {
+        const socialLinksDoc = await getDoc(doc(db, 'social_links', profile.id));
+        if (socialLinksDoc.exists()) {
+          setSocialLinks(socialLinksDoc.data() as SocialLinks);
+        }
+      } catch (error) {
+        console.error('Error fetching social links:', error);
+      }
     };
 
     fetchCounts();

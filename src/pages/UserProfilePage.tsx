@@ -13,14 +13,9 @@ import { BackButton } from '@/components/ui/BackButton';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useProfilePosts } from '@/hooks/useProfilePosts';
-import { supabase } from '@/integrations/supabase/client';
+import { doc, getDoc, collection, query, where, getDocs, addDoc, deleteDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
-
-function formatCount(num: number): string {
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return num.toString();
-}
 
 interface Profile {
   id: string;
@@ -60,61 +55,59 @@ export default function UserProfilePage() {
 
     const fetchProfile = async () => {
       setLoading(true);
-      
-      // Fetch profile by ID
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
 
-      if (error || !data) {
-        toast.error('Profile not found');
+      try {
+        // Fetch profile by ID
+        const profileDoc = await getDoc(doc(db, 'profiles', userId));
+        if (!profileDoc.exists()) {
+          toast.error('Profile not found');
+          navigate('/');
+          return;
+        }
+
+        const profileData = profileDoc.data() as Profile;
+        setProfile({ ...profileData, id: userId });
+
+        // Fetch followers count
+        const followersQuery = query(
+          collection(db, 'follows'),
+          where('following_id', '==', userId)
+        );
+        const followersSnapshot = await getDocs(followersQuery);
+        setFollowerCount(followersSnapshot.size);
+
+        // Fetch following count
+        const followingQuery = query(
+          collection(db, 'follows'),
+          where('follower_id', '==', userId)
+        );
+        const followingSnapshot = await getDocs(followingQuery);
+        setFollowingCount(followingSnapshot.size);
+
+        // Check if current user is following
+        if (currentProfile) {
+          const followQuery = query(
+            collection(db, 'follows'),
+            where('follower_id', '==', currentProfile.id),
+            where('following_id', '==', userId)
+          );
+          const followSnapshot = await getDocs(followQuery);
+          setIsFollowing(!followSnapshot.empty);
+        }
+
+        // Fetch social links
+        const socialLinksDoc = await getDoc(doc(db, 'social_links', userId));
+        if (socialLinksDoc.exists()) {
+          setSocialLinks(socialLinksDoc.data() as SocialLinks);
+        }
+
+      } catch (error) {
+        console.error('Error fetching profile:', error);
+        toast.error('Failed to load profile');
         navigate('/');
-        return;
+      } finally {
+        setLoading(false);
       }
-
-      setProfile(data);
-
-      // Fetch followers
-      const { count: followers } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('following_id', userId);
-
-      // Fetch following
-      const { count: following } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('follower_id', userId);
-
-      setFollowerCount(followers || 0);
-      setFollowingCount(following || 0);
-
-      // Check if current user is following
-      if (currentProfile) {
-        const { data: followData } = await supabase
-          .from('follows')
-          .select('id')
-          .eq('follower_id', currentProfile.id)
-          .eq('following_id', userId)
-          .maybeSingle();
-
-        setIsFollowing(!!followData);
-      }
-
-      // Fetch social links
-      const { data: linksData } = await supabase
-        .from('social_links')
-        .select('*')
-        .eq('profile_id', userId)
-        .maybeSingle();
-
-      if (linksData) {
-        setSocialLinks(linksData);
-      }
-
-      setLoading(false);
     };
 
     fetchProfile();
@@ -131,36 +124,41 @@ export default function UserProfilePage() {
 
     try {
       if (isFollowing) {
-        await supabase
-          .from('follows')
-          .delete()
-          .eq('follower_id', currentProfile.id)
-          .eq('following_id', profile.id);
+        // Unfollow - find and delete the follow document
+        const followQuery = query(
+          collection(db, 'follows'),
+          where('follower_id', '==', currentProfile.id),
+          where('following_id', '==', profile.id)
+        );
+        const followSnapshot = await getDocs(followQuery);
+        followSnapshot.forEach(async (doc) => {
+          await deleteDoc(doc.ref);
+        });
 
         setFollowerCount(prev => prev - 1);
         setIsFollowing(false);
         toast.success(`Unfollowed ${profile.name}`);
       } else {
-        await supabase
-          .from('follows')
-          .insert({
-            follower_id: currentProfile.id,
-            following_id: profile.id,
-          });
+        // Follow - add new follow document
+        await addDoc(collection(db, 'follows'), {
+          follower_id: currentProfile.id,
+          following_id: profile.id,
+          created_at: new Date(),
+        });
 
         setFollowerCount(prev => prev + 1);
         setIsFollowing(true);
         toast.success(`Following ${profile.name}!`);
 
         // Create notification
-        await supabase
-          .from('notifications')
-          .insert({
-            profile_id: profile.id,
-            from_profile_id: currentProfile.id,
-            type: 'follow',
-            message: `${currentProfile.name} started following you`,
-          });
+        await addDoc(collection(db, 'notifications'), {
+          profile_id: profile.id,
+          from_profile_id: currentProfile.id,
+          type: 'follow',
+          message: `${currentProfile.name} started following you`,
+          created_at: new Date(),
+          read: false,
+        });
       }
     } catch (err) {
       console.error('Error following:', err);

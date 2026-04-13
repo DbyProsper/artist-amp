@@ -8,17 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
-
-interface TrackStats {
-  id: string;
-  title: string;
-  plays: number;
-  likes: number;
-  cover_url: string | null;
-}
-
+import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 interface DailyStats {
   date: string;
   plays: number;
@@ -50,29 +41,32 @@ export default function AnalyticsDashboardPage() {
 
   const fetchAnalytics = async () => {
     if (!profile) return;
-    
+
     setLoading(true);
     try {
       // Fetch tracks with stats
-      const { data: tracksData, error } = await supabase
-        .from('tracks')
-        .select('id, title, plays, likes, cover_url')
-        .eq('profile_id', profile.id)
-        .order('plays', { ascending: false });
+      const tracksQuery = query(
+        collection(db, 'tracks'),
+        where('profile_id', '==', profile.id),
+        orderBy('plays', 'desc')
+      );
+      const tracksSnapshot = await getDocs(tracksQuery);
+      const tracksData = tracksSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as TrackStats[];
 
-      if (!error && tracksData) {
-        setTracks(tracksData);
-        setTotalPlays(tracksData.reduce((acc, t) => acc + (t.plays || 0), 0));
-        setTotalLikes(tracksData.reduce((acc, t) => acc + (t.likes || 0), 0));
-      }
+      setTracks(tracksData);
+      setTotalPlays(tracksData.reduce((acc, t) => acc + (t.plays || 0), 0));
+      setTotalLikes(tracksData.reduce((acc, t) => acc + (t.likes || 0), 0));
 
       // Fetch follower count
-      const { count } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('following_id', profile.id);
-
-      setFollowerCount(count || 0);
+      const followersQuery = query(
+        collection(db, 'follows'),
+        where('following_id', '==', profile.id)
+      );
+      const followersSnapshot = await getDocs(followersQuery);
+      setFollowerCount(followersSnapshot.size);
     } catch (err) {
       console.error('Error fetching analytics:', err);
     } finally {

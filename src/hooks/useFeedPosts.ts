@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { collection, query, where, orderBy, limit, getDocs, getDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Post, Artist, Track } from '@/types';
 import { mockPosts } from '@/data/mockData';
 
@@ -45,113 +46,101 @@ export function useFeedPosts() {
     setLoading(true);
     try {
       // Fetch posts from database
-      const { data, error: fetchError } = await supabase
-        .from('posts')
-        .select(`
-          id,
-          profile_id,
-          type,
-          track_id,
-          image_url,
-          video_url,
-          caption,
-          likes,
-          comments,
-          shares,
-          is_story,
-          created_at,
-          profiles:profile_id (
-            id,
-            user_id,
-            username,
-            name,
-            avatar_url,
-            is_verified,
-            location
-          ),
-          tracks:track_id (
-            id,
-            title,
-            cover_url,
-            audio_url,
-            duration,
-            plays,
-            likes
-          )
-        `)
-        .eq('is_story', false)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      const postsQuery = query(
+        collection(db, 'posts'),
+        where('is_story', '==', false),
+        orderBy('created_at', 'desc'),
+        limit(50)
+      );
 
-      if (fetchError) {
-        console.error('Error fetching posts:', fetchError);
+      const postsSnapshot = await getDocs(postsQuery);
+
+      if (postsSnapshot.empty) {
         // Fall back to mock data
         setPosts(mockPosts);
         return;
       }
 
-      if (data && data.length > 0) {
-        // Transform database posts to Post type
-        const transformedPosts: Post[] = (data as unknown as DatabasePost[]).map((post) => {
-          const profile = post.profiles;
-          const track = post.tracks;
-          
-          const artist: Artist = {
-            id: profile.id,
-            name: profile.name || 'Unknown',
-            username: profile.username || 'unknown',
-            avatar: profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-            coverImage: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800',
-            bio: '',
-            location: profile.location || '',
-            genres: [],
-            isVerified: profile.is_verified || false,
-            followers: 0,
-            following: 0,
-            tracks: 0,
-          };
+      // Transform database posts to Post type
+      const transformedPosts: Post[] = [];
 
-          let postTrack: Track | undefined;
-          if (track) {
-            postTrack = {
-              id: track.id,
-              title: track.title,
-              artist: artist,
-              coverArt: track.cover_url || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400',
-              duration: track.duration || 0,
-              plays: track.plays || 0,
-              likes: track.likes || 0,
-              audioUrl: track.audio_url || undefined,
-            };
+      for (const postDoc of postsSnapshot.docs) {
+        const post = postDoc.data();
+
+        // Fetch profile data
+        let profileData = null;
+        try {
+          const profileDoc = await getDoc(doc(db, 'profiles', post.profile_id));
+          profileData = profileDoc.exists() ? profileDoc.data() : null;
+        } catch (error) {
+          console.error('Error fetching profile:', error);
+        }
+
+        // Fetch track data if it exists
+        let trackData = null;
+        if (post.track_id) {
+          try {
+            const trackDoc = await getDoc(doc(db, 'tracks', post.track_id));
+            trackData = trackDoc.exists() ? trackDoc.data() : null;
+          } catch (error) {
+            console.error('Error fetching track:', error);
           }
+        }
 
-          return {
-            id: post.id,
+        if (!profileData) continue;
+
+        const artist: Artist = {
+          id: profileData.id || post.profile_id,
+          name: profileData.name || 'Unknown',
+          username: profileData.username || 'unknown',
+          avatar: profileData.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+          coverImage: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800',
+          bio: '',
+          location: profileData.location || '',
+          genres: [],
+          isVerified: profileData.is_verified || false,
+          followers: 0,
+          following: 0,
+          tracks: 0,
+        };
+
+        let postTrack: Track | undefined;
+        if (trackData) {
+          postTrack = {
+            id: post.track_id,
+            title: trackData.title,
             artist: artist,
-            type: post.type as 'audio' | 'video' | 'image',
-            track: postTrack,
-            imageUrl: post.image_url || undefined,
-            videoUrl: post.video_url || undefined,
-            caption: post.caption || '',
-            likes: post.likes || 0,
-            comments: post.comments || 0,
-            shares: post.shares || 0,
-            saves: 0,
-            createdAt: new Date(post.created_at || Date.now()),
-            isLiked: false,
-            isSaved: false,
+            coverArt: trackData.cover_url || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400',
+            duration: trackData.duration || 0,
+            plays: trackData.plays || 0,
+            likes: trackData.likes || 0,
+            audioUrl: trackData.audio_url || undefined,
           };
-        });
+        }
 
-        // Combine with mock posts for a richer feed
-        const combinedPosts = [...transformedPosts, ...mockPosts];
-        // Sort by date
-        combinedPosts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-        setPosts(combinedPosts);
-      } else {
-        // Use mock data if no database posts
-        setPosts(mockPosts);
+        transformedPosts.push({
+          id: postDoc.id,
+          artist: artist,
+          type: post.type as 'audio' | 'video' | 'image',
+          track: postTrack,
+          imageUrl: post.image_url || undefined,
+          videoUrl: post.video_url || undefined,
+          caption: post.caption || '',
+          likes: post.likes || 0,
+          comments: post.comments || 0,
+          shares: post.shares || 0,
+          saves: 0,
+          createdAt: post.created_at?.toDate() || new Date(),
+          isLiked: false,
+          isSaved: false,
+        });
       }
+
+      // Combine with mock posts for a richer feed
+      const combinedPosts = [...transformedPosts, ...mockPosts];
+      // Sort by date
+      combinedPosts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      setPosts(combinedPosts);
     } catch (err) {
       console.error('Error:', err);
       setError('Failed to load posts');

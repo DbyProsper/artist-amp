@@ -4,7 +4,8 @@ import { ArrowLeft, Music2, Save, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { genres } from '@/data/mockData';
 
@@ -33,24 +34,21 @@ export default function PreferencesPage() {
 
   const handleSave = async () => {
     if (!profile) return;
-    
+
     setLoading(true);
-    
+
     try {
-      const { error } = await supabase
-        .from('user_preferences')
-        .upsert({
-          profile_id: profile.id,
-          favorite_genres: selectedGenres,
-        }, { onConflict: 'profile_id' });
-      
-      if (error) throw error;
-      
+      await setDoc(doc(db, 'user_preferences', profile.id), {
+        profile_id: profile.id,
+        favorite_genres: selectedGenres,
+        updated_at: new Date(),
+      });
+
       toast.success('Preferences saved!');
       navigate(-1);
-    } catch (error: any) {
-      console.error('Save error:', error);
-      toast.error(error.message || 'Failed to save preferences');
+    } catch (error) {
+      console.error('Error saving preferences:', error);
+      toast.error('Failed to save preferences');
     } finally {
       setLoading(false);
     }

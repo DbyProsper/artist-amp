@@ -11,16 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
-import { isValidUUID } from '@/lib/utils';
-
-interface Genre {
-  id: string;
-  name: string;
-}
-
-const STEPS = ['Profile Type', 'Profile Info', 'Genres', 'Social Links'];
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
@@ -54,15 +48,20 @@ export default function OnboardingPage() {
       return;
     }
 
-    // Fetch genres
-    const fetchGenres = async () => {
-      const { data, error } = await supabase.from('genres').select('*').order('name');
-      if (!error && data) {
-        setGenres(data);
-      }
-    };
-
-    fetchGenres();
+    // Mock genres for now - in a real app, these would come from Firebase
+    const mockGenres = [
+      { id: '1', name: 'Pop' },
+      { id: '2', name: 'Hip Hop' },
+      { id: '3', name: 'Rock' },
+      { id: '4', name: 'Electronic' },
+      { id: '5', name: 'R&B' },
+      { id: '6', name: 'Jazz' },
+      { id: '7', name: 'Country' },
+      { id: '8', name: 'Classical' },
+      { id: '9', name: 'Reggae' },
+      { id: '10', name: 'Blues' },
+    ];
+    setGenres(mockGenres);
   }, [user, navigate]);
 
   useEffect(() => {
@@ -116,110 +115,69 @@ export default function OnboardingPage() {
     }));
   };
 
-  const uploadFile = async (file: File, bucket: string): Promise<string | null> => {
-    if (!user) return null;
-    
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-    
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(fileName, file, { upsert: true });
-    
-    if (error) {
+  const uploadFile = async (file: File, path: string): Promise<string | null> => {
+    try {
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+      return downloadURL;
+    } catch (error) {
       console.error('Upload error:', error);
       return null;
     }
-    
-    const { data: { publicUrl } } = supabase.storage
-      .from(bucket)
-      .getPublicUrl(fileName);
-    
-    return publicUrl;
   };
 
   const handleComplete = async () => {
     if (!user || !profile) return;
 
-    if (!isValidUUID(profile.id)) {
-      toast.error('Your current authenticated profile is not compatible with the Supabase database schema. Please sign in with a Supabase-backed account or migrate your profile.');
-      return;
-    }
-
     setLoading(true);
-    
+
     try {
       // Upload images if provided
       let avatarUrl = profile.avatar_url;
       let coverUrl = profile.cover_url;
-      
+
       if (formData.avatarFile) {
-        const url = await uploadFile(formData.avatarFile, 'avatars');
+        const fileName = `avatars/${user.uid}/${Date.now()}.${formData.avatarFile.name.split('.').pop()}`;
+        const url = await uploadFile(formData.avatarFile, fileName);
         if (url) avatarUrl = url;
       }
-      
+
       if (formData.coverFile) {
-        const url = await uploadFile(formData.coverFile, 'covers');
+        const fileName = `covers/${user.uid}/${Date.now()}.${formData.coverFile.name.split('.').pop()}`;
+        const url = await uploadFile(formData.coverFile, fileName);
         if (url) coverUrl = url;
       }
-      
-      // Update profile with onboarding_completed flag
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          name: formData.name,
-          username: formData.username,
-          bio: formData.bio,
-          location: formData.location,
-          avatar_url: avatarUrl,
-          cover_url: coverUrl,
-          is_artist: formData.isArtist,
-          onboarding_completed: true,
-        })
-        .eq('id', profile.id);
-      
-      if (profileError) throw profileError;
-      
-      // Add genres
-      if (formData.selectedGenres.length > 0) {
-        // First delete existing genres
-        await supabase
-          .from('artist_genres')
-          .delete()
-          .eq('profile_id', profile.id);
 
-        const genreInserts = formData.selectedGenres.map(genreId => ({
-          profile_id: profile.id,
-          genre_id: genreId,
-        }));
-        
-        const { error: genreError } = await supabase
-          .from('artist_genres')
-          .insert(genreInserts);
-        
-        if (genreError) throw genreError;
-      }
-      
+      // Update profile with onboarding_completed flag
+      await updateDoc(doc(db, 'profiles', profile.id), {
+        name: formData.name,
+        username: formData.username,
+        bio: formData.bio,
+        location: formData.location,
+        avatar_url: avatarUrl,
+        cover_url: coverUrl,
+        is_artist: formData.isArtist,
+        onboarding_completed: true,
+        updated_at: new Date(),
+      });
+
       // Add social links
       const socialLinks = {
-        profile_id: profile.id,
         youtube: formData.youtube || null,
         spotify: formData.spotify || null,
         apple_music: formData.appleMusic || null,
         instagram: formData.instagram || null,
         website: formData.website || null,
+        updated_at: new Date(),
       };
-      
-      const { error: socialError } = await supabase
-        .from('social_links')
-        .upsert(socialLinks, { onConflict: 'profile_id' });
-      
-      if (socialError) throw socialError;
-      
+
+      await setDoc(doc(db, 'social_links', profile.id), socialLinks, { merge: true });
+
       setOnboardingComplete(true);
       await refreshProfile();
       toast.success('Profile setup complete!');
-      
+
       // Navigate after a short delay to show success state
       setTimeout(() => {
         navigate('/');
@@ -288,17 +246,15 @@ export default function OnboardingPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
+            onClick={async () => {
               // Mark onboarding as skipped but allow access
               if (profile) {
-                supabase
-                  .from('profiles')
-                  .update({ onboarding_completed: true })
-                  .eq('id', profile.id)
-                  .then(() => {
-                    refreshProfile();
-                    navigate('/');
-                  });
+                await updateDoc(doc(db, 'profiles', profile.id), {
+                  onboarding_completed: true,
+                  updated_at: new Date(),
+                });
+                await refreshProfile();
+                navigate('/');
               } else {
                 navigate('/');
               }

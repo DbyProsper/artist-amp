@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { Track } from '@/types';
-import { supabase } from '@/integrations/supabase/client';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 
 interface PlayerContextType {
   currentTrack: Track | null;
@@ -45,8 +46,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // Listen for auth state changes and reset player on sign out
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user) {
         // Reset all player state
         if (audioRef.current) {
           audioRef.current.pause();
@@ -66,7 +67,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return unsubscribe;
   }, []);
 
   // Manage audio element

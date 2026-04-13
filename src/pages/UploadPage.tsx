@@ -9,7 +9,9 @@ import { Switch } from '@/components/ui/switch';
 import { EmojiPicker } from '@/components/chat/EmojiPicker';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, addDoc } from 'firebase/firestore';
+import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
 
 type UploadType = 'audio' | 'video' | 'image' | 'story';
@@ -59,13 +61,16 @@ export default function UploadPage() {
     setFormData({ ...formData, caption: formData.caption + emoji });
   };
 
-  const uploadFile = async (file: File, bucket: string): Promise<string | null> => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
-    const { error } = await supabase.storage.from(bucket).upload(fileName, file);
-    if (error) { console.error('Upload error:', error); return null; }
-    const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(fileName);
-    return publicUrl;
+  const uploadFile = async (file: File, path: string): Promise<string | null> => {
+    try {
+      const fileRef = ref(storage, path);
+      await uploadBytes(fileRef, file);
+      const downloadURL = await getDownloadURL(fileRef);
+      return downloadURL;
+    } catch (error) {
+      console.error('Upload error:', error);
+      return null;
+    }
   };
 
   const handleSubmit = async () => {
@@ -78,31 +83,68 @@ export default function UploadPage() {
       let coverUrl: string | null = null;
 
       if (uploadType === 'audio') {
-        fileUrl = await uploadFile(formData.file, 'audio');
+        const fileExt = formData.file.name.split('.').pop();
+        const fileName = `audio/${user.id}/${Date.now()}.${fileExt}`;
+        fileUrl = await uploadFile(formData.file, fileName);
       } else {
-        fileUrl = await uploadFile(formData.file, 'covers');
+        const fileExt = formData.file.name.split('.').pop();
+        const fileName = `uploads/${user.id}/${Date.now()}.${fileExt}`;
+        fileUrl = await uploadFile(formData.file, fileName);
       }
       if (!fileUrl) throw new Error('Failed to upload file');
 
       if (uploadType === 'audio' && formData.coverFile) {
-        coverUrl = await uploadFile(formData.coverFile, 'covers');
+        const fileExt = formData.coverFile.name.split('.').pop();
+        const fileName = `covers/${user.id}/${Date.now()}.${fileExt}`;
+        coverUrl = await uploadFile(formData.coverFile, fileName);
       }
 
       if (uploadType === 'audio') {
-        const { data: track, error: trackError } = await supabase
-          .from('tracks').insert({ profile_id: profile.id, title: formData.title, audio_url: fileUrl, cover_url: coverUrl }).select().single();
-        if (trackError) throw trackError;
-        const { error: postError } = await supabase
-          .from('posts').insert({ profile_id: profile.id, type: 'audio', track_id: track.id, caption: formData.caption, is_story: formData.addToStory, expires_at: formData.addToStory ? new Date(Date.now() + 24*60*60*1000).toISOString() : null });
-        if (postError) throw postError;
+        // Create track document
+        const trackData = {
+          profile_id: profile.id,
+          title: formData.title,
+          audio_url: fileUrl,
+          cover_url: coverUrl,
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+        const trackRef = await addDoc(collection(db, 'tracks'), trackData);
+
+        // Create post document
+        const postData = {
+          profile_id: profile.id,
+          type: 'audio',
+          track_id: trackRef.id,
+          caption: formData.caption,
+          is_story: formData.addToStory,
+          expires_at: formData.addToStory ? new Date(Date.now() + 24*60*60*1000) : null,
+          created_at: new Date(),
+        };
+        await addDoc(collection(db, 'posts'), postData);
       } else if (uploadType === 'story') {
-        const { error } = await supabase
-          .from('posts').insert({ profile_id: profile.id, type: 'image', image_url: fileUrl, caption: formData.caption, is_story: true, expires_at: new Date(Date.now() + 24*60*60*1000).toISOString() });
-        if (error) throw error;
+        const postData = {
+          profile_id: profile.id,
+          type: 'image',
+          image_url: fileUrl,
+          caption: formData.caption,
+          is_story: true,
+          expires_at: new Date(Date.now() + 24*60*60*1000),
+          created_at: new Date(),
+        };
+        await addDoc(collection(db, 'posts'), postData);
       } else {
-        const { error } = await supabase
-          .from('posts').insert({ profile_id: profile.id, type: uploadType, image_url: uploadType === 'image' ? fileUrl : null, video_url: uploadType === 'video' ? fileUrl : null, caption: formData.caption, is_story: formData.addToStory, expires_at: formData.addToStory ? new Date(Date.now() + 24*60*60*1000).toISOString() : null });
-        if (error) throw error;
+        const postData = {
+          profile_id: profile.id,
+          type: uploadType,
+          image_url: uploadType === 'image' ? fileUrl : null,
+          video_url: uploadType === 'video' ? fileUrl : null,
+          caption: formData.caption,
+          is_story: formData.addToStory,
+          expires_at: formData.addToStory ? new Date(Date.now() + 24*60*60*1000) : null,
+          created_at: new Date(),
+        };
+        await addDoc(collection(db, 'posts'), postData);
       }
 
       toast.success(uploadType === 'story' ? 'Story published!' : 'Post published!');

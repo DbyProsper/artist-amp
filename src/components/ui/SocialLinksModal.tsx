@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ExternalLink, Youtube, Music, Globe, Instagram, Facebook } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface SocialLinksModalProps {
   isOpen: boolean;
@@ -27,16 +28,16 @@ export function SocialLinksModal({ isOpen, onClose, profileId }: SocialLinksModa
 
     const fetchLinks = async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('social_links')
-        .select('*')
-        .eq('profile_id', profileId)
-        .maybeSingle();
-
-      if (!error && data) {
-        setLinks(data);
+      try {
+        const socialLinksDoc = await getDoc(doc(db, 'social_links', profileId));
+        if (socialLinksDoc.exists()) {
+          setLinks(socialLinksDoc.data() as SocialLinks);
+        }
+      } catch (error) {
+        console.error('Error fetching social links:', error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchLinks();

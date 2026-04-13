@@ -1,4 +1,5 @@
-import { supabase } from '@/integrations/supabase/client';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, addDoc, doc, setDoc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 
 const AI_GENERATED_PLAYLIST_NAME = 'AI Generated Music';
 
@@ -18,39 +19,36 @@ export interface GeneratedAudioItem {
 export async function getOrCreateAIPlaylist(profileId: string) {
   try {
     // Try to find existing playlist
-    const { data: existingPlaylist, error: fetchError } = await supabase
-      .from('playlists')
-      .select('id')
-      .eq('creator_id', profileId)
-      .eq('name', AI_GENERATED_PLAYLIST_NAME)
-      .single();
+    const playlistsRef = collection(db, 'playlists');
+    const q = query(
+      playlistsRef,
+      where('creator_id', '==', profileId),
+      where('name', '==', AI_GENERATED_PLAYLIST_NAME)
+    );
+    const querySnapshot = await getDocs(q);
 
-    if (existingPlaylist) {
+    if (!querySnapshot.empty) {
+      const existingPlaylist = querySnapshot.docs[0];
       console.log('[AI Music] Using existing AI Generated Music playlist:', existingPlaylist.id);
-      return existingPlaylist;
+      return { id: existingPlaylist.id, ...existingPlaylist.data() };
     }
 
     // Create new playlist if it doesn't exist
     console.log('[AI Music] Creating new AI Generated Music playlist...');
-    const { data: newPlaylist, error: createError } = await supabase
-      .from('playlists')
-      .insert({
-        creator_id: profileId,
-        name: AI_GENERATED_PLAYLIST_NAME,
-        description: 'Automatically generated music and beats',
-        is_public: false,
-        is_collaborative: false,
-      })
-      .select()
-      .single();
+    const newPlaylistData = {
+      creator_id: profileId,
+      name: AI_GENERATED_PLAYLIST_NAME,
+      description: 'Automatically generated music and beats',
+      is_public: false,
+      is_collaborative: false,
+      created_at: new Date(),
+      updated_at: new Date(),
+      tracks: []
+    };
 
-    if (createError) {
-      console.error('[AI Music] Failed to create playlist:', createError);
-      throw createError;
-    }
-
-    console.log('[AI Music] Playlist created:', newPlaylist.id);
-    return newPlaylist;
+    const docRef = await addDoc(collection(db, 'playlists'), newPlaylistData);
+    console.log('[AI Music] Playlist created:', docRef.id);
+    return { id: docRef.id, ...newPlaylistData };
   } catch (error) {
     console.error('[AI Music] Error in getOrCreateAIPlaylist:', error);
     throw error;
@@ -72,71 +70,41 @@ export async function saveGeneratedAudio(profileId: string, item: GeneratedAudio
     // Get or create the AI Generated Music playlist
     const playlist = await getOrCreateAIPlaylist(profileId);
 
-    // Insert the track
+    // Create the track data
     const trackData: any = {
-        profile_id: profileId,
-        title: item.title,
-        audio_url: item.audio_url,
-        cover_url: item.cover_url || null,
-        duration: item.duration || null,
-        is_public: false,
+      profile_id: profileId,
+      title: item.title,
+      audio_url: item.audio_url,
+      cover_url: item.cover_url || null,
+      duration: item.duration || null,
+      is_public: false,
+      created_at: new Date(),
+      updated_at: new Date(),
     };
 
     // Add metadata if provided
     if (item.mode || item.improved_prompt || item.plan) {
-        trackData.metadata = {
-            mode: item.mode,
-            improved_prompt: item.improved_prompt,
-            plan: item.plan,
-        };
+      trackData.metadata = {
+        mode: item.mode,
+        improved_prompt: item.improved_prompt,
+        plan: item.plan,
+      };
     }
 
-    const { data: track, error: trackError } = await supabase
-        .from('tracks')
-        .insert(trackData)
-        .select('id')
-        .single();
-
-    if (trackError) {
-      console.error('[AI Music] Failed to create track:', trackError);
-      throw trackError;
-    }
+    // Add track to Firestore
+    const trackRef = await addDoc(collection(db, 'tracks'), trackData);
+    const track = { id: trackRef.id, ...trackData };
 
     console.log('[AI Music] Track created:', track.id);
 
-    // Get the highest position in the playlist
-    const { data: existingTracks, error: positionError } = await supabase
-      .from('playlist_tracks')
-      .select('position')
-      .eq('playlist_id', playlist.id)
-      .order('position', { ascending: false })
-      .limit(1);
+    // Update the playlist to include this track
+    const playlistRef = doc(db, 'playlists', playlist.id);
+    await updateDoc(playlistRef, {
+      tracks: arrayUnion(track.id),
+      updated_at: new Date()
+    });
 
-    if (positionError && positionError.code !== 'PGRST116') {
-      // PGRST116 is "no rows" error, which is fine
-      console.error('[AI Music] Error fetching playlist position:', positionError);
-    }
-
-    const nextPosition = (existingTracks && existingTracks.length > 0)
-      ? (existingTracks[0].position || 0) + 1
-      : 0;
-
-    // Add the track to the playlist
-    const { error: playlistTrackError } = await supabase
-      .from('playlist_tracks')
-      .insert({
-        playlist_id: playlist.id,
-        track_id: track.id,
-        position: nextPosition,
-        added_by: profileId,
-      });
-
-    if (playlistTrackError) {
-      console.error('[AI Music] Failed to add track to playlist:', playlistTrackError);
-      throw playlistTrackError;
-    }
-
-    console.log('[AI Music] Track added to playlist at position:', nextPosition);
+    console.log('[AI Music] Track added to playlist');
     return { track, playlist };
   } catch (error) {
     console.error('[AI Music] Error saving generated audio:', error);
@@ -165,67 +133,37 @@ export async function saveGeneratedLyrics(profileId: string, item: GeneratedLyri
     // Get or create the AI Generated Music playlist
     const playlist = await getOrCreateAIPlaylist(profileId);
 
-    // Insert the track (using tracks table for consistency, with audio_url null)
+    // Create the track data
     const trackData: any = {
-        profile_id: profileId,
-        title: item.title,
-        audio_url: null, // No audio for lyrics
-        cover_url: null,
-        duration: null,
-        is_public: false,
-        metadata: {
-            type: 'lyrics',
-            content: item.content,
-            model: item.model,
-        },
+      profile_id: profileId,
+      title: item.title,
+      audio_url: null, // No audio for lyrics
+      cover_url: null,
+      duration: null,
+      is_public: false,
+      created_at: new Date(),
+      updated_at: new Date(),
+      metadata: {
+        type: 'lyrics',
+        content: item.content,
+        model: item.model,
+      },
     };
 
-    const { data: track, error: trackError } = await supabase
-        .from('tracks')
-        .insert(trackData)
-        .select('id')
-        .single();
-
-    if (trackError) {
-      console.error('[AI Lyrics] Failed to create track:', trackError);
-      throw trackError;
-    }
+    // Add track to Firestore
+    const trackRef = await addDoc(collection(db, 'tracks'), trackData);
+    const track = { id: trackRef.id, ...trackData };
 
     console.log('[AI Lyrics] Track created:', track.id);
 
-    // Get the highest position in the playlist
-    const { data: existingTracks, error: positionError } = await supabase
-      .from('playlist_tracks')
-      .select('position')
-      .eq('playlist_id', playlist.id)
-      .order('position', { ascending: false })
-      .limit(1);
+    // Update the playlist to include this track
+    const playlistRef = doc(db, 'playlists', playlist.id);
+    await updateDoc(playlistRef, {
+      tracks: arrayUnion(track.id),
+      updated_at: new Date()
+    });
 
-    if (positionError && positionError.code !== 'PGRST116') {
-      // PGRST116 is "no rows" error, which is fine
-      console.error('[AI Lyrics] Error fetching playlist position:', positionError);
-    }
-
-    const nextPosition = (existingTracks && existingTracks.length > 0)
-      ? (existingTracks[0].position || 0) + 1
-      : 0;
-
-    // Add the track to the playlist
-    const { error: playlistTrackError } = await supabase
-      .from('playlist_tracks')
-      .insert({
-        playlist_id: playlist.id,
-        track_id: track.id,
-        position: nextPosition,
-        added_by: profileId,
-      });
-
-    if (playlistTrackError) {
-      console.error('[AI Lyrics] Failed to add track to playlist:', playlistTrackError);
-      throw playlistTrackError;
-    }
-
-    console.log('[AI Lyrics] Lyrics added to playlist at position:', nextPosition);
+    console.log('[AI Lyrics] Lyrics added to playlist');
     return { track, playlist };
   } catch (error) {
     console.error('[AI Lyrics] Error saving generated lyrics:', error);

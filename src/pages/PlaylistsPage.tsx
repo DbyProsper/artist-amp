@@ -20,15 +20,10 @@ import { Playlist, Track, Artist } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-import { isValidUUID } from '@/lib/utils';
+import { collection, query, where, orderBy, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
-
-function formatCount(num: number): string {
-  if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-  if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-  return num.toString();
-}
 
 export default function PlaylistsPage() {
   const navigate = useNavigate();
@@ -51,23 +46,25 @@ export default function PlaylistsPage() {
       return;
     }
 
-    if (!isValidUUID(profile.id)) {
-      toast.error('Cannot load playlists because your current profile ID is not compatible with the database.');
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
-    const { data, error } = await supabase
-      .from('playlists')
-      .select('*')
-      .eq('creator_id', profile.id)
-      .order('created_at', { ascending: false });
-
-    if (!error && data) {
-      setPlaylists(data);
+    try {
+      const playlistsQuery = query(
+        collection(db, 'playlists'),
+        where('creator_id', '==', profile.id),
+        orderBy('created_at', 'desc')
+      );
+      const playlistsSnapshot = await getDocs(playlistsQuery);
+      const playlistsData = playlistsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setPlaylists(playlistsData);
+    } catch (error) {
+      console.error('Error fetching playlists:', error);
+      toast.error('Failed to load playlists');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -76,29 +73,39 @@ export default function PlaylistsPage() {
 
   const handleCreate = async () => {
     if (!profile || !newName.trim()) return;
-    if (!isValidUUID(profile.id)) {
-      toast.error('Cannot create playlists because your current profile ID is not compatible with the database.');
-      return;
-    }
-    const { data, error } = await supabase
-      .from('playlists')
-      .insert({
+
+    try {
+      let coverUrl = null;
+      if (editImageFile) {
+        const fileName = `playlists/${profile.id}/${Date.now()}.${editImageFile.name.split('.').pop()}`;
+        const storageRef = ref(storage, fileName);
+        await uploadBytes(storageRef, editImageFile);
+        coverUrl = await getDownloadURL(storageRef);
+      }
+
+      const docRef = await addDoc(collection(db, 'playlists'), {
         creator_id: profile.id,
         name: newName.trim(),
         description: newDesc.trim() || null,
         is_public: newIsPublic,
-        cover_url: editImage || null,
-      })
-      .select();
-    
-    if (error) {
-      toast.error('Failed to create playlist');
-      return;
-    }
-    
-    if (data && data.length > 0) {
+        cover_url: coverUrl,
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+
       // Optimistically add the new playlist to the state immediately
-      setPlaylists([data[0], ...playlists]);
+      const newPlaylist = {
+        id: docRef.id,
+        creator_id: profile.id,
+        name: newName.trim(),
+        description: newDesc.trim() || null,
+        is_public: newIsPublic,
+        cover_url: coverUrl,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      setPlaylists([newPlaylist, ...playlists]);
       toast.success('Playlist created!');
       setShowCreate(false);
       setNewName('');
@@ -106,14 +113,20 @@ export default function PlaylistsPage() {
       setNewIsPublic(true);
       setEditImage('');
       setEditImageFile(null);
+    } catch (error) {
+      console.error('Error creating playlist:', error);
+      toast.error('Failed to create playlist');
     }
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('playlists').delete().eq('id', id);
-    if (!error) {
+    try {
+      await deleteDoc(doc(db, 'playlists', id));
       setPlaylists(playlists.filter(p => p.id !== id));
       toast.success('Playlist deleted');
+    } catch (error) {
+      console.error('Error deleting playlist:', error);
+      toast.error('Failed to delete playlist');
     }
   };
 
@@ -143,27 +156,25 @@ export default function PlaylistsPage() {
 
     try {
       let coverUrl = editImage;
-      
-      // If a new image was uploaded, we'd need to handle storage
-      // For now, we'll just save the data to the database
-      const { error } = await supabase
-        .from('playlists')
-        .update({
-          name: newName.trim(),
-          description: newDesc.trim() || null,
-          is_public: newIsPublic,
-          cover_url: coverUrl || null,
-        })
-        .eq('id', editingId);
 
-      if (error) {
-        toast.error('Failed to save playlist');
-        return;
+      if (editImageFile) {
+        const fileName = `playlists/${profile?.id}/${Date.now()}.${editImageFile.name.split('.').pop()}`;
+        const storageRef = ref(storage, fileName);
+        await uploadBytes(storageRef, editImageFile);
+        coverUrl = await getDownloadURL(storageRef);
       }
 
+      await updateDoc(doc(db, 'playlists', editingId), {
+        name: newName.trim(),
+        description: newDesc.trim() || null,
+        is_public: newIsPublic,
+        cover_url: coverUrl || null,
+        updated_at: new Date(),
+      });
+
       // Update local state
-      setPlaylists(playlists.map(p => 
-        p.id === editingId 
+      setPlaylists(playlists.map(p =>
+        p.id === editingId
           ? { ...p, name: newName, description: newDesc, is_public: newIsPublic, cover_url: coverUrl }
           : p
       ));
@@ -176,6 +187,7 @@ export default function PlaylistsPage() {
       setEditImage('');
       setEditImageFile(null);
     } catch (error) {
+      console.error('Error saving playlist:', error);
       toast.error('Failed to save playlist');
     }
   };

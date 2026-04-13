@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { collection, query, where, orderBy, limit, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
 
@@ -29,54 +30,98 @@ export function useRealTimeNotifications() {
   const fetchNotifications = useCallback(async () => {
     if (!profile?.id) return;
 
-    const { data, error } = await supabase
-      .from('notifications')
-      .select(`
-        *,
-        from_profile:profiles!notifications_from_profile_id_fkey (
-          id,
-          username,
-          name,
-          avatar_url
-        )
-      `)
-      .eq('profile_id', profile.id)
-      .order('created_at', { ascending: false })
-      .limit(50);
+    try {
+      const notificationsQuery = query(
+        collection(db, 'notifications'),
+        where('profile_id', '==', profile.id),
+        orderBy('created_at', 'desc'),
+        limit(50)
+      );
 
-    if (!error && data) {
-      setNotifications(data as Notification[]);
-      setUnreadCount(data.filter(n => !n.read).length);
+      const snapshot = await getDocs(notificationsQuery);
+      const notificationsData: Notification[] = [];
+
+      for (const docSnap of snapshot.docs) {
+        const data = docSnap.data();
+
+        // Fetch from_profile data if it exists
+        let fromProfile = null;
+        if (data.from_profile_id) {
+          try {
+            const profileDoc = await getDocs(query(
+              collection(db, 'profiles'),
+              where('id', '==', data.from_profile_id),
+              limit(1)
+            ));
+            if (!profileDoc.empty) {
+              const profileData = profileDoc.docs[0].data();
+              fromProfile = {
+                id: profileDoc.docs[0].id,
+                username: profileData.username,
+                name: profileData.name,
+                avatar_url: profileData.avatar_url,
+              };
+            }
+          } catch (error) {
+            console.error('Error fetching from_profile:', error);
+          }
+        }
+
+        notificationsData.push({
+          id: docSnap.id,
+          type: data.type,
+          message: data.message,
+          read: data.read,
+          created_at: data.created_at?.toDate()?.toISOString(),
+          from_profile_id: data.from_profile_id,
+          track_id: data.track_id,
+          post_id: data.post_id,
+          from_profile: fromProfile,
+        });
+      }
+
+      setNotifications(notificationsData);
+      setUnreadCount(notificationsData.filter(n => !n.read).length);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
     }
     setLoading(false);
   }, [profile?.id]);
 
   const markAsRead = useCallback(async (notificationId: string) => {
-    const { error } = await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('id', notificationId);
-
-    if (!error) {
+    try {
+      await updateDoc(doc(db, 'notifications', notificationId), { read: true });
       setNotifications(prev =>
         prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
     }
   }, []);
 
   const markAllAsRead = useCallback(async () => {
     if (!profile?.id) return;
 
-    const { error } = await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('profile_id', profile.id)
-      .eq('read', false);
+    try {
+      // Get all unread notifications
+      const unreadQuery = query(
+        collection(db, 'notifications'),
+        where('profile_id', '==', profile.id),
+        where('read', '==', false)
+      );
+      const snapshot = await getDocs(unreadQuery);
 
-    if (!error) {
+      // Mark each one as read
+      const updatePromises = snapshot.docs.map(docSnap =>
+        updateDoc(docSnap.ref, { read: true })
+      );
+      await Promise.all(updatePromises);
+
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setUnreadCount(0);
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
     }
   }, [profile?.id]);
 
@@ -85,70 +130,8 @@ export function useRealTimeNotifications() {
 
     fetchNotifications();
 
-    // Subscribe to real-time notifications
-    const channel = supabase
-      .channel(`notifications-${profile.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `profile_id=eq.${profile.id}`,
-        },
-        async (payload) => {
-          // Fetch the full notification with profile data
-          const { data, error } = await supabase
-            .from('notifications')
-            .select(`
-              *,
-              from_profile:profiles!notifications_from_profile_id_fkey (
-                id,
-                username,
-                name,
-                avatar_url
-              )
-            `)
-            .eq('id', payload.new.id)
-            .single();
-
-          if (!error && data) {
-            setNotifications(prev => [data as Notification, ...prev]);
-            setUnreadCount(prev => prev + 1);
-
-            // Show toast for new notification
-            const notif = data as Notification;
-            const fromName = notif.from_profile?.name || notif.from_profile?.username || 'Someone';
-            
-            let message = '';
-            switch (notif.type) {
-              case 'like':
-                message = `${fromName} liked your post`;
-                break;
-              case 'follow':
-                message = `${fromName} started following you`;
-                break;
-              case 'comment':
-                message = `${fromName} commented on your track`;
-                break;
-              case 'message':
-                message = `${fromName} sent you a message`;
-                break;
-              default:
-                message = notif.message || 'New notification';
-            }
-
-            toast(message, {
-              description: 'Just now',
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // TODO: Implement real-time notifications with Firebase
+    // For now, we'll just fetch on mount and not have real-time updates
   }, [profile?.id, fetchNotifications]);
 
   return {
