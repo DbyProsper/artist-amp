@@ -32,6 +32,9 @@ import { ImageDisplay } from '@/components/ui/ImageDisplay';
 import { AIChat } from '@/components/ui/AIChat';
 import { SongService, Song } from '@/lib/songService';
 import { toast } from 'sonner';
+import { BPMSlider } from '@/components/studio/BPMSlider';
+import { PresetButtons } from '@/components/studio/PresetButtons';
+import { MerchGenerator } from '@/components/studio/MerchGenerator';
 
 export default function OnlineStudioPage() {
   const navigate = useNavigate();
@@ -88,6 +91,19 @@ export default function OnlineStudioPage() {
   const [merchLoading, setMerchLoading] = useState(false);
   const [merchUrl, setMerchUrl] = useState('');
   const [merchError, setMerchError] = useState('');
+
+  // Enhanced Merch Generator State (with front/back images)
+  const [merchSongTitle, setMerchSongTitle] = useState('');
+  const [merchGenre, setMerchGenre] = useState<'amapiano' | 'gqom' | 'trap' | 'rnb' | 'afrobeats' | 'house' | 'hiphop'>('amapiano');
+  const [merchStyle, setMerchStyle] = useState<'streetwear' | 'luxury' | 'minimal'>('streetwear');
+  const [merchFrontImage, setMerchFrontImage] = useState('');
+  const [merchBackImage, setMerchBackImage] = useState('');
+  const [merchGeneratorLoading, setMerchGeneratorLoading] = useState(false);
+
+  // Beat Generator Enhanced State (with BPM and presets)
+  const [beatGenre, setBeatGenre] = useState<'amapiano' | 'gqom' | 'trap' | 'rnb' | 'afrobeats' | 'house' | 'hiphop'>('amapiano');
+  const [beatBPM, setBeatBPM] = useState(112);
+  const [beatMood, setBeatMood] = useState('');
 
   // Saved Items State
   const [savedItems, setSavedItems] = useState<Array<{
@@ -453,6 +469,63 @@ export default function OnlineStudioPage() {
       'Trap': 'Trap beat with heavy 808s and hi-hats'
     };
     setMusicPrompt(prompts[preset as keyof typeof prompts] || preset);
+  };
+
+  /**
+   * Handle preset button selection from PresetButtons component
+   */
+  const handlePresetSelect = (preset: any) => {
+    // Auto-fill form fields with preset data
+    setBeatGenre(preset.genre);
+    setBeatBPM(preset.bpm);
+    setBeatMood(preset.mood);
+    // Auto-populate prompt with genre-based suggestion
+    setBeatPrompt(`Create a ${preset.genre} beat with ${preset.mood} vibes, around ${preset.bpm} BPM`);
+    toast.success(`Preset "${preset.name}" loaded!`, {
+      description: `Genre: ${preset.genre}, BPM: ${preset.bpm}, Mood: ${preset.mood}`,
+    });
+  };
+
+  /**
+   * Handle merch generation with new MerchGenerator component
+   */
+  const handleGenerateMerchDesign = async (data: { songTitle: string; genre: string; style: 'streetwear' | 'luxury' | 'minimal' }) => {
+    if (!data.songTitle.trim()) {
+      toast.error('Please enter a song title');
+      return;
+    }
+
+    setMerchGeneratorLoading(true);
+    try {
+      // Call the existing generateMerch API or a new endpoint
+      // For now, we'll use mock data to demonstrate the integration
+      const result = await generateMerch(data.songTitle, data.genre);
+      
+      if (!result.success) {
+        toast.error('Failed to generate design', {
+          description: result.error || 'Please try again',
+        });
+      } else {
+        // Parse the response - expecting front and back images
+        const frontImg = result.cover_url || result.data?.cover_url || '';
+        const backImg = result.data?.back_image || '';
+        
+        setMerchFrontImage(frontImg);
+        setMerchBackImage(backImg);
+        
+        toast.success('Merch design generated!', {
+          description: 'Front and back designs ready',
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate design';
+      toast.error('Generation failed', {
+        description: message,
+      });
+      console.error('Merch generation error:', error);
+    } finally {
+      setMerchGeneratorLoading(false);
+    }
   };
 
   /**
@@ -1060,6 +1133,25 @@ export default function OnlineStudioPage() {
                 <div className="p-4 bg-muted/50 rounded-lg border border-border">
                   <p className="text-sm font-medium mb-3">Describe the music you want:</p>
                   
+                  {/* Preset Buttons */}
+                  <div className="mb-6">
+                    <p className="text-sm font-medium mb-3">Quick Presets:</p>
+                    <PresetButtons 
+                      onPresetSelect={handlePresetSelect} 
+                      disabled={beatLoading}
+                    />
+                  </div>
+
+                  {/* BPM Slider */}
+                  <div className="mb-6">
+                    <BPMSlider 
+                      genre={beatGenre}
+                      bpm={beatBPM}
+                      onBPMChange={setBeatBPM}
+                      disabled={beatLoading}
+                    />
+                  </div>
+
                   {/* Mode Selector */}
                   <div className="mb-4">
                     <p className="text-sm font-medium mb-2">AI Mode:</p>
@@ -1658,14 +1750,37 @@ export default function OnlineStudioPage() {
         {/* Merch Generator Tab */}
         <TabsContent value="merch" className="px-4 py-6">
           <div className="space-y-4">
+            {/* New Advanced Merch Generator */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-primary" />
-                  AI Merch Generator
+                  Professional Merch Designer
                 </CardTitle>
                 <CardDescription>
-                  Generate custom merch designs with AI-powered creativity
+                  Create stunning merchandise designs with front and back previews
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MerchGenerator 
+                  loading={merchGeneratorLoading}
+                  onGenerate={handleGenerateMerchDesign}
+                  frontImage={merchFrontImage}
+                  backImage={merchBackImage}
+                  disabled={merchGeneratorLoading}
+                />
+              </CardContent>
+            </Card>
+
+            {/* Legacy Merch Generator as Expandable Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" />
+                  Quick Merch Generator
+                </CardTitle>
+                <CardDescription>
+                  Simple design creation with product type selection
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">

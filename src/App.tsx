@@ -28,6 +28,7 @@ import OnboardingPage from "./pages/OnboardingPage";
 import AdminPage from "./pages/AdminPage";
 import AnalyticsDashboardPage from "./pages/AnalyticsDashboardPage";
 import OnlineStudioPage from "./pages/OnlineStudioPage";
+import StudioPage from "./pages/StudioPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -97,7 +98,8 @@ const AppRoutes = () => {
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/analytics" element={<AnalyticsDashboardPage />} />
-        <Route path="/studio" element={<OnlineStudioPage />} />
+        <Route path="/studio" element={<StudioPage />} />
+        <Route path="/studio-legacy" element={<OnlineStudioPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
       <PlayerComponents />
