@@ -16,6 +16,13 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
 
+interface Genre {
+  id: string;
+  name: string;
+}
+
+const STEPS = ['Account Type', 'About You', 'Genres', 'Connect'];
+
 export default function OnboardingPage() {
   const navigate = useNavigate();
   const { user, profile, refreshProfile } = useAuth();
@@ -53,13 +60,18 @@ export default function OnboardingPage() {
       { id: '1', name: 'Pop' },
       { id: '2', name: 'Hip Hop' },
       { id: '3', name: 'Rock' },
-      { id: '4', name: 'Electronic' },
-      { id: '5', name: 'R&B' },
-      { id: '6', name: 'Jazz' },
-      { id: '7', name: 'Country' },
-      { id: '8', name: 'Classical' },
-      { id: '9', name: 'Reggae' },
-      { id: '10', name: 'Blues' },
+      
+      { id: '4', name: 'R&B' },
+      { id: '5', name: 'Jazz' },
+    
+      { id: '6', name: 'Classical' },
+      { id: '7', name: 'Reggae' },
+      
+      { id: '8', name: 'Trap' },
+      { id: '9', name: 'Amapiano' },
+      { id: '10', name: 'Lekompo' },
+      { id: '11', name: 'House' },
+      { id: '12', name: 'Disco' },
     ];
     setGenres(mockGenres);
   }, [user, navigate]);
