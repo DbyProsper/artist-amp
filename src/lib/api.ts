@@ -1,38 +1,37 @@
+/**
+ * API Layer - Unified endpoint interface
+ * All requests use VITE_API_BASE_URL from environment
+ * Follows unified backend endpoint structure
+ */
+
 import { API_BASE } from '@/config/api';
-
-// AI Backend URL for music generation
-const AI_BASE_URL = 'https://clinical-created-agent-ray.trycloudflare.com';
-
-// Cloud Run URL for new AI features
-const CLOUD_RUN_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://musicinsta-api-asyfiq555a-uc.a.run.app';
 
 export interface ApiResponse {
   success: boolean;
+  data?: any;
+  error?: string;
+  message?: string;
+  // Legacy response fields (for backward compatibility)
   audio_url?: string;
   audio_base64?: string;
   lyrics?: string;
   cover_url?: string;
-  data?: any;
-  error?: string;
-  message?: string;
   improved_prompt?: string;
   plan?: string;
 }
 
-const DEFAULT_TIMEOUT_MS = 30000; // Increased timeout for AI generation
+const DEFAULT_TIMEOUT_MS = 30000; // 30 second timeout for AI generation
 
-function buildUrl(endpoint: string, isAI: boolean = false): string {
-  const baseUrl = isAI ? AI_BASE_URL : API_BASE;
-  const url = `${baseUrl.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-  return url;
+function buildUrl(endpoint: string): string {
+  const baseUrl = API_BASE;
+  return `${baseUrl.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 }
 
-function buildCloudRunUrl(endpoint: string): string {
-  const url = `${CLOUD_RUN_BASE_URL.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-  return url;
-}
-
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -42,7 +41,6 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
       signal: controller.signal,
       cache: 'no-store',
     });
-
     return res;
   } catch (error) {
     console.error(`[API] fetch error for ${url}:`, error);
@@ -53,7 +51,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
 
     const msg = (error as Error).message || 'Network error';
     if (/certificate|ssl|secure/i.test(msg)) {
-      throw new Error('SSL error: secure connection issue (if using ngrok, open URL once in browser and accept cert)');
+      throw new Error('SSL error: secure connection issue');
     }
 
     throw new Error('Network error or SSL issue');
@@ -62,23 +60,41 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
-async function callApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: object, isAI: boolean = false): Promise<ApiResponse> {
-  const url = buildUrl(endpoint, isAI);
+async function callApiRequest(
+  endpoint: string,
+  method: 'GET' | 'POST' = 'GET',
+  body?: FormData | object
+): Promise<ApiResponse> {
+  const url = buildUrl(endpoint);
 
   try {
+    const headers: HeadersInit = {};
+
+    // Only set Content-Type for non-FormData requests
+    const isFormData = body instanceof FormData;
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
+    headers['Accept'] = 'application/json';
+
     const response = await fetchWithTimeout(url, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,
+      headers,
+      body:
+        method === 'POST'
+          ? isFormData
+            ? body
+            : JSON.stringify(body ?? {})
+          : undefined,
     });
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       const errorMessage = text || `HTTP ${response.status}`;
-      return { success: false, error: `API error: ${errorMessage}` };
+      return {
+        success: false,
+        error: `API error: ${errorMessage}`,
+      };
     }
 
     const json = await response.json().catch((err) => {
@@ -87,61 +103,23 @@ async function callApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: 
     });
 
     if (!json || typeof json !== 'object') {
-      return { success: false, error: 'Invalid JSON response from API' };
+      return {
+        success: false,
+        error: 'Invalid JSON response from API',
+      };
     }
 
+    // Normalize response to unified format
     return {
-      success: Boolean(json.success ?? (json.status === 'success') ?? true), // AI endpoints might not have success field
-      audio_url: json.audio_url || json.file || json.data?.audio_url,
-      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64,
-      cover_url: json.cover_url || json.url || json.data?.cover_url,
-      lyrics: json.lyrics || json.data?.lyrics || (typeof json.data === 'string' ? json.data : undefined),
-      improved_prompt: json.improved_prompt || json.data?.improved_prompt,
-      plan: json.plan || json.data?.plan,
-      data: json.data ?? json,
-      message: json.message ?? '',
-      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
-    };
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, error: errMsg };
-  }
-}
-
-async function callCloudRunApi(endpoint: string, method: 'GET' | 'POST' = 'GET', body?: object): Promise<ApiResponse> {
-  const url = buildCloudRunUrl(endpoint);
-
-  try {
-    const response = await fetchWithTimeout(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      const errorMessage = text || `HTTP ${response.status}`;
-      return { success: false, error: `API error: ${errorMessage}` };
-    }
-
-    const json = await response.json().catch((err) => {
-      console.error('[CloudRun API] invalid JSON payload', err);
-      return null;
-    });
-
-    if (!json || typeof json !== 'object') {
-      return { success: false, error: 'Invalid JSON response from API' };
-    }
-
-    return {
-      success: Boolean(json.success ?? (json.status === 'success') ?? true),
+      success: json.success !== undefined ? json.success : true,
+      // Support legacy field names for backward compatibility
       audio_url: json.audio_url || json.file || json.data?.audio_url,
       audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64,
       cover_url: json.cover_url || json.url || json.data?.cover_url || json.image_url,
-      lyrics: json.lyrics || json.data?.lyrics || (typeof json.data === 'string' ? json.data : undefined),
+      lyrics:
+        json.lyrics ||
+        json.data?.lyrics ||
+        (typeof json.data === 'string' ? json.data : undefined),
       improved_prompt: json.improved_prompt || json.data?.improved_prompt,
       plan: json.plan || json.data?.plan,
       data: json.data ?? json,
@@ -150,199 +128,164 @@ async function callCloudRunApi(endpoint: string, method: 'GET' | 'POST' = 'GET',
     };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, error: errMsg };
+    return {
+      success: false,
+      error: errMsg,
+    };
   }
 }
 
-export async function generateMusic(prompt: string): Promise<ApiResponse> {
+// =============================================================================
+// API EXPORT FUNCTIONS - Clean, unified interface
+// =============================================================================
+
+/**
+ * Generate music from a text prompt
+ * POST /music/generate
+ */
+export async function generateMusic(prompt: string, metadata?: any): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApi('/generate', 'POST', { prompt });
+  return callApiRequest('/music/generate', 'POST', {
+    prompt,
+    ...metadata,
+  });
 }
 
-export async function generateBeats(prompt: string): Promise<ApiResponse> {
+/**
+ * Generate a complete song (music + lyrics)
+ * POST /song/generate
+ */
+export async function generateSong(prompt: string, metadata?: any): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApi('/beats', 'POST', { prompt }, true);
+  return callApiRequest('/song/generate', 'POST', {
+    prompt,
+    ...metadata,
+  });
 }
 
-export async function generateSmart(prompt: string): Promise<ApiResponse> {
-  if (!prompt?.trim()) {
-    return { success: false, error: 'Prompt cannot be empty' };
-  }
-
-  return callApi('/generate-smart', 'POST', { prompt }, true);
-}
-
-export async function generateGeminiAudio(prompt: string): Promise<ApiResponse> {
-  if (!prompt?.trim()) {
-    return { success: false, error: 'Prompt cannot be empty' };
-  }
-
-  return callApi('/generate-gemini-audio', 'POST', { prompt }, true);
-}
-
+/**
+ * Generate lyrics from a prompt
+ * POST /lyrics/generate
+ */
 export async function generateLyrics(prompt: string, model: string = 'gemini'): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApi('/lyrics/generate', 'POST', { prompt, model });
+  return callApiRequest('/lyrics/generate', 'POST', {
+    prompt,
+    model,
+  });
 }
 
-export async function generateCover(prompt: string): Promise<ApiResponse> {
+/**
+ * Generate beats/rhythm from a prompt
+ * POST /beats/generate
+ */
+export async function generateBeats(prompt: string, metadata?: any): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApi('/cover', 'POST', { prompt });
+  return callApiRequest('/beats/generate', 'POST', {
+    prompt,
+    ...metadata,
+  });
 }
 
-export async function generateSong(prompt: string): Promise<ApiResponse> {
+/**
+ * Generate images from a prompt
+ * POST /image/generate
+ * @param type - Optional type: 'merch' for merchandise, 'album-cover' for covers, default for general images
+ */
+export async function generateImage(prompt: string, type?: string): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callCloudRunApi('/generate-song', 'POST', { prompt });
+  return callApiRequest('/image/generate', 'POST', {
+    prompt,
+    type: type || 'image',
+  });
 }
 
-export async function generateMerch(prompt: string, productType: string): Promise<ApiResponse> {
+/**
+ * Generate merchandise images from a prompt
+ * POST /image/generate (with type: 'merch')
+ */
+export async function generateMerch(prompt: string, productType?: string): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callCloudRunApi('/generate-merch', 'POST', { prompt, product_type: productType });
+  return callApiRequest('/image/generate', 'POST', {
+    prompt,
+    type: 'merch',
+    product_type: productType,
+  });
 }
 
-export async function generateMusicFromAudio(audioFile: File, prompt: string, model: string = 'gemini'): Promise<ApiResponse> {
+/**
+ * Generate music from an audio file
+ * POST /music/generate (with file upload)
+ */
+export async function generateMusicFromAudio(
+  audioFile: File,
+  prompt: string,
+  model: string = 'gemini'
+): Promise<ApiResponse> {
   const formData = new FormData();
   formData.append('file', audioFile);
   formData.append('prompt', prompt);
   formData.append('model', model);
 
-  const url = buildCloudRunUrl('/music/generate');
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      const errorMessage = text || `HTTP ${response.status}`;
-      return { success: false, error: `API error: ${errorMessage}` };
-    }
-
-    const json = await response.json().catch((err) => {
-      console.error('[API] invalid JSON payload', err);
-      return null;
-    });
-
-    if (!json || typeof json !== 'object') {
-      return { success: false, error: 'Invalid JSON response from API' };
-    }
-
-    return {
-      success: Boolean(json.success ?? true),
-      audio_url: json.audio_url || json.file || json.data?.audio_url,
-      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64,
-      data: json.data ?? json,
-      message: json.message ?? '',
-      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
-    };
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, error: errMsg };
-  }
+  return callApiRequest('/music/generate', 'POST', formData);
 }
 
-export async function generateImageFromUpload(imageFile: File, prompt: string, model: string = 'gemini'): Promise<ApiResponse> {
+/**
+ * Generate image from an image file upload
+ * POST /image/generate (with file upload)
+ */
+export async function generateImageFromUpload(
+  imageFile: File,
+  prompt: string,
+  model: string = 'gemini'
+): Promise<ApiResponse> {
   const formData = new FormData();
   formData.append('file', imageFile);
   formData.append('prompt', prompt);
   formData.append('model', model);
 
-  const url = buildCloudRunUrl('/image/generate');
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      const errorMessage = text || `HTTP ${response.status}`;
-      return { success: false, error: `API error: ${errorMessage}` };
-    }
-
-    const json = await response.json().catch((err) => {
-      console.error('[API] invalid JSON payload', err);
-      return null;
-    });
-
-    if (!json || typeof json !== 'object') {
-      return { success: false, error: 'Invalid JSON response from API' };
-    }
-
-    return {
-      success: Boolean(json.success ?? true),
-      cover_url: json.cover_url || json.url || json.image_url || json.data?.cover_url,
-      data: json.data ?? json,
-      message: json.message ?? '',
-      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
-    };
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, error: errMsg };
-  }
+  return callApiRequest('/image/generate', 'POST', formData);
 }
 
+/**
+ * Enhance audio quality
+ * POST /audio/enhance
+ */
 export async function enhanceAudio(audioFile: File, enhancementType: string = 'denoise'): Promise<ApiResponse> {
   const formData = new FormData();
   formData.append('file', audioFile);
   formData.append('type', enhancementType);
 
-  const url = buildCloudRunUrl('/audio/enhance');
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      const errorMessage = text || `HTTP ${response.status}`;
-      return { success: false, error: `API error: ${errorMessage}` };
-    }
-
-    const json = await response.json().catch((err) => {
-      console.error('[API] invalid JSON payload', err);
-      return null;
-    });
-
-    if (!json || typeof json !== 'object') {
-      return { success: false, error: 'Invalid JSON response from API' };
-    }
-
-    return {
-      success: Boolean(json.success ?? true),
-      audio_url: json.audio_url || json.file || json.data?.audio_url,
-      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64,
-      data: json.data ?? json,
-      message: json.message ?? '',
-      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
-    };
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, error: errMsg };
-  }
+  return callApiRequest('/audio/enhance', 'POST', formData);
 }
 
-export async function chatWithAI(message: string, model: string = 'gemini', conversationHistory?: Array<{role: string; content: string}>): Promise<ApiResponse> {
+/**
+ * Chat with AI assistant
+ * POST /ai/chat
+ */
+export async function chatWithAI(
+  message: string,
+  model: string = 'gemini',
+  conversationHistory?: Array<{ role: string; content: string }>
+): Promise<ApiResponse> {
   if (!message?.trim()) {
     return { success: false, error: 'Message cannot be empty' };
   }
@@ -356,41 +299,6 @@ export async function chatWithAI(message: string, model: string = 'gemini', conv
     payload.conversation_history = conversationHistory;
   }
 
-  const url = buildCloudRunUrl('/chat');
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      const errorMessage = text || `HTTP ${response.status}`;
-      return { success: false, error: `API error: ${errorMessage}` };
-    }
-
-    const json = await response.json().catch((err) => {
-      console.error('[API] invalid JSON payload', err);
-      return null;
-    });
-
-    if (!json || typeof json !== 'object') {
-      return { success: false, error: 'Invalid JSON response from API' };
-    }
-
-    return {
-      success: Boolean(json.success ?? true),
-      data: json.data ?? json,
-      message: (json.response || json.message) ?? '',
-      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
-    };
-  } catch (error) {
-    const errMsg = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, error: errMsg };
-  }
+  return callApiRequest('/ai/chat', 'POST', payload);
 }
 

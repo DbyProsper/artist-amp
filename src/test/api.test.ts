@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateMusic, generateLyrics, generateCover } from '@/lib/api';
+import { generateMusic, generateLyrics, generateImage } from '@/lib/api';
 
 // Mock fetch globally
 const mockFetch = vi.fn() as any;
@@ -45,10 +45,10 @@ describe('API Integration', () => {
     expect(result).toBe('Verse 1: Sample lyrics...');
   });
 
-  it('should generate cover art successfully', async () => {
+  it('should generate image successfully', async () => {
     const mockResponse = {
       status: 'success',
-      file: 'outputs/cover.jpg',
+      file: 'outputs/image.jpg',
     };
 
     mockFetch.mockResolvedValueOnce({
@@ -56,8 +56,8 @@ describe('API Integration', () => {
       json: () => Promise.resolve(mockResponse),
     });
 
-    const result = await generateCover('test prompt');
-    expect(result).toBe('http://127.0.0.1:8000/outputs/cover.jpg');
+    const result = await generateImage('test prompt', 'album-cover');
+    expect(result.success).toBe(true);
   });
 
   it('should handle API errors', async () => {

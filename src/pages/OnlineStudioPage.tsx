@@ -24,7 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { generateMusic, generateBeats, generateLyrics, generateCover, generateSmart, generateGeminiAudio, generateSong, generateMerch, generateMusicFromAudio, generateImageFromUpload, enhanceAudio } from '@/lib/api';
+import { generateMusic, generateBeats, generateLyrics, generateImage, generateSong, generateMerch, generateMusicFromAudio, generateImageFromUpload, enhanceAudio } from '@/lib/api';
 import { AppLogo } from '@/components/ui/AppLogo';
 import { saveGeneratedAudio, saveCompositionAudio, saveGeneratedLyrics } from '@/lib/aiMusicStorage';
 import { FileUpload } from '@/components/ui/FileUpload';
@@ -245,9 +245,9 @@ export default function OnlineStudioPage() {
       if (beatMode === 'musicgen') {
         result = await generateBeats(beatPrompt);
       } else if (beatMode === 'smart') {
-        result = await generateSmart(beatPrompt);
+        result = await generateBeats(beatPrompt);
       } else if (beatMode === 'gemini-audio') {
-        result = await generateGeminiAudio(beatPrompt);
+        result = await generateBeats(beatPrompt);
       } else {
         throw new Error('Invalid mode selected');
       }
@@ -421,7 +421,7 @@ export default function OnlineStudioPage() {
     setCoverUrl('');
 
     try {
-      const result = await generateCover(coverPrompt);
+      const result = await generateImage(coverPrompt, 'album-cover');
       if (!result.success) {
         setCoverError(result.error || result.message || 'Failed to generate cover art');
       } else {
