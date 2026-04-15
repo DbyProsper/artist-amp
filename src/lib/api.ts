@@ -114,7 +114,7 @@ async function callApiRequest(
       success: json.success !== undefined ? json.success : true,
       // Support legacy field names for backward compatibility
       audio_url: json.audio_url || json.file || json.data?.audio_url,
-      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64,
+      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64 || json.data?.audio || json.file,
       cover_url: json.cover_url || json.url || json.data?.cover_url || json.image_url,
       lyrics:
         json.lyrics ||

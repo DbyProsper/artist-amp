@@ -85,11 +85,21 @@ export default function StudioPage() {
     setCreationError('');
 
     try {
-      // Build the full prompt with metadata
-      const fullPrompt = `${prompt} // Genre: ${selectedGenre}, BPM: ${bpm}, Mood: ${selectedMood}, Language: ${selectedLanguage}`;
+      // Call the beat generation API with separate fields
+      const result = await generateBeats(prompt, {
+        genre: selectedGenre,
+        mood: selectedMood,
+        language: selectedLanguage,
+        bpm: bpm,
+      });
 
-      // Call the beat generation API
-      const result = await generateBeats(fullPrompt);
+      console.log('[StudioPage] API response:', {
+        success: result.success,
+        audio_base64: result.audio_base64 ? `${result.audio_base64.substring(0, 50)}...` : 'NOT FOUND',
+        audio: result.data?.audio ? `${String(result.data.audio).substring(0, 50)}...` : 'NOT FOUND',
+        data: result.data,
+        error: result.error,
+      });
 
       if (!result.success) {
         throw new Error(result.error || result.message || 'Failed to generate track');
@@ -152,8 +162,20 @@ export default function StudioPage() {
     setStudioError('');
 
     try {
-      const fullPrompt = `${prompt} // Genre: ${selectedGenre}, BPM: ${bpm}, Mood: ${selectedMood}, Language: ${selectedLanguage}`;
-      const result = await generateBeats(fullPrompt);
+      // Call the beat generation API with separate fields
+      const result = await generateBeats(prompt, {
+        genre: selectedGenre,
+        mood: selectedMood,
+        language: selectedLanguage,
+        bpm: bpm,
+      });
+
+      console.log('[StudioPage] Regeneration response:', {
+        success: result.success,
+        audio_base64: result.audio_base64 ? `${result.audio_base64.substring(0, 50)}...` : 'NOT FOUND',
+        data: result.data,
+        error: result.error,
+      });
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to regenerate track');
