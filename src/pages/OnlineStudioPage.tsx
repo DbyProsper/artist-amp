@@ -255,8 +255,35 @@ export default function OnlineStudioPage() {
       if (!result.success) {
         setBeatError(result.error || result.message || 'Failed to generate beat');
       } else {
-        // Handle base64 audio data
-        const audioBase64 = result.audio_base64;
+        // Handle base64 audio data or fetch from URL
+        let audioBase64 = result.audio_base64;
+        let audioUrl = result.audio_url || result.data?.audio_url;
+        
+        // If no base64, try to fetch from URL
+        if (!audioBase64 && audioUrl) {
+          try {
+            const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
+            const response = await fetch(fullUrl);
+            
+            if (response.ok) {
+              const blob = await response.blob();
+              const reader = new FileReader();
+              
+              audioBase64 = await new Promise<string>((resolve, reject) => {
+                reader.onload = () => {
+                  const result = reader.result as string;
+                  const base64 = result.split(',')[1];
+                  resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+            }
+          } catch (error) {
+            console.error('[Beat Gen] Failed to fetch audio from URL:', error);
+          }
+        }
+        
         if (!audioBase64) {
           setBeatError('Backend did not return audio data');
           console.error('[Beat Gen] No audio_base64 in response:', result);
@@ -694,7 +721,34 @@ export default function OnlineStudioPage() {
       if (!result.success) {
         setMusicFromAudioError(result.error || 'Failed to generate music');
       } else {
-        const audioBase64 = result.audio_base64;
+        let audioBase64 = result.audio_base64;
+        let audioUrl = result.audio_url || result.data?.audio_url;
+        
+        // If no base64, try to fetch from URL
+        if (!audioBase64 && audioUrl) {
+          try {
+            const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
+            const response = await fetch(fullUrl);
+            
+            if (response.ok) {
+              const blob = await response.blob();
+              const reader = new FileReader();
+              
+              audioBase64 = await new Promise<string>((resolve, reject) => {
+                reader.onload = () => {
+                  const result = reader.result as string;
+                  const base64 = result.split(',')[1];
+                  resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+            }
+          } catch (error) {
+            console.error('[Music From Audio] Failed to fetch audio from URL:', error);
+          }
+        }
+        
         if (!audioBase64) {
           setMusicFromAudioError('Backend did not return audio data');
         } else {

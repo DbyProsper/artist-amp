@@ -93,23 +93,81 @@ export default function StudioPage() {
         bpm: bpm,
       });
 
-      console.log('[StudioPage] API response:', {
+      console.log('[StudioPage] Generate Beat - Full API Response:', {
         success: result.success,
-        audio_base64: result.audio_base64 ? `${result.audio_base64.substring(0, 50)}...` : 'NOT FOUND',
-        audio: result.data?.audio ? `${String(result.data.audio).substring(0, 50)}...` : 'NOT FOUND',
-        data: result.data,
-        error: result.error,
+        audio_base64: result.audio_base64 
+          ? `${result.audio_base64.substring(0, 100)}... (${result.audio_base64.length} chars)` 
+          : 'NOT FOUND',
+        audio_url: result.audio_url,
+        allKeys: Object.keys(result),
+        data_keys: result.data ? Object.keys(result.data) : 'NO DATA OBJECT',
       });
 
       if (!result.success) {
         throw new Error(result.error || result.message || 'Failed to generate track');
       }
 
-      // Extract audio data
-      const audioBase64 = result.audio_base64;
-      if (!audioBase64) {
-        throw new Error('Backend did not return audio data');
+      // Extract audio data - try base64 first, then fall back to URL
+      let audioBase64 = result.audio_base64;
+      let audioUrl = result.audio_url || result.data?.audio_url;
+      
+      // If no base64, try to fetch from the URL
+      if (!audioBase64 && audioUrl) {
+        console.log('[StudioPage] No base64 found, fetching from URL:', audioUrl);
+        
+        try {
+          // Construct full URL if relative
+          const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
+          
+          const response = await fetch(fullUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch audio: ${response.status}`);
+          }
+          
+          const blob = await response.blob();
+          const reader = new FileReader();
+          
+          audioBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => {
+              const result = reader.result as string;
+              // Extract base64 from data URL (remove "data:audio/...;base64," prefix)
+              const base64 = result.split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          
+          console.log('[StudioPage] ✅ Audio fetched and converted to base64:', {
+            length: audioBase64.length,
+          });
+        } catch (fetchError) {
+          console.error('[StudioPage] Failed to fetch audio from URL:', {
+            url: audioUrl,
+            error: fetchError,
+          });
+          throw new Error(`Could not fetch audio from URL: ${audioUrl}`);
+        }
       }
+      
+      if (!audioBase64) {
+        console.error('[StudioPage] ❌ Audio extraction failed:', {
+          result: result,
+          checked_fields: {
+            result_audio_base64: result.audio_base64,
+            result_audio_url: result.audio_url,
+            data_audio_url: result.data?.audio_url,
+            result_data: result.data,
+          }
+        });
+        throw new Error('Backend did not return audio data in expected format');
+      }
+
+      console.log('[StudioPage] ✅ Audio extracted successfully:', {
+        length: audioBase64.length,
+        isString: typeof audioBase64 === 'string',
+        starts_with: audioBase64.substring(0, 50),
+      });
 
       const audioSrc = `data:audio/wav;base64,${audioBase64}`;
 
@@ -170,19 +228,67 @@ export default function StudioPage() {
         bpm: bpm,
       });
 
-      console.log('[StudioPage] Regeneration response:', {
+      console.log('[StudioPage] Regenerate - Full API Response:', {
         success: result.success,
-        audio_base64: result.audio_base64 ? `${result.audio_base64.substring(0, 50)}...` : 'NOT FOUND',
-        data: result.data,
-        error: result.error,
+        audio_base64: result.audio_base64 
+          ? `${result.audio_base64.substring(0, 100)}... (${result.audio_base64.length} chars)` 
+          : 'NOT FOUND',
+        audio_url: result.audio_url,
+        allKeys: Object.keys(result),
       });
 
       if (!result.success) {
         throw new Error(result.error || 'Failed to regenerate track');
       }
 
-      const audioBase64 = result.audio_base64;
+      // Extract audio data - try base64 first, then fall back to URL
+      let audioBase64 = result.audio_base64;
+      let audioUrl = result.audio_url || result.data?.audio_url;
+      
+      // If no base64, try to fetch from the URL
+      if (!audioBase64 && audioUrl) {
+        console.log('[StudioPage] Regeneration - No base64 found, fetching from URL:', audioUrl);
+        
+        try {
+          // Construct full URL if relative
+          const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
+          
+          const response = await fetch(fullUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch audio: ${response.status}`);
+          }
+          
+          const blob = await response.blob();
+          const reader = new FileReader();
+          
+          audioBase64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => {
+              const result = reader.result as string;
+              const base64 = result.split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          
+          console.log('[StudioPage] ✅ Audio fetched and converted to base64');
+        } catch (fetchError) {
+          console.error('[StudioPage] Failed to fetch audio from URL:', {
+            url: audioUrl,
+            error: fetchError,
+          });
+          throw new Error(`Could not fetch audio from URL: ${audioUrl}`);
+        }
+      }
+      
       if (!audioBase64) {
+        console.error('[StudioPage] ❌ Regeneration - Audio extraction failed:', {
+          result: result,
+          checked_fields: {
+            result_audio_base64: result.audio_base64,
+            result_audio_url: result.audio_url,
+          }
+        });
         throw new Error('Backend did not return audio data');
       }
 

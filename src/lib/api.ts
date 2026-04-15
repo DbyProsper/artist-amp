@@ -109,12 +109,22 @@ async function callApiRequest(
       };
     }
 
+    // Log raw response for debugging
+    console.log('[API] Raw response structure:', {
+      hasAudioBase64: !!json.audio_base64,
+      hasFile: !!json.file,
+      hasAudio: !!json.audio,
+      audio_base64_type: typeof json.audio_base64,
+      keys: Object.keys(json),
+    });
+
     // Normalize response to unified format
     return {
       success: json.success !== undefined ? json.success : true,
       // Support legacy field names for backward compatibility
       audio_url: json.audio_url || json.file || json.data?.audio_url,
-      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64 || json.data?.audio || json.file,
+      // Extract audio_base64 - it's now at the top level from new endpoints
+      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64 || json.data?.audio,
       cover_url: json.cover_url || json.url || json.data?.cover_url || json.image_url,
       lyrics:
         json.lyrics ||
