@@ -15,7 +15,7 @@ import { PresetButtons } from '@/components/studio/PresetButtons';
 import { MoodPresets } from '@/components/studio/MoodPresets';
 import { LanguagePresets } from '@/components/studio/LanguagePresets';
 import { StudioView, StudioViewData } from '@/components/studio/StudioView';
-import { fetchAudioAsBase64, downloadAudio, AUDIO_FORMATS } from '@/lib/audioUtils';
+import { downloadAudio, AUDIO_FORMATS } from '@/lib/audioUtils';
 
 // Import for genre mapping
 const GENRE_PRESETS = {
@@ -96,67 +96,27 @@ export default function StudioPage() {
 
       console.log('[StudioPage] Generate Beat - Full API Response:', {
         success: result.success,
-        audio_base64: result.audio_base64 
-          ? `${result.audio_base64.substring(0, 100)}... (${result.audio_base64.length} chars)` 
-          : 'NOT FOUND',
         audio_url: result.audio_url,
         allKeys: Object.keys(result),
-        data_keys: result.data ? Object.keys(result.data) : 'NO DATA OBJECT',
       });
 
       if (!result.success) {
         throw new Error(result.error || result.message || 'Failed to generate track');
       }
 
-      // Extract audio data - try base64 first, then fall back to URL
-      let audioBase64 = result.audio_base64;
-      let audioUrl = result.audio_url || result.data?.audio_url;
+      // Get audio URL from response - backend returns full URL for direct playback
+      const audioUrl = result.audio_url || result.data?.audio_url;
       
-      // If no base64, try to fetch from the URL
-      if (!audioBase64 && audioUrl) {
-        console.log('[StudioPage] No base64 found, fetching from URL:', audioUrl);
-        
-        try {
-          // Fetch audio from backend /outputs endpoint and convert to base64
-          audioBase64 = await fetchAudioAsBase64(audioUrl);
-          
-          console.log('[StudioPage] ✅ Audio fetched and converted to base64:', {
-            length: audioBase64.length,
-            startsWith: audioBase64.substring(0, 50),
-          });
-        } catch (fetchError) {
-          console.error('[StudioPage] Failed to fetch audio from URL:', {
-            url: audioUrl,
-            error: fetchError,
-          });
-          throw new Error(`Could not fetch audio from URL: ${audioUrl}`);
-        }
-      }
-      
-      if (!audioBase64) {
-        console.error('[StudioPage] ❌ Audio extraction failed:', {
-          result: result,
-          checked_fields: {
-            result_audio_base64: result.audio_base64,
-            result_audio_url: result.audio_url,
-            data_audio_url: result.data?.audio_url,
-            result_data: result.data,
-          }
-        });
-        throw new Error('Backend did not return audio data in expected format');
+      if (!audioUrl) {
+        console.error('[StudioPage] ❌ No audio URL in response:', result);
+        throw new Error('Backend did not return audio URL');
       }
 
-      console.log('[StudioPage] ✅ Audio extracted successfully:', {
-        length: audioBase64.length,
-        isString: typeof audioBase64 === 'string',
-        starts_with: audioBase64.substring(0, 50),
-      });
+      console.log('[StudioPage] ✅ Audio URL received:', audioUrl);
 
-      const audioSrc = `data:audio/wav;base64,${audioBase64}`;
-
-      // Set studio data for studio mode
+      // Set studio data for studio mode - use URL directly, no base64 conversion needed
       setStudioData({
-        audioUrl: audioSrc,
+        audioUrl: audioUrl,
         title: prompt.charAt(0).toUpperCase() + prompt.slice(1),
         genre: selectedGenre,
         bpm: bpm,
@@ -172,10 +132,10 @@ export default function StudioPage() {
         description: 'Welcome to Studio Mode',
       });
 
-      // Auto-play (if user permits)
+      // Auto-play (if user permits) - just use the URL directly, no conversion needed
       setTimeout(() => {
         if (audioRef.current) {
-          audioRef.current.src = audioSrc;
+          audioRef.current.src = audioUrl;
           audioRef.current.play().catch(() => {
             console.log('Auto-play prevented by browser');
           });
@@ -213,9 +173,6 @@ export default function StudioPage() {
 
       console.log('[StudioPage] Regenerate - Full API Response:', {
         success: result.success,
-        audio_base64: result.audio_base64 
-          ? `${result.audio_base64.substring(0, 100)}... (${result.audio_base64.length} chars)` 
-          : 'NOT FOUND',
         audio_url: result.audio_url,
         allKeys: Object.keys(result),
       });
@@ -224,47 +181,20 @@ export default function StudioPage() {
         throw new Error(result.error || 'Failed to regenerate track');
       }
 
-      // Extract audio data - try base64 first, then fall back to URL
-      let audioBase64 = result.audio_base64;
-      let audioUrl = result.audio_url || result.data?.audio_url;
+      // Get audio URL from response - backend returns full URL for direct playback
+      const audioUrl = result.audio_url || result.data?.audio_url;
       
-      // If no base64, try to fetch from the URL
-      if (!audioBase64 && audioUrl) {
-        console.log('[StudioPage] Regeneration - No base64 found, fetching from URL:', audioUrl);
-        
-        try {
-          // Fetch audio from backend /outputs endpoint and convert to base64
-          audioBase64 = await fetchAudioAsBase64(audioUrl);
-          
-          console.log('[StudioPage] ✅ Audio fetched and converted to base64');
-        } catch (fetchError) {
-          console.error('[StudioPage] Failed to fetch audio from URL:', {
-            url: audioUrl,
-            error: fetchError,
-          });
-          throw new Error(`Could not fetch audio from URL: ${audioUrl}`);
-        }
-      }
-      
-      if (!audioBase64) {
-        console.error('[StudioPage] ❌ Regeneration - Audio extraction failed:', {
-          result: result,
-          checked_fields: {
-            result_audio_base64: result.audio_base64,
-            result_audio_url: result.audio_url,
-          }
-        });
-        throw new Error('Backend did not return audio data');
+      if (!audioUrl) {
+        console.error('[StudioPage] ❌ No audio URL in regeneration response:', result);
+        throw new Error('Backend did not return audio URL');
       }
 
-      const audioSrc = `data:audio/wav;base64,${audioBase64}`;
-
-      // Update studio data
+      // Update studio data with new audio URL
       setStudioData((prev) =>
         prev
           ? {
               ...prev,
-              audioUrl: audioSrc,
+              audioUrl: audioUrl,
               lyrics: result.improved_prompt || prev.lyrics,
             }
           : null
@@ -308,16 +238,8 @@ export default function StudioPage() {
     if (!studioData) return;
 
     try {
-      const response = await fetch(studioData.audioUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${studioData.title}.wav`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      // Download audio from URL directly (no base64 conversion needed)
+      await downloadAudio(studioData.audioUrl, studioData.title, 'mp3');
       toast.success('Track downloaded! ⬇️');
     } catch (error) {
       toast.error('Failed to download track');

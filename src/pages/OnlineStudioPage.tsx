@@ -28,7 +28,7 @@ import { generateMusic, generateBeats, generateLyrics, generateImage, generateSo
 import { AppLogo } from '@/components/ui/AppLogo';
 import { saveGeneratedAudio, saveCompositionAudio, saveGeneratedLyrics } from '@/lib/aiMusicStorage';
 import { FileUpload } from '@/components/ui/FileUpload';
-import { fetchAudioAsBase64 } from '@/lib/audioUtils';
+import { downloadAudio } from '@/lib/audioUtils';
 import { ImageDisplay } from '@/components/ui/ImageDisplay';
 import { AIChat } from '@/components/ui/AIChat';
 import { SongService, Song } from '@/lib/songService';
@@ -257,26 +257,15 @@ export default function OnlineStudioPage() {
         setBeatError(result.error || result.message || 'Failed to generate beat');
       } else {
         // Handle base64 audio data or fetch from URL
-        let audioBase64 = result.audio_base64;
         let audioUrl = result.audio_url || result.data?.audio_url;
         
-        // If no base64, try to fetch from URL
-        if (!audioBase64 && audioUrl) {
-          try {
-            // Fetch audio from backend /outputs endpoint and convert to base64
-            audioBase64 = await fetchAudioAsBase64(audioUrl);
-          } catch (error) {
-            console.error('[Beat Gen] Failed to fetch audio from URL:', error);
-          }
-        }
-        
-        if (!audioBase64) {
-          setBeatError('Backend did not return audio data');
-          console.error('[Beat Gen] No audio_base64 in response:', result);
+        if (!audioUrl) {
+          setBeatError('Backend did not return audio URL');
+          console.error('[Beat Gen] No audio_url in response:', result);
         } else {
-          const audioSrc = `data:audio/wav;base64,${audioBase64}`;
-          console.log('[Beat Gen] Generated audio with base64 data');
-          setBeatUrl(audioSrc);
+          console.log('[Beat Gen] Generated audio URL:', audioUrl);
+          // Use URL directly for playback - no fetch or base64 conversion needed
+          setBeatUrl(audioUrl);
 
           // Store additional data if available
           if (result.improved_prompt) {
@@ -707,24 +696,13 @@ export default function OnlineStudioPage() {
       if (!result.success) {
         setMusicFromAudioError(result.error || 'Failed to generate music');
       } else {
-        let audioBase64 = result.audio_base64;
         let audioUrl = result.audio_url || result.data?.audio_url;
         
-        // If no base64, try to fetch from URL
-        if (!audioBase64 && audioUrl) {
-          try {
-            // Fetch audio from backend /outputs endpoint and convert to base64
-            audioBase64 = await fetchAudioAsBase64(audioUrl);
-          } catch (error) {
-            console.error('[Music From Audio] Failed to fetch audio from URL:', error);
-          }
-        }
-        
-        if (!audioBase64) {
-          setMusicFromAudioError('Backend did not return audio data');
+        if (!audioUrl) {
+          setMusicFromAudioError('Backend did not return audio URL');
         } else {
-          const audioSrc = `data:audio/wav;base64,${audioBase64}`;
-          setMusicFromAudioUrl(audioSrc);
+          // Use URL directly for playback - no fetch or base64 conversion needed
+          setMusicFromAudioUrl(audioUrl);
           toast.success('Music generated!', { description: 'Ready to play' });
 
           // Save to playlist
@@ -732,7 +710,7 @@ export default function OnlineStudioPage() {
             try {
               await saveGeneratedAudio(profile.id, {
                 title: `🎵 Music from Audio - ${musicFromAudioPrompt.slice(0, 40)}...`,
-                audio_url: audioSrc,
+                audio_url: audioUrl,
                 mode: musicFromAudioModel,
               });
               toast.success('Saved to library!', { description: 'Find it in your "AI Generated Music" playlist' });

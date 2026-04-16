@@ -75,3 +75,29 @@ def cleanup_old_files(max_files: int = 50) -> None:
                     logger.error(f"Error cleaning up file {old_file}: {e}")
     except Exception as e:
         logger.error(f"Error during cleanup: {e}")
+
+
+def get_audio_url(file_path: str, base_url: Optional[str] = None) -> str:
+    """
+    Get full URL for audio file playback
+    
+    Args:
+        file_path: Relative path like "outputs/audio_123.mp3" or absolute path
+        base_url: Base URL of the backend (defaults to http://localhost:8000)
+        
+    Returns:
+        Full URL like https://musicinsta-api-...run.app/outputs/audio_123.mp3
+    """
+    # Get base URL from environment or use default
+    if base_url is None:
+        base_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
+    
+    # Normalize the file path
+    if file_path.startswith('/'):
+        rel_path = file_path[1:]
+    else:
+        rel_path = file_path
+    
+    # Build full URL
+    full_url = f"{base_url.rstrip('/')}/{rel_path}"
+    return full_url

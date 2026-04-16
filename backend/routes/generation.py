@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from models import MusicGenerateRequest, SuccessResponse, ErrorResponse
 from services import get_music_service
-from utils.file_handler import ensure_output_dir, get_relative_path, cleanup_old_files
+from utils.file_handler import ensure_output_dir, get_relative_path, cleanup_old_files, get_audio_url
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +72,17 @@ async def generate_music(
         # Schedule cleanup in background
         background_tasks.add_task(cleanup_old_files, max_files=50)
         
-        # Return relative path
+        # Build full audio URL for frontend playback
         relative_path = os.path.join("outputs", filename).replace("\\\\", "/")
+        audio_url = get_audio_url(relative_path)
         
-        # Return response with base64 audio
+        logger.info(f"Audio URL: {audio_url}")
+        
+        # Return response with full URL for direct playback (no fetch needed)
         return {
             "status": "success",
+            "audio_url": audio_url,
             "audio_base64": audio_base64,
-            "file": relative_path,
             "message": "Music generated successfully"
         }
         
@@ -144,13 +147,15 @@ async def generate_beat(
         logger.info(f"Beat saved to: {file_path}")
         background_tasks.add_task(cleanup_old_files, max_files=50)
         
+        # Build full audio URL for frontend playback
         relative_path = os.path.join("outputs", filename).replace("\\\\", "/")
+        audio_url = get_audio_url(relative_path)
         
-        # Return response with base64 audio
+        # Return response with full URL for direct playback
         return {
             "status": "success",
+            "audio_url": audio_url,
             "audio_base64": audio_base64,
-            "file": relative_path,
             "message": "Beat generated successfully"
         }
         
@@ -210,13 +215,15 @@ async def generate_song(
         logger.info(f"Song saved to: {file_path}")
         background_tasks.add_task(cleanup_old_files, max_files=50)
         
+        # Build full audio URL for frontend playback
         relative_path = os.path.join("outputs", filename).replace("\\\\", "/")
+        audio_url = get_audio_url(relative_path)
         
-        # Return response with base64 audio
+        # Return response with full URL for direct playback
         return {
             "status": "success",
+            "audio_url": audio_url,
             "audio_base64": audio_base64,
-            "file": relative_path,
             "message": "Song generated successfully"
         }
         
