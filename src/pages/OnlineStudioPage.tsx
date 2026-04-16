@@ -28,6 +28,7 @@ import { generateMusic, generateBeats, generateLyrics, generateImage, generateSo
 import { AppLogo } from '@/components/ui/AppLogo';
 import { saveGeneratedAudio, saveCompositionAudio, saveGeneratedLyrics } from '@/lib/aiMusicStorage';
 import { FileUpload } from '@/components/ui/FileUpload';
+import { fetchAudioAsBase64 } from '@/lib/audioUtils';
 import { ImageDisplay } from '@/components/ui/ImageDisplay';
 import { AIChat } from '@/components/ui/AIChat';
 import { SongService, Song } from '@/lib/songService';
@@ -262,23 +263,8 @@ export default function OnlineStudioPage() {
         // If no base64, try to fetch from URL
         if (!audioBase64 && audioUrl) {
           try {
-            const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
-            const response = await fetch(fullUrl);
-            
-            if (response.ok) {
-              const blob = await response.blob();
-              const reader = new FileReader();
-              
-              audioBase64 = await new Promise<string>((resolve, reject) => {
-                reader.onload = () => {
-                  const result = reader.result as string;
-                  const base64 = result.split(',')[1];
-                  resolve(base64);
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              });
-            }
+            // Fetch audio from backend /outputs endpoint and convert to base64
+            audioBase64 = await fetchAudioAsBase64(audioUrl);
           } catch (error) {
             console.error('[Beat Gen] Failed to fetch audio from URL:', error);
           }
@@ -727,23 +713,8 @@ export default function OnlineStudioPage() {
         // If no base64, try to fetch from URL
         if (!audioBase64 && audioUrl) {
           try {
-            const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
-            const response = await fetch(fullUrl);
-            
-            if (response.ok) {
-              const blob = await response.blob();
-              const reader = new FileReader();
-              
-              audioBase64 = await new Promise<string>((resolve, reject) => {
-                reader.onload = () => {
-                  const result = reader.result as string;
-                  const base64 = result.split(',')[1];
-                  resolve(base64);
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              });
-            }
+            // Fetch audio from backend /outputs endpoint and convert to base64
+            audioBase64 = await fetchAudioAsBase64(audioUrl);
           } catch (error) {
             console.error('[Music From Audio] Failed to fetch audio from URL:', error);
           }

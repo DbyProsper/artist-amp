@@ -6,7 +6,7 @@ import { generateBeats } from '@/lib/api';
 import { toast } from 'sonner';
 import { AppLogo } from '@/components/ui/AppLogo';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 
 // Import new studio components
 import { PromptBox } from '@/components/studio/PromptBox';
@@ -15,6 +15,7 @@ import { PresetButtons } from '@/components/studio/PresetButtons';
 import { MoodPresets } from '@/components/studio/MoodPresets';
 import { LanguagePresets } from '@/components/studio/LanguagePresets';
 import { StudioView, StudioViewData } from '@/components/studio/StudioView';
+import { fetchAudioAsBase64, downloadAudio, AUDIO_FORMATS } from '@/lib/audioUtils';
 
 // Import for genre mapping
 const GENRE_PRESETS = {
@@ -116,30 +117,12 @@ export default function StudioPage() {
         console.log('[StudioPage] No base64 found, fetching from URL:', audioUrl);
         
         try {
-          // Construct full URL if relative
-          const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
-          
-          const response = await fetch(fullUrl);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch audio: ${response.status}`);
-          }
-          
-          const blob = await response.blob();
-          const reader = new FileReader();
-          
-          audioBase64 = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => {
-              const result = reader.result as string;
-              // Extract base64 from data URL (remove "data:audio/...;base64," prefix)
-              const base64 = result.split(',')[1];
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
+          // Fetch audio from backend /outputs endpoint and convert to base64
+          audioBase64 = await fetchAudioAsBase64(audioUrl);
           
           console.log('[StudioPage] ✅ Audio fetched and converted to base64:', {
             length: audioBase64.length,
+            startsWith: audioBase64.substring(0, 50),
           });
         } catch (fetchError) {
           console.error('[StudioPage] Failed to fetch audio from URL:', {
@@ -250,26 +233,8 @@ export default function StudioPage() {
         console.log('[StudioPage] Regeneration - No base64 found, fetching from URL:', audioUrl);
         
         try {
-          // Construct full URL if relative
-          const fullUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
-          
-          const response = await fetch(fullUrl);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch audio: ${response.status}`);
-          }
-          
-          const blob = await response.blob();
-          const reader = new FileReader();
-          
-          audioBase64 = await new Promise<string>((resolve, reject) => {
-            reader.onload = () => {
-              const result = reader.result as string;
-              const base64 = result.split(',')[1];
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
+          // Fetch audio from backend /outputs endpoint and convert to base64
+          audioBase64 = await fetchAudioAsBase64(audioUrl);
           
           console.log('[StudioPage] ✅ Audio fetched and converted to base64');
         } catch (fetchError) {
