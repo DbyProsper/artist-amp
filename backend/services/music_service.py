@@ -36,6 +36,7 @@ class MusicService:
         try:
             if not AUDIOCRAFT_AVAILABLE:
                 logger.warning("AudioCraft is not available. Music generation will not work.")
+                logger.warning("This usually means AudioCraft import failed. Check backend logs.")
                 return
             
             # Detect device
@@ -44,14 +45,28 @@ class MusicService:
             
             # Load model - use a smaller model for better performance
             logger.info("Loading MusicGen model...")
-            self.model = MusicGen.get_mps_dict()
-            if 'facebook/musicgen-small' in self.model:
-                self.model = MusicGen.get_mps_dict()['facebook/musicgen-small']
-                logger.info("Loaded facebook/musicgen-small")
-            else:
-                # Fallback to default
-                logger.info("Loading default MusicGen model...")
-                self.model = MusicGen.get_mps_dict()
+            try:
+                # Try loading small model
+                logger.info("Attempting to load facebook/musicgen-small...")
+                self.model = MusicGen.get_mps('facebook/musicgen-small')
+                logger.info("✓ Successfully loaded facebook/musicgen-small")
+            except Exception as e_small:
+                logger.warning(f"Could not load small model: {e_small}")
+                try:
+                    # Fallback to medium model
+                    logger.info("Attempting to load facebook/musicgen-medium...")
+                    self.model = MusicGen.get_mps('facebook/musicgen-medium')
+                    logger.info("✓ Successfully loaded facebook/musicgen-medium")
+                except Exception as e_medium:
+                    logger.warning(f"Could not load medium model: {e_medium}")
+                    try:
+                        # Final fallback - load any model
+                        logger.info("Attempting to load default MusicGen model...")
+                        self.model = MusicGen.get_mps()
+                        logger.info("✓ Successfully loaded default MusicGen model")
+                    except Exception as e_default:
+                        logger.error(f"Failed to load any MusicGen model: {e_default}")
+                        raise RuntimeError(f"Could not load MusicGen model: {str(e_default)}")
                 
         except Exception as e:
             logger.error(f"Error initializing MusicGen model: {e}")
