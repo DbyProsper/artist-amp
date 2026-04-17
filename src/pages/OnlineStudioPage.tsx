@@ -1273,6 +1273,7 @@ export default function OnlineStudioPage() {
                         className="w-full"
                         src={beatUrl}
                         preload="metadata"
+                        crossOrigin="anonymous"
                         onPlay={() => {
                           setBeatIsPlaying(true);
                           // Pause other audio elements
@@ -1312,21 +1313,18 @@ export default function OnlineStudioPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={async () => {
+                          onClick={() => {
                             try {
-                              // Convert base64 to blob for download
-                              const response = await fetch(beatUrl);
-                              const blob = await response.blob();
-                              const url = window.URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `ai_music_${beatMode}_${Date.now()}.wav`;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              window.URL.revokeObjectURL(url);
+                              // Direct download from URL (no fetch needed)
+                              const link = document.createElement('a');
+                              link.href = beatUrl;
+                              link.download = `ai_music_${beatMode}_${Date.now()}.wav`;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              console.log('[Beat Download] Initiated:', beatUrl);
                             } catch (error) {
-                              console.error('Download failed:', error);
+                              console.error('[Beat Download] Failed:', error);
                               setBeatError('Failed to download file');
                             }
                           }}
@@ -1469,6 +1467,7 @@ export default function OnlineStudioPage() {
                         className="w-full"
                         src={musicUrl}
                         preload="metadata"
+                        crossOrigin="anonymous"
                         onPlay={() => {
                           setMusicIsPlaying(true);
                           // Pause other audio elements
@@ -1508,20 +1507,18 @@ export default function OnlineStudioPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={async () => {
+                          onClick={() => {
                             try {
-                              const response = await fetch(musicUrl);
-                              const blob = await response.blob();
-                              const url = window.URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `ai_song_${Date.now()}.wav`;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              window.URL.revokeObjectURL(url);
+                              // Direct download from URL (no fetch needed)
+                              const link = document.createElement('a');
+                              link.href = musicUrl;
+                              link.download = `ai_song_${Date.now()}.wav`;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              console.log('[Music Download] Initiated:', musicUrl);
                             } catch (error) {
-                              console.error('Download failed:', error);
+                              console.error('[Music Download] Failed:', error);
                               setMusicError('Failed to download file');
                             }
                           }}
@@ -1681,6 +1678,7 @@ export default function OnlineStudioPage() {
                           src={compositionBeatUrl}
                           loop
                           preload="metadata"
+                          crossOrigin="anonymous"
                           onPlay={() => {
                             setCompositionBeatIsPlaying(true);
                             // Pause other audio elements
@@ -1720,20 +1718,18 @@ export default function OnlineStudioPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={async () => {
+                            onClick={() => {
                               try {
-                                const response = await fetch(compositionBeatUrl);
-                                const blob = await response.blob();
-                                const url = window.URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = `composition_beat_${Date.now()}.mp3`;
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                                window.URL.revokeObjectURL(url);
+                                // Direct download from URL (no fetch needed)
+                                const link = document.createElement('a');
+                                link.href = compositionBeatUrl;
+                                link.download = `composition_beat_${Date.now()}.mp3`;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                                console.log('[Composition Download] Initiated:', compositionBeatUrl);
                               } catch (error) {
-                                console.error('Download failed:', error);
+                                console.error('[Composition Download] Failed:', error);
                                 setCompositionError('Failed to download beat');
                               }
                             }}
@@ -2009,18 +2005,16 @@ export default function OnlineStudioPage() {
                         variant="outline"
                         onClick={async () => {
                           try {
-                            const response = await fetch(coverUrl);
-                            const blob = await response.blob();
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `cover_${Date.now()}.jpg`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            window.URL.revokeObjectURL(url);
+                            // Direct download from URL (no fetch needed)
+                            const link = document.createElement('a');
+                            link.href = coverUrl;
+                            link.download = `cover_${Date.now()}.jpg`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            console.log('[Cover Download] Initiated:', coverUrl);
                           } catch (error) {
-                            console.error('Download failed:', error);
+                            console.error('[Cover Download] Failed:', error);
                             setCoverError('Failed to download image');
                           }
                         }}
@@ -2254,6 +2248,7 @@ export default function OnlineStudioPage() {
                                 controls
                                 className="w-full"
                                 preload="none"
+                                crossOrigin="anonymous"
                               >
                                 <source src={song.audioUrl} type="audio/mpeg" />
                                 Your browser does not support the audio element.

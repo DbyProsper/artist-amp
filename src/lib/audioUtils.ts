@@ -28,8 +28,8 @@ export const AUDIO_FORMATS: Record<'mp3' | 'wav', AudioFormat> = {
 };
 
 /**
- * Download audio file by URL
- * Browser will handle CORS and file type automatically
+ * Download audio file by direct URL
+ * Uses simple anchor tag approach - no fetch needed (avoids CORS issues)
  */
 export async function downloadAudio(
   audioUrl: string,
@@ -37,25 +37,19 @@ export async function downloadAudio(
   format: 'mp3' | 'wav' = 'mp3'
 ): Promise<void> {
   try {
-    // Fetch the audio file
-    const response = await fetch(audioUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch audio: ${response.status}`);
-    }
-
-    const blob = await response.blob();
-
-    // Create download link
-    const url = URL.createObjectURL(blob);
+    console.log('[Audio Download] Starting download:', { audioUrl, filename });
+    
+    // Create download link directly from URL (no fetch needed)
     const link = document.createElement('a');
-    link.href = url;
+    link.href = audioUrl;
     link.download = `${filename}.${format}`;
+    
+    // Append to body, click, and remove
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
 
-    console.log('[audioUtils] Downloaded:', filename, format);
+    console.log('[audioUtils] Download initiated:', filename, format);
   } catch (error) {
     console.error('[audioUtils] Download error:', error);
     throw new Error(`Failed to download audio: ${error}`);
