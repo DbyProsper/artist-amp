@@ -4,18 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { generateBeats } from '@/lib/api';
 import { toast } from 'sonner';
-import { AppLogo } from '@/components/ui/AppLogo';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft, Download } from 'lucide-react';
 
-// Import new studio components
-import { PromptBox } from '@/components/studio/PromptBox';
-import { BPMSlider } from '@/components/studio/BPMSlider';
-import { PresetButtons } from '@/components/studio/PresetButtons';
-import { MoodPresets } from '@/components/studio/MoodPresets';
-import { LanguagePresets } from '@/components/studio/LanguagePresets';
-import { StudioView, StudioViewData } from '@/components/studio/StudioView';
-import { downloadAudio, AUDIO_FORMATS } from '@/lib/audioUtils';
+// Import studio components
+import { StudioEntryScreen, StudioFeature } from '@/components/studio/StudioEntryScreen';
+import { StudioLayout } from '@/components/studio/StudioLayout';
+import { StudioAIChat } from '@/components/studio/StudioAIChat';
+import { GlobalMusicPlayer, GlobalTrack } from '@/components/studio/GlobalMusicPlayer';
+import { downloadAudio } from '@/lib/audioUtils';
 
 // Import for genre mapping
 const GENRE_PRESETS = {
@@ -29,64 +24,105 @@ const GENRE_PRESETS = {
   'hiphop-boom': 'hiphop',
 };
 
+interface GeneratedItem {
+  id: string;
+  feature: StudioFeature;
+  prompt: string;
+  audioUrl?: string;
+  imageUrl?: string;
+  createdAt: Date;
+  metadata: {
+    genre: string;
+    bpm: number;
+    mood: string;
+    language: string;
+  };
+}
+
 export default function StudioPage() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
 
-  // ==================== STATE MANAGEMENT ====================
+  // ==================== FLOW STATE ====================
+  const [showEntry, setShowEntry] = useState(true);
+  const [currentFeature, setCurrentFeature] = useState<StudioFeature>('beat');
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatExpanded, setChatExpanded] = useState(false);
 
-  // Creation Mode State
+  // ==================== GENERATION STATE ====================
   const [prompt, setPrompt] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('amapiano');
   const [selectedMood, setSelectedMood] = useState('chill');
   const [selectedLanguage, setSelectedLanguage] = useState('english');
   const [bpm, setBpm] = useState(112);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [creationError, setCreationError] = useState('');
+  const [generationError, setGenerationError] = useState('');
 
-  // Studio Mode State
-  const [isStudioMode, setIsStudioMode] = useState(false);
-  const [studioData, setStudioData] = useState<StudioViewData | null>(null);
-  const [isRegenerating, setIsRegenerating] = useState(false);
-  const [studioError, setStudioError] = useState('');
+  // ==================== OUTPUT STATE ====================
+  const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [currentTrack, setCurrentTrack] = useState<GlobalTrack | null>(null);
 
-  // Audio ref for direct playback
-  const audioRef = useRef<HTMLAudioElement>(null);
+  // ==================== HISTORY STATE ====================
+  const [history, setHistory] = useState<GeneratedItem[]>([]);
+  const [showGlobalPlayer, setShowGlobalPlayer] = useState(false);
+
+  // Load history from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('studio_history');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved).map((item: any) => ({
+          ...item,
+          createdAt: new Date(item.createdAt),
+        }));
+        setHistory(parsed);
+      } catch (e) {
+        console.error('Failed to load history:', e);
+      }
+    }
+  }, []);
+
+  // Save history to localStorage whenever it changes
+  useEffect(() => {
+    if (history.length > 0) {
+      localStorage.setItem('studio_history', JSON.stringify(history));
+    }
+  }, [history]);
 
   // ==================== HANDLERS ====================
 
   /**
-   * Handle preset selection from genre presets
+   * Handle feature selection from entry screen
    */
-  const handlePresetSelect = (preset: any) => {
-    setSelectedGenre(preset.genre);
-    setBpm(preset.bpm);
-    setSelectedMood(preset.mood);
-    toast.success(`Preset "${preset.name}" loaded!`, {
-      description: `${preset.genre} • ${preset.bpm} BPM • ${preset.mood}`,
-    });
+  const handleFeatureSelect = (feature: StudioFeature) => {
+    setCurrentFeature(feature);
+    setShowEntry(false);
+
+    // Open chat if selected
+    if (feature === 'chat') {
+      setChatOpen(true);
+    }
   };
 
   /**
-   * Main generation handler
+   * Generate track for current feature
    */
-  const handleGenerateTrack = async () => {
+  const handleGenerate = async () => {
     if (!prompt.trim()) {
-      setCreationError('Please describe your song idea');
+      setGenerationError('Please describe what you want to create');
       return;
     }
 
     if (!user?.uid) {
-      setCreationError('Please sign in to create tracks');
+      setGenerationError('Please sign in to create');
       return;
     }
 
     setIsGenerating(true);
-    setCreationError('');
+    setGenerationError('');
 
     try {
-      // Call the beat generation API with separate fields
       const result = await generateBeats(prompt, {
         genre: selectedGenre,
         mood: selectedMood,
@@ -94,339 +130,167 @@ export default function StudioPage() {
         bpm: bpm,
       });
 
-      console.log('[StudioPage] Generate Beat - Full API Response:', {
-        success: result.success,
-        audio_url: result.audio_url,
-        allKeys: Object.keys(result),
-      });
-
       if (!result.success) {
-        throw new Error(result.error || result.message || 'Failed to generate track');
+        throw new Error(result.error || 'Generation failed');
       }
 
-      // Get audio URL from response - backend returns full URL for direct playback
       const audioUrl = result.audio_url || result.data?.audio_url;
-      
       if (!audioUrl) {
-        console.error('[StudioPage] ❌ No audio URL in response:', result);
         throw new Error('Backend did not return audio URL');
       }
 
-      console.log('[StudioPage] ✅ Audio URL received:', audioUrl);
+      // Set generated audio
+      setGeneratedAudioUrl(audioUrl);
 
-      // Set studio data for studio mode - use URL directly, no base64 conversion needed
-      setStudioData({
-        audioUrl: audioUrl,
-        title: prompt.charAt(0).toUpperCase() + prompt.slice(1),
-        genre: selectedGenre,
-        bpm: bpm,
-        mood: selectedMood,
-        language: selectedLanguage,
-        lyrics: result.improved_prompt || undefined,
-        coverUrl: result.cover_url || undefined,
+      // Add to history
+      const newItem: GeneratedItem = {
+        id: Date.now().toString(),
+        feature: currentFeature,
+        prompt,
+        audioUrl,
+        createdAt: new Date(),
+        metadata: {
+          genre: selectedGenre,
+          bpm,
+          mood: selectedMood,
+          language: selectedLanguage,
+        },
+      };
+
+      setHistory((prev) => [newItem, ...prev].slice(0, 50)); // Keep last 50
+
+      // Show player
+      setCurrentTrack({
+        id: newItem.id,
+        title: prompt,
+        audioUrl,
       });
+      setShowGlobalPlayer(true);
 
-      // Transition to studio mode
-      setIsStudioMode(true);
-      toast.success('Track generated! 🎉', {
-        description: 'Welcome to Studio Mode',
-      });
-
-      // Auto-play (if user permits) - just use the URL directly, no conversion needed
-      setTimeout(() => {
-        if (audioRef.current) {
-          audioRef.current.src = audioUrl;
-          audioRef.current.play().catch(() => {
-            console.log('Auto-play prevented by browser');
-          });
-        }
-      }, 500);
+      toast.success('✨ Track generated!');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to generate track';
-      setCreationError(message);
-      console.error('Generation error:', error);
-      toast.error('Generation failed', {
-        description: message,
-      });
+      const message = error instanceof Error ? error.message : 'Generation failed';
+      setGenerationError(message);
+      toast.error(message);
     } finally {
       setIsGenerating(false);
     }
   };
 
   /**
-   * Handle regeneration with updated parameters
-   */
-  const handleRegenerate = async () => {
-    if (!studioData) return;
-
-    setIsRegenerating(true);
-    setStudioError('');
-
-    try {
-      // Call the beat generation API with separate fields
-      const result = await generateBeats(prompt, {
-        genre: selectedGenre,
-        mood: selectedMood,
-        language: selectedLanguage,
-        bpm: bpm,
-      });
-
-      console.log('[StudioPage] Regenerate - Full API Response:', {
-        success: result.success,
-        audio_url: result.audio_url,
-        allKeys: Object.keys(result),
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to regenerate track');
-      }
-
-      // Get audio URL from response - backend returns full URL for direct playback
-      const audioUrl = result.audio_url || result.data?.audio_url;
-      
-      if (!audioUrl) {
-        console.error('[StudioPage] ❌ No audio URL in regeneration response:', result);
-        throw new Error('Backend did not return audio URL');
-      }
-
-      // Update studio data with new audio URL
-      setStudioData((prev) =>
-        prev
-          ? {
-              ...prev,
-              audioUrl: audioUrl,
-              lyrics: result.improved_prompt || prev.lyrics,
-            }
-          : null
-      );
-
-      toast.success('Track regenerated! ✨', {
-        description: 'Updated with new parameters',
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to regenerate';
-      setStudioError(message);
-      toast.error('Regeneration failed', { description: message });
-    } finally {
-      setIsRegenerating(false);
-    }
-  };
-
-  /**
-   * Handle save to library
+   * Save to library
    */
   const handleSaveTrack = async () => {
-    if (!studioData) return;
+    if (!generatedAudioUrl) return;
 
     setIsSaving(true);
     try {
-      // TODO: Implement save to library using SongService
-      // For now, just show success message
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      toast.success('Track saved to library! 📚');
+      // TODO: Implement actual save to library (Firebase or backend)
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      toast.success('💾 Saved to library!');
     } catch (error) {
-      toast.error('Failed to save track');
+      toast.error('Failed to save');
     } finally {
       setIsSaving(false);
     }
   };
 
   /**
-   * Handle download
+   * Download track
    */
   const handleDownloadTrack = async () => {
-    if (!studioData) return;
+    if (!generatedAudioUrl) return;
 
     try {
-      // Download audio from URL directly (no base64 conversion needed)
-      await downloadAudio(studioData.audioUrl, studioData.title, 'mp3');
-      toast.success('Track downloaded! ⬇️');
+      await downloadAudio(generatedAudioUrl, prompt || 'track', 'mp3');
+      toast.success('⬇️ Downloaded!');
     } catch (error) {
-      toast.error('Failed to download track');
-      console.error('Download error:', error);
+      toast.error('Download failed');
     }
   };
 
   /**
-   * Handle back to creation mode
+   * Handle back to entry
    */
-  const handleBackToCreation = () => {
-    setIsStudioMode(false);
-    setStudioData(null);
-    setStudioError('');
+  const handleBackToEntry = () => {
+    setShowEntry(true);
+    setGeneratedAudioUrl(null);
     setPrompt('');
+    setGenerationError('');
+    setChatOpen(false);
   };
 
   // ==================== RENDER ====================
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl border-b border-border/40 bg-background/80">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => navigate('/profile')}
-            className="p-2 rounded-lg hover:bg-muted transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </motion.button>
-          <AppLogo size="lg" />
-          <div className="w-10" /> {/* Spacer for centering */}
-        </div>
-      </header>
-
-      {/* Main Content */}
+    <div className="min-h-screen bg-background overflow-hidden">
       <AnimatePresence mode="wait">
-        {!isStudioMode ? (
-          // ==================== CREATION MODE ====================
-          <motion.div
-            key="creation-mode"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5 }}
-            className="min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4"
-          >
-            <div className="w-full max-w-3xl space-y-8">
-              {/* Welcome Section */}
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="text-center space-y-2"
-              >
-                <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
-                  Create Your Sound
-                </h1>
-                <p className="text-muted-foreground text-lg">
-                  Describe your track idea and let AI bring it to life
-                </p>
-              </motion.div>
-
-              {/* BPM Slider */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-              >
-                <BPMSlider
-                  genre={selectedGenre}
-                  bpm={bpm}
-                  onBPMChange={setBpm}
-                  disabled={isGenerating}
-                />
-              </motion.div>
-
-              {/* Prompt Box */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-              >
-                <PromptBox
-                  value={prompt}
-                  onChange={setPrompt}
-                  onSubmit={handleGenerateTrack}
-                  loading={isGenerating}
-                  disabled={isGenerating}
-                />
-              </motion.div>
-
-              {/* Preset Buttons */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 }}
-              >
-                <div className="mb-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-2 mb-3">
-                    Quick Presets
-                  </p>
-                </div>
-                <PresetButtons
-                  onPresetSelect={handlePresetSelect}
-                  disabled={isGenerating}
-                />
-              </motion.div>
-
-              {/* Mood Presets */}
-              <MoodPresets
-                selected={selectedMood}
-                onSelect={setSelectedMood}
-                disabled={isGenerating}
-              />
-
-              {/* Language Presets */}
-              <LanguagePresets
-                selected={selectedLanguage}
-                onSelect={setSelectedLanguage}
-                disabled={isGenerating}
-              />
-
-              {/* Error Display */}
-              {creationError && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="p-4 bg-destructive/10 border border-destructive/50 rounded-2xl flex items-start gap-3"
-                >
-                  <div className="w-5 h-5 rounded-full bg-destructive/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <div className="w-2 h-2 rounded-full bg-destructive" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-destructive">Error</p>
-                    <p className="text-sm text-destructive/80">{creationError}</p>
-                  </div>
-                </motion.div>
-              )}
-            </div>
+        {showEntry ? (
+          // Entry Screen
+          <motion.div key="entry">
+            <StudioEntryScreen onFeatureSelect={handleFeatureSelect} />
           </motion.div>
         ) : (
-          // ==================== STUDIO MODE ====================
-          <motion.div
-            key="studio-mode"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.5 }}
-          >
-            {studioData && (
-              <StudioView
-                data={studioData}
-                onBPMChange={(newBpm) => {
-                  setBpm(newBpm);
-                  if (studioData) {
-                    setStudioData({ ...studioData, bpm: newBpm });
-                  }
-                }}
-                onMoodChange={(mood) => {
-                  setSelectedMood(mood);
-                  if (studioData) {
-                    setStudioData({ ...studioData, mood });
-                  }
-                }}
-                onLanguageChange={(lang) => {
-                  setSelectedLanguage(lang);
-                  if (studioData) {
-                    setStudioData({ ...studioData, language: lang });
-                  }
-                }}
-                onRegenerate={handleRegenerate}
-                onBack={handleBackToCreation}
-                onDownload={handleDownloadTrack}
-                isSaving={isSaving}
-                isRegenerating={isRegenerating}
-                error={studioError}
-              />
-            )}
+          // Main Studio Layout
+          <motion.div key="studio">
+            <StudioLayout
+              feature={currentFeature}
+              onFeatureChange={setCurrentFeature}
+              onBack={handleBackToEntry}
+              onChatOpen={() => setChatOpen(true)}
+              prompt={prompt}
+              onPromptChange={setPrompt}
+              bpm={bpm}
+              onBPMChange={setBpm}
+              selectedGenre={selectedGenre}
+              onGenreChange={setSelectedGenre}
+              selectedMood={selectedMood}
+              onMoodChange={setSelectedMood}
+              selectedLanguage={selectedLanguage}
+              onLanguageChange={setSelectedLanguage}
+              onGenerate={handleGenerate}
+              isGenerating={isGenerating}
+              error={generationError}
+              audioUrl={generatedAudioUrl || undefined}
+              onDownload={handleDownloadTrack}
+              onSave={handleSaveTrack}
+              isSaving={isSaving}
+              history={history.filter((h) => h.feature === currentFeature)}
+              onHistorySelect={(item) => {
+                setPrompt(item.prompt);
+                if (item.audioUrl) {
+                  setGeneratedAudioUrl(item.audioUrl);
+                  setCurrentTrack({
+                    id: item.id,
+                    title: item.prompt,
+                    audioUrl: item.audioUrl,
+                  });
+                  setShowGlobalPlayer(true);
+                }
+              }}
+            />
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Hidden audio element for direct playback */}
-      <audio ref={audioRef} crossOrigin="anonymous" />
+      {/* AI Chat Panel */}
+      <StudioAIChat
+        isOpen={chatOpen && !chatExpanded}
+        isFullscreen={chatExpanded}
+        onClose={() => {
+          setChatOpen(false);
+          setChatExpanded(false);
+        }}
+        onToggleFullscreen={() => setChatExpanded(!chatExpanded)}
+      />
+
+      {/* Global Music Player */}
+      {showGlobalPlayer && (
+        <GlobalMusicPlayer
+          currentTrack={currentTrack || undefined}
+          onClose={() => setShowGlobalPlayer(false)}
+        />
+      )}
     </div>
   );
 }
