@@ -123,18 +123,21 @@ export default function StudioPage() {
     setGenerationError('');
 
     try {
+      // Generate music with all proper parameters
       const result = await generateBeats(prompt, {
         genre: selectedGenre,
         mood: selectedMood,
         language: selectedLanguage,
         bpm: bpm,
+        user_tier: profile?.tier === 'premium' ? 'premium' : 'free', // Use user tier
       });
 
       if (!result.success) {
         throw new Error(result.error || 'Generation failed');
       }
 
-      const audioUrl = result.audio_url || result.data?.audio_url;
+      // Get audio URL from normalized field (works with all response formats)
+      const audioUrl = result.audio_url;
       if (!audioUrl) {
         throw new Error('Backend did not return audio URL');
       }

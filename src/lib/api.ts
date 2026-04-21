@@ -1,39 +1,52 @@
 /**
  * API Layer - Unified endpoint interface
- * All requests use VITE_API_BASE_URL from environment
- * Follows unified backend endpoint structure
+ * Connects to FastAPI backend with Google Cloud Storage (GCS) signed URLs
+ * 
+ * Backend: https://musicinsta-api-973497466485.us-central1.run.app
+ * Files are stored in GCS and returned as signed URLs (no CORS needed)
  */
 
-import { API_BASE } from '@/config/api';
+import { API_BASE, API_TIMEOUTS, DEFAULT_USER_TIER } from '@/config/api';
 
 export interface ApiResponse {
   success: boolean;
-  data?: any;
+  data?: {
+    audio_url?: string;
+    image_url?: string;
+    url?: string;
+    audio?: { url?: string };
+    image?: { url?: string };
+    lyrics?: { text?: string };
+    text?: string;
+    [key: string]: any;
+  };
   error?: string;
   message?: string;
-  // Legacy response fields (for backward compatibility)
+  lyrics?: string;
+  // Legacy response fields (backward compatibility)
   audio_url?: string;
   audio_base64?: string;
-  lyrics?: string;
   cover_url?: string;
   improved_prompt?: string;
   plan?: string;
 }
-
-const DEFAULT_TIMEOUT_MS = 30000; // 30 second timeout for AI generation
 
 function buildUrl(endpoint: string): string {
   const baseUrl = API_BASE;
   return `${baseUrl.replace(/\/+$/, '')}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 }
 
+/**
+ * Fetch with timeout support
+ * Times out after specified milliseconds
+ */
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs = DEFAULT_TIMEOUT_MS
+  timeoutMs: number
 ): Promise<Response> {
   const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(url, {
@@ -41,12 +54,14 @@ async function fetchWithTimeout(
       signal: controller.signal,
       cache: 'no-store',
     });
+    clearTimeout(timeoutId);
     return res;
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error(`[API] fetch error for ${url}:`, error);
 
     if ((error as any).name === 'AbortError') {
-      throw new Error('Request timeout');
+      throw new Error(`Request timeout after ${timeoutMs / 1000} seconds`);
     }
 
     const msg = (error as Error).message || 'Network error';
@@ -54,16 +69,19 @@ async function fetchWithTimeout(
       throw new Error('SSL error: secure connection issue');
     }
 
-    throw new Error('Network error or SSL issue');
-  } finally {
-    clearTimeout(id);
+    throw new Error(msg || 'Network error');
   }
 }
 
+/**
+ * Core API request handler
+ * Handles endpoint calls with appropriate timeout
+ */
 async function callApiRequest(
   endpoint: string,
   method: 'GET' | 'POST' = 'GET',
-  body?: FormData | object
+  body?: FormData | object,
+  timeoutMs: number = API_TIMEOUTS.default
 ): Promise<ApiResponse> {
   const url = buildUrl(endpoint);
 
@@ -72,25 +90,34 @@ async function callApiRequest(
 
     // Only set Content-Type for non-FormData requests
     const isFormData = body instanceof FormData;
-    if (!isFormData) {
+    if (!isFormData && body) {
       headers['Content-Type'] = 'application/json';
     }
     headers['Accept'] = 'application/json';
 
-    const response = await fetchWithTimeout(url, {
-      method,
-      headers,
-      body:
-        method === 'POST'
-          ? isFormData
-            ? body
-            : JSON.stringify(body ?? {})
-          : undefined,
-    });
+    console.log(`[API] ${method} ${endpoint}`, body);
+
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method,
+        headers,
+        body:
+          method === 'POST'
+            ? isFormData
+              ? body
+              : body
+              ? JSON.stringify(body)
+              : undefined
+            : undefined,
+      },
+      timeoutMs
+    );
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       const errorMessage = text || `HTTP ${response.status}`;
+      console.error(`[API] Error response:`, errorMessage);
       return {
         success: false,
         error: `API error: ${errorMessage}`,
@@ -109,35 +136,47 @@ async function callApiRequest(
       };
     }
 
-    // Log raw response for debugging
-    console.log('[API] Raw response structure:', {
-      hasAudioBase64: !!json.audio_base64,
-      hasFile: !!json.file,
-      hasAudio: !!json.audio,
-      audio_base64_type: typeof json.audio_base64,
-      keys: Object.keys(json),
-    });
+    console.log(`[API] Response:`, json);
 
-    // Normalize response to unified format
+    // Handle success response
+    if (json.success === false) {
+      return {
+        success: false,
+        error: json.error || json.message || 'API returned failure',
+      };
+    }
+
+    // Normalize response - backend returns data in different formats
+    // Handle: data.audio_url, data.image_url, data.url, data.audio.url, etc.
+    const audioUrl =
+      json.data?.audio_url ||
+      json.data?.audio?.url ||
+      json.audio_url ||
+      json.file;
+
+    const imageUrl =
+      json.data?.image_url ||
+      json.data?.image?.url ||
+      json.data?.url ||
+      json.cover_url ||
+      json.image_url;
+
+    const lyrics = json.data?.lyrics?.text || json.data?.lyrics || json.lyrics;
+
     return {
-      success: json.success !== undefined ? json.success : true,
-      // Support legacy field names for backward compatibility
-      audio_url: json.audio_url || json.file || json.data?.audio_url,
-      // Extract audio_base64 - it's now at the top level from new endpoints
-      audio_base64: json.audio_base64 || json.audio || json.data?.audio_base64 || json.data?.audio,
-      cover_url: json.cover_url || json.url || json.data?.cover_url || json.image_url,
-      lyrics:
-        json.lyrics ||
-        json.data?.lyrics ||
-        (typeof json.data === 'string' ? json.data : undefined),
-      improved_prompt: json.improved_prompt || json.data?.improved_prompt,
-      plan: json.plan || json.data?.plan,
-      data: json.data ?? json,
+      success: true,
+      data: json.data || json,
+      // Normalized fields for easy access
+      audio_url: audioUrl,
+      cover_url: imageUrl,
+      lyrics: lyrics,
+      // Pass through original data
       message: json.message ?? '',
-      error: json.error ?? (json.success === false ? 'API returned failure' : undefined),
+      error: undefined,
     };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[API] Request failed: ${errMsg}`);
     return {
       success: false,
       error: errMsg,
@@ -146,169 +185,181 @@ async function callApiRequest(
 }
 
 // =============================================================================
-// API EXPORT FUNCTIONS - Clean, unified interface
+// API EXPORT FUNCTIONS
 // =============================================================================
 
 /**
  * Generate music from a text prompt
  * POST /music/generate
+ * Takes 45-60 seconds
  */
-export async function generateMusic(prompt: string, metadata?: any): Promise<ApiResponse> {
+export async function generateMusic(
+  prompt: string,
+  options?: {
+    genre?: string;
+    mood?: string;
+    language?: string;
+    bpm?: number;
+    user_tier?: 'free' | 'premium';
+  }
+): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApiRequest('/music/generate', 'POST', {
-    prompt,
-    ...metadata,
-  });
+  return callApiRequest(
+    '/music/generate',
+    'POST',
+    {
+      prompt,
+      genre: options?.genre || 'electronic',
+      mood: options?.mood || 'upbeat',
+      language: options?.language || 'en',
+      bpm: options?.bpm || 128,
+      user_tier: options?.user_tier || DEFAULT_USER_TIER,
+    },
+    API_TIMEOUTS.music // 120 second timeout for music generation
+  );
 }
 
 /**
- * Generate a complete song (music + lyrics)
+ * Generate a complete song (music + lyrics + cover art)
  * POST /song/generate
+ * Takes 90-150 seconds (parallel generation)
  */
-export async function generateSong(prompt: string, metadata?: any): Promise<ApiResponse> {
+export async function generateSong(
+  prompt: string,
+  options?: {
+    genre?: string;
+    mood?: string;
+    language?: string;
+    bpm?: number;
+    user_tier?: 'free' | 'premium';
+  }
+): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApiRequest('/song/generate', 'POST', {
-    prompt,
-    ...metadata,
-  });
+  return callApiRequest(
+    '/song/generate',
+    'POST',
+    {
+      prompt,
+      genre: options?.genre || 'electronic',
+      mood: options?.mood || 'upbeat',
+      language: options?.language || 'en',
+      bpm: options?.bpm || 128,
+      user_tier: options?.user_tier || DEFAULT_USER_TIER,
+    },
+    API_TIMEOUTS.song // 300 second timeout for complete song
+  );
 }
 
 /**
  * Generate lyrics from a prompt
  * POST /lyrics/generate
+ * Takes 5-10 seconds
  */
-export async function generateLyrics(prompt: string, model: string = 'gemini'): Promise<ApiResponse> {
+export async function generateLyrics(
+  prompt: string,
+  options?: {
+    mood?: string;
+    genre?: string;
+    language?: string;
+  }
+): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApiRequest('/lyrics/generate', 'POST', {
-    prompt,
-    model,
-  });
+  return callApiRequest(
+    '/lyrics/generate',
+    'POST',
+    {
+      prompt,
+      mood: options?.mood || 'upbeat',
+      genre: options?.genre || 'pop',
+      language: options?.language || 'en',
+    },
+    API_TIMEOUTS.default // 30 second timeout
+  );
 }
 
 /**
- * Generate beats/rhythm from a prompt
- * POST /beats/generate
+ * Generate beats/instrumental from a prompt
+ * Alias for generateMusic() - uses /music/generate endpoint
  */
-export async function generateBeats(prompt: string, metadata?: any): Promise<ApiResponse> {
-  if (!prompt?.trim()) {
-    return { success: false, error: 'Prompt cannot be empty' };
+export async function generateBeats(
+  prompt: string,
+  options?: {
+    genre?: string;
+    mood?: string;
+    language?: string;
+    bpm?: number;
+    user_tier?: 'free' | 'premium';
   }
-
-  return callApiRequest('/beats/generate', 'POST', {
-    prompt,
-    ...metadata,
-  });
+): Promise<ApiResponse> {
+  // Beats are generated using the music endpoint
+  return generateMusic(prompt, options);
 }
 
 /**
- * Generate images from a prompt
+ * Generate images from a text prompt
  * POST /image/generate
- * @param type - Optional type: 'merch' for merchandise, 'album-cover' for covers, default for general images
+ * Takes 30-45 seconds
  */
-export async function generateImage(prompt: string, type?: string): Promise<ApiResponse> {
+export async function generateImage(
+  prompt: string,
+  options?: {
+    image_type?: 'cover' | 'merch' | 'poster';
+    genre?: string;
+    user_tier?: 'free' | 'premium';
+    language?: string;
+  }
+): Promise<ApiResponse> {
   if (!prompt?.trim()) {
     return { success: false, error: 'Prompt cannot be empty' };
   }
 
-  return callApiRequest('/image/generate', 'POST', {
-    prompt,
-    type: type || 'image',
+  return callApiRequest(
+    '/image/generate',
+    'POST',
+    {
+      prompt,
+      image_type: options?.image_type || 'cover',
+      genre: options?.genre,
+      user_tier: options?.user_tier || DEFAULT_USER_TIER,
+      language: options?.language || 'en',
+    },
+    API_TIMEOUTS.default // 30 second timeout
+  );
+}
+
+/**
+ * Generate merchandise images
+ * Alias for generateImage with type='merch'
+ */
+export async function generateMerch(
+  prompt: string,
+  options?: {
+    genre?: string;
+    user_tier?: 'free' | 'premium';
+  }
+): Promise<ApiResponse> {
+  return generateImage(prompt, {
+    image_type: 'merch',
+    genre: options?.genre,
+    user_tier: options?.user_tier,
   });
 }
 
 /**
- * Generate merchandise images from a prompt
- * POST /image/generate (with type: 'merch')
+ * Health check endpoint
+ * GET /health
+ * Verify backend is online
  */
-export async function generateMerch(prompt: string, productType?: string): Promise<ApiResponse> {
-  if (!prompt?.trim()) {
-    return { success: false, error: 'Prompt cannot be empty' };
-  }
-
-  return callApiRequest('/image/generate', 'POST', {
-    prompt,
-    type: 'merch',
-    product_type: productType,
-  });
-}
-
-/**
- * Generate music from an audio file
- * POST /music/generate (with file upload)
- */
-export async function generateMusicFromAudio(
-  audioFile: File,
-  prompt: string,
-  model: string = 'gemini'
-): Promise<ApiResponse> {
-  const formData = new FormData();
-  formData.append('file', audioFile);
-  formData.append('prompt', prompt);
-  formData.append('model', model);
-
-  return callApiRequest('/music/generate', 'POST', formData);
-}
-
-/**
- * Generate image from an image file upload
- * POST /image/generate (with file upload)
- */
-export async function generateImageFromUpload(
-  imageFile: File,
-  prompt: string,
-  model: string = 'gemini'
-): Promise<ApiResponse> {
-  const formData = new FormData();
-  formData.append('file', imageFile);
-  formData.append('prompt', prompt);
-  formData.append('model', model);
-
-  return callApiRequest('/image/generate', 'POST', formData);
-}
-
-/**
- * Enhance audio quality
- * POST /audio/enhance
- */
-export async function enhanceAudio(audioFile: File, enhancementType: string = 'denoise'): Promise<ApiResponse> {
-  const formData = new FormData();
-  formData.append('file', audioFile);
-  formData.append('type', enhancementType);
-
-  return callApiRequest('/audio/enhance', 'POST', formData);
-}
-
-/**
- * Chat with AI assistant
- * POST /ai/chat
- */
-export async function chatWithAI(
-  message: string,
-  model: string = 'gemini',
-  conversationHistory?: Array<{ role: string; content: string }>
-): Promise<ApiResponse> {
-  if (!message?.trim()) {
-    return { success: false, error: 'Message cannot be empty' };
-  }
-
-  const payload: any = {
-    message,
-    model,
-  };
-
-  if (conversationHistory && conversationHistory.length > 0) {
-    payload.conversation_history = conversationHistory;
-  }
-
-  return callApiRequest('/ai/chat', 'POST', payload);
+export async function healthCheck(): Promise<ApiResponse> {
+  return callApiRequest('/health', 'GET', undefined, API_TIMEOUTS.health);
 }
 
