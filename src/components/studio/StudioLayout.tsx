@@ -93,6 +93,7 @@ export function StudioLayout({
   isSaving,
   history = [],
   onHistorySelect,
+  onHistoryDelete,
 }: StudioLayoutProps) {
   const features: StudioFeature[] = ['beat', 'lyrics', 'song', 'cover', 'poster', 'merch'];
 
