@@ -4,6 +4,8 @@ import { Send, X, Minimize2, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { chatWithAI } from '@/lib/api';
+import { toast } from 'sonner';
 
 interface ChatMessage {
   id: string;
@@ -64,27 +66,44 @@ What would you like to create today?`,
     setInput('');
     setIsLoading(true);
 
-    // Simulate AI response (in production, call actual API)
-    setTimeout(() => {
-      const responses = [
-        "That sounds amazing! 🎉 I'm picturing a track with those vibes. Want me to suggest some specific elements?",
-        "Ooh, I like where your head's at! Here are some ideas to make that happen:\n\n• Try a higher BPM for more energy\n• Layer some atmospheric pads underneath\n• Add a catchy vocal loop in the chorus",
-        "Perfect inspiration! Let me help you structure that:\n\n1. Intro - Build atmosphere\n2. Verse - Introduce main melody\n3. Chorus - Maximum impact\n4. Bridge - Creative variation\n5. Outro - Satisfying resolution",
-        "I love the creativity! Here are some production tips:\n\n• Keep the kick tight and punchy\n• Let the bass carry the groove\n• Leave breathing room for vocals\n• Use reverb for depth, not muddiness",
-      ];
+    try {
+      // Call actual AI API
+      const result = await chatWithAI(input, 'default', messages.map(m => ({
+        role: m.role,
+        content: m.content
+      })));
 
-      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+      if (!result.success) {
+        throw new Error(result.error || 'Unable to generate response');
+      }
+
+      // Extract message from response
+      const messageContent = result.reply || result.message || 'I couldn\'t generate a response. Try again?';
 
       const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: randomResponse,
+        content: messageContent,
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Connection error';
+      toast.error(errorMessage);
+
+      // Add error message to chat
+      const errorChatMessage: ChatMessage = {
+        id: (Date.now() + 2).toString(),
+        role: 'assistant',
+        content: `Sorry, I encountered an error: ${errorMessage}. Please try again.`,
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, errorChatMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   // Fullscreen chat

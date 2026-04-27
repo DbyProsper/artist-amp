@@ -1,11 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can read and write their own profile
-    match /profiles/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
     // Users can read all profiles but only write their own
     match /profiles/{userId} {
       allow read: if request.auth != null;
@@ -19,7 +14,24 @@ service cloud.firestore {
       allow update, delete: if request.auth != null && request.auth.uid == resource.data.user_id;
     }
 
-    // Allow authenticated users to read and write their own data
+    // Allow authenticated users to read and write their own data in other collections
+    match /playlists/{playlistId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == resource.data.creator_id;
+    }
+
+    match /tracks/{trackId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Social links
+    match /social_links/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Fallback for other collections
     match /{document=**} {
       allow read, write: if request.auth != null;
     }

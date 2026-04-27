@@ -2,13 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { generateBeats } from '@/lib/api';
+import { generateBeats, generateLyrics, generateSong, generateImage, generateMerch, generatePoster } from '@/lib/api';
+import { saveGeneratedAudio } from '@/lib/aiMusicStorage';
 import { toast } from 'sonner';
 
 // Import studio components
 import { StudioEntryScreen, StudioFeature } from '@/components/studio/StudioEntryScreen';
 import { StudioLayout } from '@/components/studio/StudioLayout';
 import { StudioAIChat } from '@/components/studio/StudioAIChat';
+import { GenerationHistory } from '@/components/studio/GenerationHistory';
 import { GlobalMusicPlayer, GlobalTrack } from '@/components/studio/GlobalMusicPlayer';
 import { downloadAudio } from '@/lib/audioUtils';
 
@@ -30,6 +32,7 @@ interface GeneratedItem {
   prompt: string;
   audioUrl?: string;
   imageUrl?: string;
+  lyrics?: string;
   createdAt: Date;
   metadata: {
     genre: string;
@@ -60,6 +63,8 @@ export default function StudioPage() {
 
   // ==================== OUTPUT STATE ====================
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
+  const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
+  const [generatedLyrics, setGeneratedLyrics] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<GlobalTrack | null>(null);
 
@@ -121,29 +126,98 @@ export default function StudioPage() {
 
     setIsGenerating(true);
     setGenerationError('');
+    setGeneratedAudioUrl(null);
+    setGeneratedImageUrl(null);
+    setGeneratedLyrics(null);
 
     try {
-      // Generate music with all proper parameters
-      const result = await generateBeats(prompt, {
-        genre: selectedGenre,
-        mood: selectedMood,
-        language: selectedLanguage,
-        bpm: bpm,
-        user_tier: profile?.tier === 'premium' ? 'premium' : 'free', // Use user tier
-      });
+      let result;
+      let audioUrl: string | undefined;
+      let imageUrl: string | undefined;
+      let lyrics: string | undefined;
+
+      const userTier = profile?.tier === 'premium' ? 'premium' : 'free';
+
+      // Route to appropriate generation function based on feature
+      switch (currentFeature) {
+        case 'beat':
+          result = await generateBeats(prompt, {
+            genre: selectedGenre,
+            mood: selectedMood,
+            language: selectedLanguage,
+            bpm: bpm,
+            user_tier: userTier,
+          });
+          audioUrl = result.audio_url;
+          break;
+
+        case 'lyrics':
+          result = await generateLyrics(prompt, {
+            genre: selectedGenre,
+            mood: selectedMood,
+            language: selectedLanguage,
+            user_tier: userTier,
+          });
+          lyrics = result.data?.lyrics || result.lyrics;
+          break;
+
+        case 'song':
+          result = await generateSong(prompt, {
+            genre: selectedGenre,
+            mood: selectedMood,
+            language: selectedLanguage,
+            bpm: bpm,
+            user_tier: userTier,
+          });
+          audioUrl = result.audio_url;
+          imageUrl = result.cover_url;
+          lyrics = result.lyrics;
+          break;
+
+        case 'cover':
+          result = await generateImage(prompt, {
+            image_type: 'cover',
+            genre: selectedGenre,
+            language: selectedLanguage,
+            user_tier: userTier,
+          });
+          imageUrl = result.image_url;
+          break;
+
+        case 'poster':
+          result = await generatePoster(prompt, {
+            genre: selectedGenre,
+            language: selectedLanguage,
+            user_tier: userTier,
+          });
+          imageUrl = result.image_url;
+          break;
+
+        case 'merch':
+          result = await generateMerch(prompt, {
+            genre: selectedGenre,
+            user_tier: userTier,
+          });
+          imageUrl = result.image_url;
+          break;
+
+        default:
+          throw new Error(`Unsupported feature: ${currentFeature}`);
+      }
 
       if (!result.success) {
         throw new Error(result.error || 'Generation failed');
       }
 
-      // Get audio URL from normalized field (works with all response formats)
-      const audioUrl = result.audio_url;
-      if (!audioUrl) {
-        throw new Error('Backend did not return audio URL');
+      // Validate that we got at least something
+      if (!audioUrl && !imageUrl && !lyrics) {
+        throw new Error('Backend did not return any content');
       }
 
-      // Set generated audio
-      setGeneratedAudioUrl(audioUrl);
+      // Update state based on what was generated
+      if (audioUrl) setGeneratedAudioUrl(audioUrl);
+      if (imageUrl) setGeneratedImageUrl(imageUrl);
+      if (lyrics) setGeneratedLyrics(lyrics);
 
       // Add to history
       const newItem: GeneratedItem = {
@@ -151,6 +225,8 @@ export default function StudioPage() {
         feature: currentFeature,
         prompt,
         audioUrl,
+        imageUrl,
+        lyrics,
         createdAt: new Date(),
         metadata: {
           genre: selectedGenre,
@@ -162,15 +238,22 @@ export default function StudioPage() {
 
       setHistory((prev) => [newItem, ...prev].slice(0, 50)); // Keep last 50
 
-      // Show player
-      setCurrentTrack({
-        id: newItem.id,
-        title: prompt,
-        audioUrl,
-      });
-      setShowGlobalPlayer(true);
-
-      toast.success('✨ Track generated!');
+      // Show player if audio was generated
+      if (audioUrl) {
+        setCurrentTrack({
+          id: newItem.id,
+          title: prompt,
+          audioUrl,
+          lyrics: lyrics,
+          imageUrl: imageUrl,
+        });
+        setShowGlobalPlayer(true);
+        toast.success('✨ Generated!');
+      } else if (imageUrl) {
+        toast.success('🎨 Image generated!');
+      } else if (lyrics) {
+        toast.success('📝 Lyrics generated!');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation failed';
       setGenerationError(message);
@@ -184,15 +267,32 @@ export default function StudioPage() {
    * Save to library
    */
   const handleSaveTrack = async () => {
-    if (!generatedAudioUrl) return;
+    if (!generatedAudioUrl) {
+      toast.error('No generated audio to save');
+      return;
+    }
+
+    if (!user?.uid) {
+      toast.error('Please sign in to save tracks');
+      return;
+    }
 
     setIsSaving(true);
     try {
-      // TODO: Implement actual save to library (Firebase or backend)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Save to Firebase using the aiMusicStorage service
+      const { track } = await saveGeneratedAudio(user.uid, {
+        title: prompt || `${currentFeature} - ${new Date().toLocaleString()}`,
+        audio_url: generatedAudioUrl,
+        cover_url: generatedImageUrl,
+        duration: currentTrack?.duration,
+      });
+
       toast.success('💾 Saved to library!');
+      console.log('Track saved:', track.id);
     } catch (error) {
-      toast.error('Failed to save');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save';
+      toast.error(errorMessage);
+      console.error('[Studio] Save track error:', error);
     } finally {
       setIsSaving(false);
     }
@@ -218,6 +318,8 @@ export default function StudioPage() {
   const handleBackToEntry = () => {
     setShowEntry(true);
     setGeneratedAudioUrl(null);
+    setGeneratedImageUrl(null);
+    setGeneratedLyrics(null);
     setPrompt('');
     setGenerationError('');
     setChatOpen(false);
@@ -263,13 +365,27 @@ export default function StudioPage() {
                 setPrompt(item.prompt);
                 if (item.audioUrl) {
                   setGeneratedAudioUrl(item.audioUrl);
+                  setGeneratedImageUrl(item.imageUrl || null);
+                  setGeneratedLyrics(item.lyrics || null);
                   setCurrentTrack({
                     id: item.id,
                     title: item.prompt,
                     audioUrl: item.audioUrl,
+                    lyrics: item.lyrics,
+                    imageUrl: item.imageUrl,
                   });
                   setShowGlobalPlayer(true);
+                } else if (item.lyrics) {
+                  setGeneratedLyrics(item.lyrics);
+                  setPrompt(item.prompt);
+                } else if (item.imageUrl) {
+                  setGeneratedImageUrl(item.imageUrl);
+                  setPrompt(item.prompt);
                 }
+              }}
+              onHistoryDelete={(id) => {
+                setHistory((prev) => prev.filter((h) => h.id !== id));
+                toast.success('Removed from history');
               }}
             />
           </motion.div>

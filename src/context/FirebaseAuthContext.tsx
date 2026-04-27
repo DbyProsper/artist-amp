@@ -9,7 +9,7 @@ import {
   signInWithPopup,
   updateProfile
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 
 interface Profile {
@@ -54,7 +54,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const profileSnap = await getDoc(profileRef);
 
       if (profileSnap.exists()) {
-        return profileSnap.data() as Profile;
+        const data = profileSnap.data();
+        return {
+          id: userId,
+          user_id: userId,
+          username: data?.username || null,
+          name: data?.name || null,
+          bio: data?.bio || null,
+          avatar_url: data?.avatar_url || null,
+          cover_url: data?.cover_url || null,
+          location: data?.location || null,
+          is_artist: data?.is_artist || false,
+          is_verified: data?.is_verified || false,
+          is_admin: data?.is_admin || false,
+          onboarding_completed: data?.onboarding_completed || false,
+          email: data?.email || '',
+          created_at: data?.created_at || new Date(),
+          updated_at: data?.updated_at || new Date(),
+        } as Profile;
       }
       return null;
     } catch (error) {
@@ -172,8 +189,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = async () => {
     if (user) {
+      console.log('[Auth] Refreshing profile for user:', user.uid);
       const profileData = await fetchProfile(user.uid);
-      setProfile(profileData);
+      if (profileData) {
+        console.log('[Auth] Profile refreshed:', profileData);
+        setProfile(profileData);
+      } else {
+        console.warn('[Auth] Failed to refresh profile');
+      }
     }
   };
 
@@ -183,19 +206,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (user) {
         console.log('User authenticated:', user.uid);
-        const profileData = await fetchProfile(user.uid);
-        if (profileData) {
-          console.log('Profile loaded:', profileData);
-          setProfile(profileData);
-        } else {
+        
+        // Set up real-time listener for profile updates
+        const profileRef = doc(db, 'profiles', user.uid);
+        
+        // First, check if profile exists
+        const profileSnap = await getDoc(profileRef);
+        
+        if (!profileSnap.exists()) {
+          // Create profile if it doesn't exist
           console.log('No profile found, creating one...');
-          // Try to create profile, but don't fail if it doesn't work
           try {
             const newProfile = await createProfile(user);
             setProfile(newProfile);
           } catch (error) {
             console.warn('Profile creation failed, continuing without profile:', error);
-            // Set a basic profile for the UI to work
             setProfile({
               id: user.uid,
               user_id: user.uid,
@@ -214,11 +239,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
           }
         }
+        
+        // Set up real-time listener for profile changes
+        const unsubscribeProfile = onSnapshot(
+          profileRef,
+          (doc) => {
+            if (doc.exists()) {
+              const data = doc.data();
+              const profileData: Profile = {
+                id: user.uid,
+                user_id: user.uid,
+                username: data?.username || null,
+                name: data?.name || null,
+                bio: data?.bio || null,
+                avatar_url: data?.avatar_url || null,
+                cover_url: data?.cover_url || null,
+                location: data?.location || null,
+                is_artist: data?.is_artist || false,
+                is_verified: data?.is_verified || false,
+                is_admin: data?.is_admin || false,
+                onboarding_completed: data?.onboarding_completed || false,
+                email: data?.email || user.email || '',
+                created_at: data?.created_at || new Date(),
+                updated_at: data?.updated_at || new Date(),
+              };
+              console.log('Profile updated (real-time):', profileData);
+              setProfile(profileData);
+            } else {
+              console.warn('Profile document does not exist');
+            }
+          },
+          (error) => {
+            console.error('Error listening to profile:', error);
+            // Fallback to one-time fetch
+            fetchProfile(user.uid).then(profileData => {
+              if (profileData) {
+                setProfile(profileData);
+              }
+            });
+          }
+        );
+
+        setLoading(false);
+        
+        return () => unsubscribeProfile();
       } else {
         setProfile(null);
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     return () => unsubscribe();

@@ -355,6 +355,26 @@ export async function generateMerch(
 }
 
 /**
+ * Generate event posters
+ * Alias for generateImage with type='poster'
+ */
+export async function generatePoster(
+  prompt: string,
+  options?: {
+    genre?: string;
+    user_tier?: 'free' | 'premium';
+    language?: string;
+  }
+): Promise<ApiResponse> {
+  return generateImage(prompt, {
+    image_type: 'poster',
+    genre: options?.genre,
+    user_tier: options?.user_tier,
+    language: options?.language,
+  });
+}
+
+/**
  * Chat with AI - Conversational interface
  * POST /chat
  * Takes 5-30 seconds
@@ -392,14 +412,168 @@ export async function chatWithAI(
   );
 
   // Normalize the response to include 'message' field
-  if (response.success && response.data) {
+  if (response.success) {
+    // Try to extract message from various possible fields
+    let messageContent = '';
+    
+    if (response.data?.response) {
+      messageContent = response.data.response;
+    } else if (response.data?.message) {
+      messageContent = response.data.message;
+    } else if (response.data?.text) {
+      messageContent = response.data.text;
+    } else if (response.reply) {
+      // Handle backend returning 'reply' directly
+      messageContent = response.reply;
+    } else if (typeof response.data === 'string') {
+      messageContent = response.data;
+    }
+
     return {
       ...response,
-      message: response.data.response || response.data.message || response.data.text || '',
+      message: messageContent,
+      reply: messageContent, // Also include 'reply' for compatibility
     };
   }
 
   return response;
+}
+
+/**
+ * Generate music from uploaded audio file
+ * POST /music/generate (with file)
+ * Takes 45-120 seconds
+ * Converts/transforms audio file based on prompt
+ */
+export async function generateMusicFromAudio(
+  audioFile: File,
+  prompt: string,
+  model?: string,
+  options?: {
+    genre?: string;
+    mood?: string;
+    language?: string;
+    bpm?: number;
+    user_tier?: 'free' | 'premium';
+  }
+): Promise<ApiResponse> {
+  if (!audioFile) {
+    return { success: false, error: 'Audio file is required' };
+  }
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
+  }
+
+  // Build FormData for multipart file upload
+  const formData = new FormData();
+  formData.append('file', audioFile);
+  formData.append('prompt', prompt.trim());
+  
+  if (model) {
+    formData.append('model', model);
+  }
+  if (options?.genre) {
+    formData.append('genre', options.genre);
+  }
+  if (options?.mood) {
+    formData.append('mood', options.mood);
+  }
+  if (options?.language) {
+    formData.append('language', options.language);
+  }
+  if (options?.bpm) {
+    formData.append('bpm', options.bpm.toString());
+  }
+  if (options?.user_tier) {
+    formData.append('user_tier', options.user_tier);
+  }
+
+  return callApiRequest(
+    '/music/generate',
+    'POST',
+    formData,
+    API_TIMEOUTS.music // 120 second timeout
+  );
+}
+
+/**
+ * Generate image from uploaded image file
+ * POST /image/generate (with file)
+ * Takes 30-45 seconds
+ * Transforms/reimagines image based on prompt
+ */
+export async function generateImageFromUpload(
+  imageFile: File,
+  prompt: string,
+  model?: string,
+  options?: {
+    image_type?: 'cover' | 'merch' | 'poster';
+    genre?: string;
+    user_tier?: 'free' | 'premium';
+    language?: string;
+  }
+): Promise<ApiResponse> {
+  if (!imageFile) {
+    return { success: false, error: 'Image file is required' };
+  }
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
+  }
+
+  // Build FormData for multipart file upload
+  const formData = new FormData();
+  formData.append('file', imageFile);
+  formData.append('prompt', prompt.trim());
+  
+  if (model) {
+    formData.append('model', model);
+  }
+  if (options?.image_type) {
+    formData.append('image_type', options.image_type);
+  }
+  if (options?.genre) {
+    formData.append('genre', options.genre);
+  }
+  if (options?.user_tier) {
+    formData.append('user_tier', options.user_tier);
+  }
+  if (options?.language) {
+    formData.append('language', options.language);
+  }
+
+  return callApiRequest(
+    '/image/generate',
+    'POST',
+    formData,
+    API_TIMEOUTS.default // 45 second timeout
+  );
+}
+
+/**
+ * Enhance audio file - denoise, normalize, compress, add reverb, etc.
+ * POST /audio/enhance
+ * Takes 15-60 seconds depending on type
+ * Processing types: denoise, normalize, compress, reverb, enhance
+ */
+export async function enhanceAudio(
+  audioFile: File,
+  enhancementType: 'denoise' | 'normalize' | 'compress' | 'reverb' | 'enhance' = 'denoise'
+): Promise<ApiResponse> {
+  if (!audioFile) {
+    return { success: false, error: 'Audio file is required' };
+  }
+
+  // Build FormData for multipart file upload
+  const formData = new FormData();
+  formData.append('file', audioFile);
+  formData.append('enhancement_type', enhancementType);
+
+  return callApiRequest(
+    '/audio/enhance',
+    'POST',
+    formData,
+    60000 // 60 second timeout for audio enhancement
+  );
 }
 
 /**

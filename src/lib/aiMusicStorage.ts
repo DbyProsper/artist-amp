@@ -82,13 +82,12 @@ export async function saveGeneratedAudio(profileId: string, item: GeneratedAudio
       updated_at: new Date(),
     };
 
-    // Add metadata if provided
+    // Add metadata if provided (only non-undefined values)
     if (item.mode || item.improved_prompt || item.plan) {
-      trackData.metadata = {
-        mode: item.mode,
-        improved_prompt: item.improved_prompt,
-        plan: item.plan,
-      };
+      trackData.metadata = {};
+      if (item.mode !== undefined) trackData.metadata.mode = item.mode;
+      if (item.improved_prompt !== undefined) trackData.metadata.improved_prompt = item.improved_prompt;
+      if (item.plan !== undefined) trackData.metadata.plan = item.plan;
     }
 
     // Add track to Firestore

@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
-import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle } from 'lucide-react';
+import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export type StudioFeature = 'beat' | 'lyrics' | 'song' | 'cover' | 'merch' | 'chat';
+export type StudioFeature = 'beat' | 'lyrics' | 'song' | 'cover' | 'poster' | 'merch' | 'chat';
 
 interface StudioEntryScreenProps {
   onFeatureSelect: (feature: StudioFeature) => void;
@@ -39,6 +39,12 @@ const features: Array<{
     icon: <Image className="w-8 h-8" />,
     label: 'Cover Art',
     description: 'Generate album artwork',
+  },
+  {
+    id: 'poster',
+    icon: <Megaphone className="w-8 h-8" />,
+    label: 'Posters',
+    description: 'Create event posters',
   },
   {
     id: 'merch',

@@ -20,6 +20,8 @@ export interface GlobalTrack {
   artist?: string;
   audioUrl: string;
   duration?: number;
+  lyrics?: string;
+  imageUrl?: string;
 }
 
 interface GlobalMusicPlayerProps {
@@ -232,10 +234,26 @@ export function GlobalMusicPlayer({
               </Button>
             </div>
 
-            {/* Artwork Placeholder */}
-            <div className="aspect-square bg-muted rounded-2xl flex items-center justify-center">
-              <span className="text-muted-foreground">🎵</span>
-            </div>
+            {/* Artwork or Lyrics Display */}
+            {currentTrack.imageUrl ? (
+              <div className="aspect-square bg-muted rounded-2xl flex items-center justify-center overflow-hidden">
+                <img
+                  src={currentTrack.imageUrl}
+                  alt={currentTrack.title}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : currentTrack.lyrics ? (
+              <div className="aspect-square bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center p-4 overflow-y-auto">
+                <p className="text-sm text-center text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                  {currentTrack.lyrics}
+                </p>
+              </div>
+            ) : (
+              <div className="aspect-square bg-muted rounded-2xl flex items-center justify-center">
+                <span className="text-muted-foreground">🎵</span>
+              </div>
+            )}
 
             {/* Track Info */}
             <div className="text-center">

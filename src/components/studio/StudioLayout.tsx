@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, History, ArrowLeft } from 'lucide-react';
+import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, History, ArrowLeft, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { BPMSlider } from './BPMSlider';
@@ -8,6 +8,7 @@ import { PresetButtons } from './PresetButtons';
 import { MoodPresets } from './MoodPresets';
 import { LanguagePresets } from './LanguagePresets';
 import { AudioPlayer } from './AudioPlayer';
+import { GenerationHistory } from './GenerationHistory';
 import { StudioFeature } from './StudioEntryScreen';
 
 interface StudioLayoutProps {
@@ -42,8 +43,9 @@ interface StudioLayoutProps {
   isSaving?: boolean;
 
   // History
-  history?: Array<{ id: string; prompt: string; audioUrl?: string; createdAt: Date }>;
+  history?: Array<{ id: string; prompt: string; audioUrl?: string; imageUrl?: string; lyrics?: string; feature: string; createdAt: Date; metadata?: any }>;
   onHistorySelect?: (item: any) => void;
+  onHistoryDelete?: (id: string) => void;
 }
 
 const featureIcons: Record<StudioFeature, React.ReactNode> = {
@@ -51,6 +53,7 @@ const featureIcons: Record<StudioFeature, React.ReactNode> = {
   lyrics: <Mic2 className="w-4 h-4" />,
   song: <AudioWaveform className="w-4 h-4" />,
   cover: <Image className="w-4 h-4" />,
+  poster: <Megaphone className="w-4 h-4" />,
   merch: <Shirt className="w-4 h-4" />,
   chat: <MessageCircle className="w-4 h-4" />,
 };
@@ -60,6 +63,7 @@ const featureLabels: Record<StudioFeature, string> = {
   lyrics: 'Lyrics',
   song: 'Full Song',
   cover: 'Cover Art',
+  poster: 'Posters',
   merch: 'Merch',
   chat: 'Chat',
 };
@@ -90,7 +94,7 @@ export function StudioLayout({
   history = [],
   onHistorySelect,
 }: StudioLayoutProps) {
-  const features: StudioFeature[] = ['beat', 'lyrics', 'song', 'cover', 'merch'];
+  const features: StudioFeature[] = ['beat', 'lyrics', 'song', 'cover', 'poster', 'merch'];
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -303,52 +307,61 @@ export function StudioLayout({
           </div>
         </motion.div>
 
-        {/* RIGHT PANEL - Info */}
+        {/* RIGHT PANEL - Info & History */}
         <motion.div
           initial={{ x: 300, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          className="w-64 border-l border-border/40 bg-muted/20 overflow-y-auto p-4"
+          className="w-80 border-l border-border/40 bg-muted/20 overflow-y-auto p-4 space-y-6"
         >
-          <div className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Current Settings
-              </p>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Genre</span>
-                  <span className="font-medium capitalize">{selectedGenre}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">BPM</span>
-                  <span className="font-medium">{bpm}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Mood</span>
-                  <span className="font-medium capitalize">{selectedMood}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Language</span>
-                  <span className="font-medium capitalize">{selectedLanguage}</span>
-                </div>
+          {/* Current Settings */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              Current Settings
+            </p>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Genre</span>
+                <span className="font-medium capitalize">{selectedGenre}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">BPM</span>
+                <span className="font-medium">{bpm}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Mood</span>
+                <span className="font-medium capitalize">{selectedMood}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Language</span>
+                <span className="font-medium capitalize">{selectedLanguage}</span>
               </div>
             </div>
-
-            <div className="h-px bg-border/40" />
-
-            {/* Tips */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                💡 Tips
-              </p>
-              <ul className="text-xs space-y-2 text-muted-foreground">
-                <li>• Be specific in your prompt</li>
-                <li>• Mention mood and instrumentation</li>
-                <li>• Try different presets</li>
-                <li>• Use chat for inspiration</li>
-              </ul>
-            </div>
           </div>
+
+          <div className="h-px bg-border/40" />
+
+          {/* Tips */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              💡 Tips
+            </p>
+            <ul className="text-xs space-y-2 text-muted-foreground">
+              <li>• Be specific in your prompt</li>
+              <li>• Mention mood and instrumentation</li>
+              <li>• Try different presets</li>
+              <li>• Use chat for inspiration</li>
+            </ul>
+          </div>
+
+          <div className="h-px bg-border/40" />
+
+          {/* Generation History */}
+          <GenerationHistory
+            history={history || []}
+            onSelect={onHistorySelect || (() => {})}
+            onDelete={onHistoryDelete || (() => {})}
+            isLoading={false}
+          />
         </motion.div>
       </div>
     </div>
