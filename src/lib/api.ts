@@ -2,7 +2,7 @@
  * API Layer - Unified endpoint interface
  * Connects to FastAPI backend with Google Cloud Storage (GCS) signed URLs
  * 
- * Backend: https://musicinsta-api-973497466485.us-central1.run.app
+ * Backend: https://musicinsta-ai-973497466485.us-central1.run.app
  * Files are stored in GCS and returned as signed URLs (no CORS needed)
  */
 
@@ -352,6 +352,54 @@ export async function generateMerch(
     genre: options?.genre,
     user_tier: options?.user_tier,
   });
+}
+
+/**
+ * Chat with AI - Conversational interface
+ * POST /chat
+ * Takes 5-30 seconds
+ */
+export async function chatWithAI(
+  message: string,
+  model?: string,
+  conversationHistory?: Array<{ role: string; content: string }>
+): Promise<ApiResponse> {
+  if (!message?.trim()) {
+    return { success: false, error: 'Message cannot be empty' };
+  }
+
+  // Build request payload - backend expects just the message
+  // Conversation history can be included if backend supports it
+  const payload: Record<string, any> = {
+    message: message.trim(),
+  };
+
+  // Add model if specified (backend may support this)
+  if (model && model !== 'default') {
+    payload.model = model;
+  }
+
+  // Add conversation history if available (for context)
+  if (conversationHistory && conversationHistory.length > 0) {
+    payload.conversation_history = conversationHistory;
+  }
+
+  const response = await callApiRequest(
+    '/chat',
+    'POST',
+    payload,
+    API_TIMEOUTS.default // 30 second timeout
+  );
+
+  // Normalize the response to include 'message' field
+  if (response.success && response.data) {
+    return {
+      ...response,
+      message: response.data.response || response.data.message || response.data.text || '',
+    };
+  }
+
+  return response;
 }
 
 /**
