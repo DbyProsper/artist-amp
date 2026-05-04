@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { PlayerProvider } from "@/context/PlayerContext";
 import { AuthProvider, useAuth } from "@/context/FirebaseAuthContext";
 import { BottomNav } from "@/components/navigation/BottomNav";
@@ -70,6 +70,10 @@ function ScrollToTop() {
 
 const AppRoutes = () => {
   const { user, loading } = useAuth();
+  const location = useLocation();
+  
+  // Hide bottom nav on studio page
+  const showBottomNav = location.pathname !== '/studio';
 
   return (
     <div className="min-h-screen bg-background">
@@ -103,7 +107,7 @@ const AppRoutes = () => {
         <Route path="*" element={<NotFound />} />
       </Routes>
       <PlayerComponents />
-      <BottomNav />
+      {showBottomNav && <BottomNav />}
     </div>
   );
 };

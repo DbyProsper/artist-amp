@@ -21,6 +21,11 @@ export interface GlobalTrack {
   audioUrl: string;
   duration?: number;
   lyrics?: string;
+  timestampedLyrics?: Array<{
+    text: string;
+    startTime: number;
+    endTime: number;
+  }>;
   imageUrl?: string;
 }
 
@@ -41,13 +46,16 @@ export function GlobalMusicPlayer({
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false); // Toggle between lyrics and cover art
 
   // Set audio source and play
   useEffect(() => {
     if (currentTrack && audioRef.current) {
       audioRef.current.src = currentTrack.audioUrl;
-      audioRef.current.play().catch(() => {
-        console.log('Autoplay prevented');
+      audioRef.current.load(); // Force load
+      audioRef.current.play().catch((err) => {
+        console.warn('Autoplay prevented or failed:', err);
+        // Some browsers require user interaction to play audio
       });
       setIsPlaying(true);
     }
@@ -207,24 +215,24 @@ export function GlobalMusicPlayer({
         </div>
       </motion.div>
 
-      {/* Expanded player - fullscreen modal */}
+      {/* Expanded player - responsive modal */}
       {isExpanded && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={() => setIsExpanded(false)}
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
         >
           <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
+            initial={{ y: '100%', scale: 0.9 }}
+            animate={{ y: 0, scale: 1 }}
+            exit={{ y: '100%', scale: 0.9 }}
             onClick={(e) => e.stopPropagation()}
-            className="fixed inset-x-0 bottom-0 z-50 max-h-screen bg-gradient-to-b from-card to-background rounded-t-3xl p-6 space-y-6"
+            className="w-full max-w-md sm:max-w-lg bg-gradient-to-b from-card to-background rounded-t-3xl sm:rounded-3xl p-4 sm:p-6 space-y-4 sm:space-y-6 shadow-2xl"
           >
             {/* Close Button */}
-            <div className="flex justify-center">
+            <div className="flex justify-between items-center">
               <Button
                 size="sm"
                 variant="ghost"
@@ -232,11 +240,49 @@ export function GlobalMusicPlayer({
               >
                 <ChevronUp className="w-5 h-5" />
               </Button>
+              
+              {/* Toggle Lyrics/Cover Button */}
+              {currentTrack.imageUrl && currentTrack.lyrics && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowLyrics(!showLyrics)}
+                  className="text-xs"
+                >
+                  {showLyrics ? '🎨 Cover' : '📝 Lyrics'}
+                </Button>
+              )}
             </div>
 
             {/* Artwork or Lyrics Display */}
-            {currentTrack.imageUrl ? (
-              <div className="aspect-square bg-muted rounded-2xl flex items-center justify-center overflow-hidden">
+            {showLyrics && currentTrack.timestampedLyrics ? (
+              <div className="aspect-square max-h-64 sm:max-h-80 bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center p-4 overflow-y-auto">
+                <div className="text-sm text-center whitespace-pre-wrap leading-relaxed space-y-1">
+                  {currentTrack.timestampedLyrics.map((line, index) => {
+                    const isActive = currentTime >= line.startTime && currentTime <= line.endTime;
+                    return (
+                      <div
+                        key={index}
+                        className={`transition-colors duration-300 ${
+                          isActive
+                            ? 'text-primary font-semibold bg-primary/10 rounded px-2 py-1'
+                            : 'text-muted-foreground'
+                        }`}
+                      >
+                        {line.text}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : showLyrics && currentTrack.lyrics ? (
+              <div className="aspect-square max-h-64 sm:max-h-80 bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center p-4 overflow-y-auto">
+                <p className="text-sm text-center text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                  {currentTrack.lyrics}
+                </p>
+              </div>
+            ) : currentTrack.imageUrl ? (
+              <div className="aspect-square max-h-64 sm:max-h-80 bg-muted rounded-2xl flex items-center justify-center overflow-hidden">
                 <img
                   src={currentTrack.imageUrl}
                   alt={currentTrack.title}
@@ -244,14 +290,14 @@ export function GlobalMusicPlayer({
                 />
               </div>
             ) : currentTrack.lyrics ? (
-              <div className="aspect-square bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center p-4 overflow-y-auto">
+              <div className="aspect-square max-h-64 sm:max-h-80 bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center p-4 overflow-y-auto">
                 <p className="text-sm text-center text-muted-foreground whitespace-pre-wrap leading-relaxed">
                   {currentTrack.lyrics}
                 </p>
               </div>
             ) : (
-              <div className="aspect-square bg-muted rounded-2xl flex items-center justify-center">
-                <span className="text-muted-foreground">🎵</span>
+              <div className="aspect-square max-h-64 sm:max-h-80 bg-muted rounded-2xl flex items-center justify-center">
+                <span className="text-6xl text-muted-foreground">🎵</span>
               </div>
             )}
 

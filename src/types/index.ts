@@ -30,6 +30,12 @@ export interface Track {
   plays: number;
   likes: number;
   audioUrl?: string;
+  lyrics?: string;
+  timestampedLyrics?: Array<{
+    text: string;
+    startTime: number;
+    endTime: number;
+  }>;
 }
 
 export interface Post {

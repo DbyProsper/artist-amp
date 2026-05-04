@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { generateBeats, generateLyrics, generateSong, generateImage, generateMerch, generatePoster } from '@/lib/api';
-import { saveGeneratedAudio } from '@/lib/aiMusicStorage';
+import { saveGeneratedAudio, checkDuplicateTrack } from '@/lib/aiMusicStorage';
 import { toast } from 'sonner';
 
 // Import studio components
@@ -12,7 +12,11 @@ import { StudioLayout } from '@/components/studio/StudioLayout';
 import { StudioAIChat } from '@/components/studio/StudioAIChat';
 import { GenerationHistory } from '@/components/studio/GenerationHistory';
 import { GlobalMusicPlayer, GlobalTrack } from '@/components/studio/GlobalMusicPlayer';
+import { ResultDisplayModal } from '@/components/studio/ResultDisplayModal';
+import { ImageEditorModal } from '@/components/studio/ImageEditorModal';
 import { downloadAudio } from '@/lib/audioUtils';
+import { saveEditedImage } from '@/services/imageEditorService';
+import { EditorOverlay } from '@/types/imageEditor';
 
 // Import for genre mapping
 const GENRE_PRESETS = {
@@ -30,6 +34,7 @@ interface GeneratedItem {
   id: string;
   feature: StudioFeature;
   prompt: string;
+  title?: string;
   audioUrl?: string;
   imageUrl?: string;
   lyrics?: string;
@@ -47,8 +52,14 @@ export default function StudioPage() {
   const { user, profile } = useAuth();
 
   // ==================== FLOW STATE ====================
-  const [showEntry, setShowEntry] = useState(true);
-  const [currentFeature, setCurrentFeature] = useState<StudioFeature>('beat');
+  const [showEntry, setShowEntry] = useState(() => {
+    const saved = localStorage.getItem('studio_showEntry');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+  const [currentFeature, setCurrentFeature] = useState<StudioFeature>(() => {
+    const saved = localStorage.getItem('studio_currentFeature');
+    return (saved as StudioFeature) || 'beat';
+  });
   const [chatOpen, setChatOpen] = useState(false);
   const [chatExpanded, setChatExpanded] = useState(false);
 
@@ -65,12 +76,26 @@ export default function StudioPage() {
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [generatedImageUrl, setGeneratedImageUrl] = useState<string | null>(null);
   const [generatedLyrics, setGeneratedLyrics] = useState<string | null>(null);
+  const [generatedTitle, setGeneratedTitle] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<GlobalTrack | null>(null);
 
   // ==================== HISTORY STATE ====================
   const [history, setHistory] = useState<GeneratedItem[]>([]);
   const [showGlobalPlayer, setShowGlobalPlayer] = useState(false);
+
+  // ==================== RESULT MODAL STATE ====================
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [resultModalData, setResultModalData] = useState({
+    audioUrl: '',
+    imageUrl: '',
+    lyrics: '',
+    prompt: '',
+  });
+
+  // ==================== IMAGE EDITOR STATE ====================
+  const [showImageEditor, setShowImageEditor] = useState(false);
+  const [editingImageUrl, setEditingImageUrl] = useState<string | null>(null);
 
   // Load history from localStorage on mount
   useEffect(() => {
@@ -88,12 +113,14 @@ export default function StudioPage() {
     }
   }, []);
 
-  // Save history to localStorage whenever it changes
+  // Save studio state to localStorage
   useEffect(() => {
-    if (history.length > 0) {
-      localStorage.setItem('studio_history', JSON.stringify(history));
-    }
-  }, [history]);
+    localStorage.setItem('studio_showEntry', JSON.stringify(showEntry));
+  }, [showEntry]);
+
+  useEffect(() => {
+    localStorage.setItem('studio_currentFeature', currentFeature);
+  }, [currentFeature]);
 
   // ==================== HANDLERS ====================
 
@@ -101,12 +128,18 @@ export default function StudioPage() {
    * Handle feature selection from entry screen
    */
   const handleFeatureSelect = (feature: StudioFeature) => {
+    if (feature === 'enhance') {
+      toast.info('Audio Enhancement tool coming soon!');
+      return;
+    }
+
     setCurrentFeature(feature);
     setShowEntry(false);
 
-    // Open chat if selected
+    // Open chat in fullscreen if selected
     if (feature === 'chat') {
       setChatOpen(true);
+      setChatExpanded(true); // Open fullscreen directly
     }
   };
 
@@ -124,6 +157,7 @@ export default function StudioPage() {
       return;
     }
 
+    setGeneratedTitle(prompt);
     setIsGenerating(true);
     setGenerationError('');
     setGeneratedAudioUrl(null);
@@ -149,6 +183,8 @@ export default function StudioPage() {
             user_tier: userTier,
           });
           audioUrl = result.audio_url;
+          // Beats endpoint also returns an image
+          imageUrl = result.image_url || result.cover_url;
           break;
 
         case 'lyrics':
@@ -209,24 +245,48 @@ export default function StudioPage() {
         throw new Error(result.error || 'Generation failed');
       }
 
-      // Validate that we got at least something
-      if (!audioUrl && !imageUrl && !lyrics) {
-        throw new Error('Backend did not return any content');
+      // Log response for debugging
+      console.log('[Studio] Generation result:', {
+        feature: currentFeature,
+        audioUrl,
+        imageUrl: imageUrl || result.image_url || result.cover_url,
+        lyrics,
+        fullResult: result,
+      });
+
+      // Validate that we got at least something (check all possible fields)
+      const finalAudioUrl = audioUrl || result.audio_url;
+      const finalImageUrl = imageUrl || result.image_url || result.cover_url;
+      const finalLyrics = lyrics || result.lyrics;
+
+      if (!finalAudioUrl && !finalImageUrl && !finalLyrics) {
+        console.error('[Studio] No content in response:', result);
+        throw new Error(`No content returned for ${currentFeature}. Response: ${JSON.stringify(result)}`);
       }
 
       // Update state based on what was generated
-      if (audioUrl) setGeneratedAudioUrl(audioUrl);
-      if (imageUrl) setGeneratedImageUrl(imageUrl);
-      if (lyrics) setGeneratedLyrics(lyrics);
+      if (finalAudioUrl) setGeneratedAudioUrl(finalAudioUrl);
+      if (finalImageUrl) setGeneratedImageUrl(finalImageUrl);
+      if (finalLyrics) setGeneratedLyrics(finalLyrics);
+
+      // Show result modal
+      setResultModalData({
+        audioUrl: finalAudioUrl || '',
+        imageUrl: finalImageUrl || '',
+        lyrics: finalLyrics || '',
+        prompt,
+      });
+      setShowResultModal(true);
 
       // Add to history
       const newItem: GeneratedItem = {
         id: Date.now().toString(),
         feature: currentFeature,
         prompt,
-        audioUrl,
-        imageUrl,
-        lyrics,
+        title: generatedTitle || prompt,
+        audioUrl: finalAudioUrl,
+        imageUrl: finalImageUrl,
+        lyrics: finalLyrics,
         createdAt: new Date(),
         metadata: {
           genre: selectedGenre,
@@ -239,19 +299,17 @@ export default function StudioPage() {
       setHistory((prev) => [newItem, ...prev].slice(0, 50)); // Keep last 50
 
       // Show player if audio was generated
-      if (audioUrl) {
+      if (finalAudioUrl) {
         setCurrentTrack({
           id: newItem.id,
-          title: prompt,
-          audioUrl,
-          lyrics: lyrics,
-          imageUrl: imageUrl,
+          title: generatedTitle || prompt,
+          audioUrl: finalAudioUrl,
+          lyrics: finalLyrics,
+          imageUrl: finalImageUrl,
         });
-        setShowGlobalPlayer(true);
-        toast.success('✨ Generated!');
-      } else if (imageUrl) {
+      } else if (finalImageUrl) {
         toast.success('🎨 Image generated!');
-      } else if (lyrics) {
+      } else if (finalLyrics) {
         toast.success('📝 Lyrics generated!');
       }
     } catch (error) {
@@ -272,23 +330,40 @@ export default function StudioPage() {
       return;
     }
 
-    if (!user?.uid) {
+    if (!user?.uid || !profile?.id) {
       toast.error('Please sign in to save tracks');
       return;
     }
 
+    const trackTitle = generatedTitle || prompt || `${currentFeature} - ${new Date().toLocaleString()}`;
+
     setIsSaving(true);
     try {
+      console.log('[Studio] Saving track:', {
+        profileId: profile.id,
+        title: trackTitle,
+        audioUrl: generatedAudioUrl,
+        coverUrl: generatedImageUrl,
+      });
+
+      // Check for duplicate track
+      const isDuplicate = await checkDuplicateTrack(profile.id, trackTitle);
+      if (isDuplicate) {
+        toast.error(`⚠️ Song already exists with the name "${trackTitle}"`);
+        setIsSaving(false);
+        return;
+      }
+
       // Save to Firebase using the aiMusicStorage service
-      const { track } = await saveGeneratedAudio(user.uid, {
-        title: prompt || `${currentFeature} - ${new Date().toLocaleString()}`,
+      const { track } = await saveGeneratedAudio(profile.id, {
+        title: trackTitle,
         audio_url: generatedAudioUrl,
         cover_url: generatedImageUrl,
         duration: currentTrack?.duration,
       });
 
       toast.success('💾 Saved to library!');
-      console.log('Track saved:', track.id);
+      console.log('[Studio] Track saved:', track.id);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to save';
       toast.error(errorMessage);
@@ -305,11 +380,49 @@ export default function StudioPage() {
     if (!generatedAudioUrl) return;
 
     try {
-      await downloadAudio(generatedAudioUrl, prompt || 'track', 'mp3');
+      await downloadAudio(generatedAudioUrl, generatedTitle || prompt || 'track', 'mp3');
       toast.success('⬇️ Downloaded!');
     } catch (error) {
       toast.error('Download failed');
     }
+  };
+
+  /**
+   * Handle image editor save
+   */
+  const handleEditImageSave = async (overlays: EditorOverlay[]) => {
+    if (!editingImageUrl) {
+      toast.error('No image to edit');
+      return;
+    }
+
+    try {
+      // Save edited image via backend
+      const editedImageUrl = await saveEditedImage(editingImageUrl, overlays);
+      
+      if (editedImageUrl) {
+        setGeneratedImageUrl(editedImageUrl);
+        setResultModalData((prev) => ({
+          ...prev,
+          imageUrl: editedImageUrl,
+        }));
+        toast.success('🎨 Image edited successfully!');
+      } else {
+        toast.error('Failed to save edited image');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error editing image';
+      toast.error(message);
+      console.error('[Studio] Image edit error:', error);
+    }
+  };
+
+  /**
+   * Open image editor for generated image
+   */
+  const handleOpenImageEditor = (imageUrl: string) => {
+    setEditingImageUrl(imageUrl);
+    setShowImageEditor(true);
   };
 
   /**
@@ -320,10 +433,47 @@ export default function StudioPage() {
     setGeneratedAudioUrl(null);
     setGeneratedImageUrl(null);
     setGeneratedLyrics(null);
+    setGeneratedTitle('');
+    setResultModalData({ audioUrl: '', imageUrl: '', lyrics: '', prompt: '' });
+    setShowResultModal(false);
     setPrompt('');
     setGenerationError('');
     setChatOpen(false);
   };
+
+  /**
+   * Get dynamic button text based on current feature
+   */
+  const getButtonText = () => {
+    const buttonMap: Record<StudioFeature, string> = {
+      'beat': 'Generate Beat',
+      'lyrics': 'Generate Lyrics',
+      'song': 'Create Song',
+      'cover': 'Generate Cover',
+      'poster': 'Create Poster',
+      'merch': 'Design Merch',
+      'chat': 'Chat',
+    };
+    return buttonMap[currentFeature] || 'Generate';
+  };
+
+  const promptPlaceholder = (() => {
+    switch (currentFeature) {
+      case 'lyrics':
+        return 'Describe the theme, mood, style, and story for the lyrics you want to write.';
+      case 'cover':
+        return 'Describe the album cover concept, color palette, atmosphere, and visual style.';
+      case 'poster':
+        return 'Describe the poster layout, event theme, bold text, and visual energy.';
+      case 'merch':
+        return 'Describe the merch design: brand style, logo placement, colors, and mockup only (no people).';
+      case 'song':
+        return 'Describe the full song: mood, genre, instrumentation, vocals, and story.';
+      case 'beat':
+      default:
+        return 'Describe the beat idea: tempo, instruments, atmosphere, and energy.';
+    }
+  })();
 
   // ==================== RENDER ====================
 
@@ -356,17 +506,35 @@ export default function StudioPage() {
               onGenerate={handleGenerate}
               isGenerating={isGenerating}
               error={generationError}
+              buttonText={getButtonText()}
+              promptPlaceholder={promptPlaceholder}
+              generatedTitle={generatedTitle}
+              onTitleChange={setGeneratedTitle}
               audioUrl={generatedAudioUrl || undefined}
               onDownload={handleDownloadTrack}
               onSave={handleSaveTrack}
               isSaving={isSaving}
               history={history.filter((h) => h.feature === currentFeature)}
               onHistorySelect={(item) => {
-                setPrompt(item.prompt);
                 if (item.audioUrl) {
+                  // Play the audio directly in the studio player
                   setGeneratedAudioUrl(item.audioUrl);
                   setGeneratedImageUrl(item.imageUrl || null);
                   setGeneratedLyrics(item.lyrics || null);
+                  setPrompt(item.prompt);
+                } else {
+                  // For non-audio items, show the result modal
+                  setResultModalData({
+                    audioUrl: item.audioUrl || '',
+                    imageUrl: item.imageUrl || '',
+                    lyrics: item.lyrics || '',
+                    prompt: item.prompt,
+                  });
+                }
+              }}
+                setShowResultModal(true);
+
+                if (item.audioUrl) {
                   setCurrentTrack({
                     id: item.id,
                     title: item.prompt,
@@ -374,13 +542,6 @@ export default function StudioPage() {
                     lyrics: item.lyrics,
                     imageUrl: item.imageUrl,
                   });
-                  setShowGlobalPlayer(true);
-                } else if (item.lyrics) {
-                  setGeneratedLyrics(item.lyrics);
-                  setPrompt(item.prompt);
-                } else if (item.imageUrl) {
-                  setGeneratedImageUrl(item.imageUrl);
-                  setPrompt(item.prompt);
                 }
               }}
               onHistoryDelete={(id) => {
@@ -394,13 +555,54 @@ export default function StudioPage() {
 
       {/* AI Chat Panel */}
       <StudioAIChat
-        isOpen={chatOpen && !chatExpanded}
+        isOpen={chatOpen}
         isFullscreen={chatExpanded}
         onClose={() => {
           setChatOpen(false);
           setChatExpanded(false);
         }}
-        onToggleFullscreen={() => setChatExpanded(!chatExpanded)}
+        onToggleFullscreen={() => {
+          setChatExpanded(!chatExpanded);
+          setChatOpen(true); // Keep chat open when toggling
+        }}
+      />
+
+      {/* Result Display Modal */}
+      <ResultDisplayModal
+        isOpen={showResultModal}
+        onClose={() => setShowResultModal(false)}
+        audioUrl={resultModalData.audioUrl}
+        imageUrl={resultModalData.imageUrl}
+        lyrics={resultModalData.lyrics}
+        prompt={resultModalData.prompt}
+        onPlay={(audioUrl) => {
+          setCurrentTrack({
+            id: Date.now().toString(),
+            title: resultModalData.prompt,
+            audioUrl,
+            lyrics: resultModalData.lyrics,
+            imageUrl: resultModalData.imageUrl,
+          });
+          setShowGlobalPlayer(true);
+        }}
+        onReuse={(prompt) => {
+          setPrompt(prompt);
+          setShowResultModal(false);
+        }}
+        onEditImage={handleOpenImageEditor}
+        title={`${currentFeature} - ${resultModalData.prompt}`}
+      />
+
+      {/* Image Editor Modal */}
+      <ImageEditorModal
+        isOpen={showImageEditor}
+        baseImageUrl={editingImageUrl || ''}
+        onClose={() => {
+          setShowImageEditor(false);
+          setEditingImageUrl(null);
+        }}
+        onSaveEdits={handleEditImageSave}
+        title="Edit Image"
       />
 
       {/* Global Music Player */}

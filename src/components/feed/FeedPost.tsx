@@ -72,7 +72,8 @@ export function FeedPost({ post }: FeedPostProps) {
     // Fallback for image posts without imageUrl
     if (post.imageUrl) return post.imageUrl;
     if (post.track?.coverArt) return post.track.coverArt;
-    return null;
+    // Use placeholder for posts without images
+    return '/placeholder.svg';
   };
 
   const postImage = getPostImage();

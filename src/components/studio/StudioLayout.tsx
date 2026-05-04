@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
-import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, History, ArrowLeft, Megaphone } from 'lucide-react';
+import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, History, ArrowLeft, Megaphone, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { BPMSlider } from './BPMSlider';
 import { PromptBox } from './PromptBox';
 import { PresetButtons } from './PresetButtons';
@@ -33,6 +33,10 @@ interface StudioLayoutProps {
   onGenerate: () => void;
   isGenerating: boolean;
   error?: string;
+  buttonText?: string;
+  promptPlaceholder?: string;
+  generatedTitle?: string;
+  onTitleChange?: (title: string) => void;
 
   // Output
   audioUrl?: string;
@@ -86,6 +90,10 @@ export function StudioLayout({
   onGenerate,
   isGenerating,
   error,
+  buttonText,
+  promptPlaceholder,
+  generatedTitle,
+  onTitleChange,
   audioUrl,
   onPlayToggle,
   onDownload,
@@ -96,6 +104,9 @@ export function StudioLayout({
   onHistoryDelete,
 }: StudioLayoutProps) {
   const features: StudioFeature[] = ['beat', 'lyrics', 'song', 'cover', 'poster', 'merch'];
+
+  const isAudioFeature = feature === 'beat' || feature === 'song';
+  const shouldShowBPM = feature !== 'lyrics' && (feature === 'beat' || feature === 'song' || feature === 'cover' || feature === 'poster' || feature === 'merch');
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -112,15 +123,26 @@ export function StudioLayout({
             Back
           </Button>
           <h1 className="text-xl font-bold">{featureLabels[feature]}</h1>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onChatOpen}
-            className="gap-2"
-          >
-            <MessageCircle className="w-4 h-4" />
-            Chat
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => toast.info('Upgrade to Premium coming soon!')}
+              className="gap-2 text-primary"
+            >
+              <Zap className="w-4 h-4" />
+              Upgrade
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onChatOpen}
+              className="gap-2"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Chat
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -154,17 +176,19 @@ export function StudioLayout({
           </div>
 
           {/* BPM Control */}
-          <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Tempo
-            </p>
-            <BPMSlider
-              genre={selectedGenre}
-              bpm={bpm}
-              onBPMChange={onBPMChange}
-              disabled={isGenerating}
-            />
-          </div>
+          {shouldShowBPM && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Tempo
+              </p>
+              <BPMSlider
+                genre={selectedGenre}
+                bpm={bpm}
+                onBPMChange={onBPMChange}
+                disabled={isGenerating}
+              />
+            </div>
+          )}
 
           {/* Mood Selector */}
           <div className="space-y-3">
@@ -188,6 +212,44 @@ export function StudioLayout({
               onSelect={onLanguageChange}
               disabled={isGenerating}
             />
+          </div>
+
+          {/* Additional Tools */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Additional Tools
+            </p>
+            <div className="space-y-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start gap-2"
+                onClick={() => toast.info('Provide your own lyrics coming soon!')}
+              >
+                <Music className="w-4 h-4" />
+                Provide Lyrics
+              </Button>
+              {(feature === 'beat' || feature === 'song') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start gap-2"
+                  onClick={() => toast.info('Record feature coming soon!')}
+                >
+                  <Mic2 className="w-4 h-4" />
+                  Record
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start gap-2"
+                onClick={() => toast.info('Upload feature coming soon!')}
+              >
+                <AudioWaveform className="w-4 h-4" />
+                Upload Track
+              </Button>
+            </div>
           </div>
 
           {/* Divider */}
@@ -235,10 +297,16 @@ export function StudioLayout({
                 Quick Presets
               </p>
               <PresetButtons
+                feature={feature}
                 onPresetSelect={(preset) => {
                   onGenreChange(preset.genre);
-                  onBPMChange(preset.bpm);
                   onMoodChange(preset.mood);
+                  if (shouldShowBPM) {
+                    onBPMChange(preset.bpm);
+                  }
+                  if (preset.prompt) {
+                    onPromptChange(preset.prompt);
+                  }
                 }}
                 disabled={isGenerating}
               />
@@ -255,6 +323,8 @@ export function StudioLayout({
                 onSubmit={onGenerate}
                 loading={isGenerating}
                 disabled={isGenerating}
+                buttonText={buttonText}
+                placeholder={promptPlaceholder}
               />
             </div>
 
@@ -280,9 +350,22 @@ export function StudioLayout({
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Preview
                 </p>
+                {onTitleChange && (
+                  <div className="space-y-2">
+                    <label className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Track Title
+                    </label>
+                    <input
+                      value={generatedTitle || prompt}
+                      onChange={(e) => onTitleChange(e.target.value)}
+                      className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      placeholder="Enter a title for your generated track"
+                    />
+                  </div>
+                )}
                 <AudioPlayer
                   src={audioUrl}
-                  title={prompt || 'Generated Track'}
+                  title={generatedTitle || prompt || 'Generated Track'}
                   genre={selectedGenre}
                   bpm={bpm}
                   onDownload={onDownload}
@@ -303,6 +386,9 @@ export function StudioLayout({
                     ⬇️ Download
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground text-center pt-2">
+                  💡 Save to Library if you want to play this outside the studio
+                </p>
               </motion.div>
             )}
           </div>

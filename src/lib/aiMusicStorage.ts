@@ -56,6 +56,24 @@ export async function getOrCreateAIPlaylist(profileId: string) {
 }
 
 /**
+ * Check if a track with the same title already exists for the user
+ */
+export async function checkDuplicateTrack(profileId: string, title: string): Promise<boolean> {
+  try {
+    const tracksQuery = query(
+      collection(db, 'tracks'),
+      where('profile_id', '==', profileId),
+      where('title', '==', title)
+    );
+    const querySnapshot = await getDocs(tracksQuery);
+    return !querySnapshot.empty;
+  } catch (error) {
+    console.error('[AI Music] Error checking duplicate track:', error);
+    return false;
+  }
+}
+
+/**
  * Save generated audio as a track and add to AI Generated Music playlist
  */
 export async function saveGeneratedAudio(profileId: string, item: GeneratedAudioItem) {

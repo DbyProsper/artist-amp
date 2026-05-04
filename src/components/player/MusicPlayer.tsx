@@ -137,6 +137,7 @@ export function FullPlayer() {
     volume,
     isShuffled,
     repeatMode,
+    showLyrics,
     pauseTrack,
     resumeTrack,
     nextTrack,
@@ -146,6 +147,7 @@ export function FullPlayer() {
     setVolume,
     toggleShuffle,
     toggleRepeat,
+    toggleLyrics,
   } = usePlayer();
   const { user } = useAuth();
   const [showSettings, setShowSettings] = useState(false);
@@ -186,33 +188,59 @@ export function FullPlayer() {
             <span className="text-sm font-medium text-muted-foreground">
               NOW PLAYING
             </span>
-            <button 
-              className="p-2 rounded-full hover:bg-muted/50 transition-colors"
-              onClick={() => setShowSettings(true)}
-            >
-              <MoreHorizontal className="w-6 h-6" />
-            </button>
+            <div className="flex items-center gap-2">
+              {currentTrack?.lyrics && (
+                <button
+                  onClick={toggleLyrics}
+                  className={cn(
+                    "p-2 rounded-full hover:bg-muted/50 transition-colors",
+                    showLyrics && "text-primary"
+                  )}
+                  title={showLyrics ? "Hide Lyrics" : "Show Lyrics"}
+                >
+                  📝
+                </button>
+              )}
+              <button 
+                className="p-2 rounded-full hover:bg-muted/50 transition-colors"
+                onClick={() => setShowSettings(true)}
+              >
+                <MoreHorizontal className="w-6 h-6" />
+              </button>
+            </div>
           </div>
 
-          {/* Album Art - No spinning, just scale animation */}
+          {/* Album Art or Lyrics */}
           <div className="flex-1 flex items-center justify-center px-8">
-            <motion.div
-              className={cn(
-                "w-full max-w-sm aspect-square rounded-2xl overflow-hidden shadow-2xl"
-              )}
-              animate={{ 
-                scale: isPlaying ? 1 : 0.95,
-              }}
-              transition={{ 
-                scale: { duration: 0.3 },
-              }}
-            >
-              <img
-                src={currentTrack.coverArt}
-                alt={currentTrack.title}
-                className="w-full h-full object-cover"
-              />
-            </motion.div>
+            {showLyrics && currentTrack?.lyrics ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="w-full max-w-sm aspect-square bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center p-6 overflow-y-auto"
+              >
+                <p className="text-sm text-center text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                  {currentTrack.lyrics}
+                </p>
+              </motion.div>
+            ) : (
+              <motion.div
+                className={cn(
+                  "w-full max-w-sm aspect-square rounded-2xl overflow-hidden shadow-2xl"
+                )}
+                animate={{ 
+                  scale: isPlaying ? 1 : 0.95,
+                }}
+                transition={{ 
+                  scale: { duration: 0.3 },
+                }}
+              >
+                <img
+                  src={currentTrack.coverArt}
+                  alt={currentTrack.title}
+                  className="w-full h-full object-cover"
+                />
+              </motion.div>
+            )}
           </div>
 
           {/* Track Info */}

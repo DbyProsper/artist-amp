@@ -152,16 +152,30 @@ async function callApiRequest(
       json.data?.audio_url ||
       json.data?.audio?.url ||
       json.audio_url ||
-      json.file;
+      json.file ||
+      json.audio ||
+      json.file_url;
 
     const imageUrl =
       json.data?.image_url ||
       json.data?.image?.url ||
       json.data?.url ||
       json.cover_url ||
-      json.image_url;
+      json.image_url ||
+      json.image ||
+      json.url ||
+      json.file; // Sometimes image is returned as 'file'
 
-    const lyrics = json.data?.lyrics?.text || json.data?.lyrics || json.lyrics;
+    const lyrics = json.data?.lyrics?.text || json.data?.lyrics || json.lyrics || json.text;
+
+    // Extract reply/message for chat responses
+    const reply = json.data?.reply || json.reply;
+    const message = json.data?.message || json.message;
+
+    // Log for debugging
+    if (!audioUrl && !imageUrl && !lyrics && !reply && !message) {
+      console.warn('[API] No recognized output fields in response:', json);
+    }
 
     return {
       success: true,
@@ -169,9 +183,11 @@ async function callApiRequest(
       // Normalized fields for easy access
       audio_url: audioUrl,
       cover_url: imageUrl,
+      image_url: imageUrl, // Also provide as image_url for consistency
       lyrics: lyrics,
+      reply: reply,
       // Pass through original data
-      message: json.message ?? '',
+      message: message ?? '',
       error: undefined,
     };
   } catch (error) {

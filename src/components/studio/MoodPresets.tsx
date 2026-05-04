@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Headphones, Zap, Skull, Heart } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Sparkles, Headphones, Zap, Skull, Heart, Plus } from 'lucide-react';
+import { useState } from 'react';
 
 export interface MoodPreset {
   id: string;
@@ -55,6 +57,15 @@ interface MoodPresetsProps {
 }
 
 export function MoodPresets({ selected, onSelect, disabled = false }: MoodPresetsProps) {
+  const [customMood, setCustomMood] = useState('');
+
+  const handleCustomMoodSubmit = () => {
+    if (customMood.trim()) {
+      onSelect(customMood.trim());
+      setCustomMood('');
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -68,7 +79,7 @@ export function MoodPresets({ selected, onSelect, disabled = false }: MoodPreset
         </h3>
       </div>
 
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-5 gap-2 mb-4">
         {MOOD_PRESETS.map((mood, idx) => (
           <motion.button
             key={mood.id}
@@ -99,6 +110,31 @@ export function MoodPresets({ selected, onSelect, disabled = false }: MoodPreset
           </motion.button>
         ))}
       </div>
+
+      {/* Custom Mood Input */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="flex gap-2"
+      >
+        <Input
+          placeholder="Enter custom mood..."
+          value={customMood}
+          onChange={(e) => setCustomMood(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleCustomMoodSubmit()}
+          disabled={disabled}
+          className="flex-1"
+        />
+        <Button
+          size="sm"
+          onClick={handleCustomMoodSubmit}
+          disabled={disabled || !customMood.trim()}
+          className="px-3"
+        >
+          <Plus className="w-4 h-4" />
+        </Button>
+      </motion.div>
     </motion.div>
   );
 }

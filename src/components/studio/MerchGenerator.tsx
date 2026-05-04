@@ -67,6 +67,11 @@ export function MerchGenerator({ language }: SimpleMerchGeneratorProps) {
     toast.success('Preset applied!');
   };
 
+  const buildMerchPrompt = (basePrompt: string) => {
+    const safePrompt = basePrompt.trim();
+    return `${safePrompt} No people, no models or faces. Show a clean product mockup only on a neutral background, with bold branding and clear apparel placement.`;
+  };
+
   const handleGenerateMerch = async () => {
     if (!prompt.trim()) {
       toast.error('Please enter a prompt or select a preset');
@@ -78,7 +83,7 @@ export function MerchGenerator({ language }: SimpleMerchGeneratorProps) {
     setImageUrl('');
 
     try {
-      const result = await generateImage(prompt.trim(), {
+      const result = await generateImage(buildMerchPrompt(prompt), {
         image_type: 'merch',
         language,
       });

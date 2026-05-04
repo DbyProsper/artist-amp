@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Camera, Image, Music2, Video, X, Upload, Loader2, Lock, Smile } from 'lucide-react';
+import { Camera, Image, Music2, Video, X, Upload, Loader2, Lock, Smile, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,9 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
+import { ImageEditorModal } from '@/components/studio/ImageEditorModal';
+import { saveEditedImage, exportEditedImage } from '@/services/imageEditorService';
+import { EditorOverlay } from '@/types/imageEditor';
 
 type UploadType = 'audio' | 'video' | 'image' | 'story';
 
@@ -25,12 +28,17 @@ export default function UploadPage() {
   const [formData, setFormData] = useState({
     title: '',
     caption: '',
+    lyrics: '',
     addToStory: false,
     file: null as File | null,
     filePreview: '',
     coverFile: null as File | null,
     coverPreview: '',
   });
+
+  // Image editor state
+  const [showImageEditor, setShowImageEditor] = useState(false);
+  const [editingImageType, setEditingImageType] = useState<'main' | 'cover'>('main');
 
   const isArtist = profile?.is_artist ?? false;
 
@@ -104,6 +112,7 @@ export default function UploadPage() {
         const trackData = {
           profile_id: profile.id,
           title: formData.title,
+          lyrics: formData.lyrics || null,
           audio_url: fileUrl,
           cover_url: coverUrl,
           created_at: new Date(),
@@ -159,7 +168,53 @@ export default function UploadPage() {
 
   const resetForm = () => {
     setUploadType(null);
-    setFormData({ title: '', caption: '', addToStory: false, file: null, filePreview: '', coverFile: null, coverPreview: '' });
+    setFormData({ title: '', caption: '', lyrics: '', addToStory: false, file: null, filePreview: '', coverFile: null, coverPreview: '' });
+  };
+
+  /**
+   * Handle image editor save for main or cover image
+   */
+  const handleImageEditorSave = async (overlays: EditorOverlay[]) => {
+    const imageUrl = editingImageType === 'main' ? formData.filePreview : formData.coverPreview;
+    
+    if (!imageUrl) {
+      toast.error('No image to edit');
+      return;
+    }
+
+    try {
+      // Try to save via backend first
+      const editedImageUrl = await saveEditedImage(imageUrl, overlays);
+      
+      if (editedImageUrl) {
+        // Update form data with edited image
+        if (editingImageType === 'main') {
+          setFormData({ ...formData, filePreview: editedImageUrl });
+        } else {
+          setFormData({ ...formData, coverPreview: editedImageUrl });
+        }
+        toast.success('🎨 Image edited!');
+      } else {
+        // Fallback: use client-side rendered image
+        const editedFile = await exportEditedImage(imageUrl, overlays);
+        if (editedFile) {
+          const previewUrl = URL.createObjectURL(editedFile);
+          if (editingImageType === 'main') {
+            setFormData({ ...formData, file: editedFile, filePreview: previewUrl });
+          } else {
+            setFormData({ ...formData, coverFile: editedFile, coverPreview: previewUrl });
+          }
+          toast.success('🎨 Image edited!');
+        } else {
+          throw new Error('Failed to render edited image');
+        }
+      }
+      setShowImageEditor(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error editing image';
+      toast.error(message);
+      console.error('[Upload] Image edit error:', error);
+    }
   };
 
   const uploadOptions = [
@@ -227,9 +282,41 @@ export default function UploadPage() {
                       </div>
                     </div>
                   ) : uploadType === 'video' ? (
-                    <video src={formData.filePreview} className="w-full aspect-video object-cover rounded-xl" controls />
+                    <>
+                      <video src={formData.filePreview} className="w-full aspect-video object-cover rounded-xl" controls />
+                      {(uploadType === 'image' || uploadType === 'story') && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingImageType('main');
+                            setShowImageEditor(true);
+                          }}
+                          className="absolute top-2 right-12 gap-2"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          Edit
+                        </Button>
+                      )}
+                    </>
                   ) : (
-                    <img src={formData.filePreview} alt="Preview" className="w-full aspect-square object-cover rounded-xl" />
+                    <>
+                      <img src={formData.filePreview} alt="Preview" className="w-full aspect-square object-cover rounded-xl" />
+                      {(uploadType === 'image' || uploadType === 'story') && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingImageType('main');
+                            setShowImageEditor(true);
+                          }}
+                          className="absolute top-2 right-12 gap-2"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          Edit
+                        </Button>
+                      )}
+                    </>
                   )}
                   <button onClick={() => setFormData({ ...formData, file: null, filePreview: '' })} className="absolute top-2 right-2 p-1 rounded-full bg-background/80">
                     <X className="w-4 h-4" />
@@ -254,11 +341,33 @@ export default function UploadPage() {
                   <Input id="title" placeholder="Enter track title" className="h-12 bg-muted/50" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="lyrics">Lyrics (Optional)</Label>
+                  <Textarea
+                    id="lyrics"
+                    placeholder="Enter song lyrics..."
+                    className="min-h-[120px] bg-muted/50 border-none resize-none"
+                    value={formData.lyrics}
+                    onChange={(e) => setFormData({ ...formData, lyrics: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label>Cover Art</Label>
                   <div className="border-2 border-dashed border-muted rounded-xl p-4">
                     {formData.coverPreview ? (
                       <div className="relative w-32 mx-auto">
                         <img src={formData.coverPreview} alt="Cover" className="w-32 h-32 object-cover rounded-lg" />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingImageType('cover');
+                            setShowImageEditor(true);
+                          }}
+                          className="absolute -bottom-8 left-0 right-0 mx-auto gap-2 w-full"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          Edit
+                        </Button>
                         <button onClick={() => setFormData({ ...formData, coverFile: null, coverPreview: '' })} className="absolute -top-2 -right-2 p-1 rounded-full bg-background border">
                           <X className="w-3 h-3" />
                         </button>
@@ -306,6 +415,14 @@ export default function UploadPage() {
           </motion.div>
         )}
       </div>
+
+      <ImageEditorModal
+        isOpen={showImageEditor}
+        baseImageUrl={editingImageType === 'cover' ? formData.coverPreview || '' : formData.filePreview || ''}
+        onClose={() => setShowImageEditor(false)}
+        onSaveEdits={handleImageEditorSave}
+        title={editingImageType === 'cover' ? 'Edit Cover Art' : 'Edit Image'}
+      />
     </div>
   );
 }

@@ -13,6 +13,7 @@ interface PlayerContextType {
   volume: number;
   isShuffled: boolean;
   repeatMode: 'off' | 'all' | 'one';
+  showLyrics: boolean;
   playTrack: (track: Track) => void;
   pauseTrack: () => void;
   resumeTrack: () => void;
@@ -23,6 +24,7 @@ interface PlayerContextType {
   setVolume: (volume: number) => void;
   toggleShuffle: () => void;
   toggleRepeat: () => void;
+  toggleLyrics: () => void;
   addToQueue: (track: Track) => void;
   setQueue: (tracks: Track[]) => void;
   closeMiniPlayer: () => void;
@@ -41,6 +43,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [volume, setVolume] = useState(80);
   const [isShuffled, setIsShuffled] = useState(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
+  const [showLyrics, setShowLyrics] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressIntervalRef = useRef<number | null>(null);
 
@@ -211,6 +214,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setRepeatMode(modes[(currentIndex + 1) % 3]);
   };
 
+  const toggleLyrics = () => {
+    setShowLyrics(!showLyrics);
+  };
+
   const addToQueue = (track: Track) => {
     setQueue([...queue, track]);
   };
@@ -227,6 +234,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         volume,
         isShuffled,
         repeatMode,
+        showLyrics,
         playTrack,
         pauseTrack,
         resumeTrack,
@@ -237,6 +245,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setVolume,
         toggleShuffle,
         toggleRepeat,
+        toggleLyrics,
         addToQueue,
         setQueue,
         closeMiniPlayer,

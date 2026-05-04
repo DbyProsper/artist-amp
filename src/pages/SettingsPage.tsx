@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, User, Bell, Mail, Music2, Info, LogOut, 
-  BadgeCheck, ChevronRight, Shield, BarChart3
+  BadgeCheck, ChevronRight, Shield, BarChart3, MessageSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -145,6 +145,12 @@ export default function SettingsPage() {
     {
       title: 'About',
       items: [
+        {
+          icon: MessageSquare,
+          label: 'Contact Admin',
+          description: 'Get help or report issues',
+          onClick: () => navigate('/messages?contact=admin'),
+        },
         {
           icon: Info,
           label: 'About MusicInsta',

@@ -8,9 +8,10 @@ interface PromptBoxProps {
   onChange: (value: string) => void;
   onSubmit: () => void;
   loading?: boolean;
-  maxLength?: number;
+  maxWords?: number;
   placeholder?: string;
   disabled?: boolean;
+  buttonText?: string;
 }
 
 export function PromptBox({
@@ -18,9 +19,10 @@ export function PromptBox({
   onChange,
   onSubmit,
   loading = false,
-  maxLength = 120,
-  placeholder = 'Describe your song idea in a few words... (e.g. sad amapiano love song)',
+  maxWords = 500,
+  placeholder = 'Describe your idea in up to 500 words... (e.g. soulful amapiano track with catchy hook)',
   disabled = false,
+  buttonText = 'Create Track',
 }: PromptBoxProps) {
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -32,15 +34,16 @@ export function PromptBox({
     }
   }, [disabled]);
 
-  const charCount = value.length;
-  const percentFull = (charCount / maxLength) * 100;
-  const remainingChars = maxLength - charCount;
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+  const percentFull = (wordCount / maxWords) * 100;
+  const remainingWords = maxWords - wordCount;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Submit on Ctrl/Cmd + Enter
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      if (!loading && charCount > 0) {
+      if (!loading && wordCount > 0) {
         onSubmit();
       }
     }
@@ -78,30 +81,32 @@ export function PromptBox({
               ref={inputRef}
               value={value}
               onChange={(e) => {
-                if (e.target.value.length <= maxLength) {
+                const nextWords = e.target.value.trim().split(/\s+/).filter(Boolean);
+                if (nextWords.length <= maxWords) {
                   onChange(e.target.value);
+                } else {
+                  onChange(nextWords.slice(0, maxWords).join(' '));
                 }
               }}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
-              maxLength={maxLength}
               disabled={disabled || loading}
               rows={3}
               className="w-full bg-transparent text-lg font-medium placeholder:text-muted-foreground/60 resize-none focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
             />
 
-            {/* Bottom row: character count + submit button */}
+            {/* Bottom row: word count + submit button */}
             <div className="flex items-center justify-between pt-4 mt-4 border-t border-border/30">
               <motion.span
                 animate={{
-                  color: remainingChars < 20 ? '#ef4444' : '#64748b',
-                  fontSize: remainingChars < 10 ? '14px' : '13px',
+                  color: remainingWords < 20 ? '#ef4444' : '#64748b',
+                  fontSize: remainingWords < 10 ? '14px' : '13px',
                 }}
                 className="text-sm font-medium"
               >
-                {charCount}/{maxLength}
+                {wordCount}/{maxWords} words
               </motion.span>
 
               <Button
@@ -118,7 +123,7 @@ export function PromptBox({
                 ) : (
                   <>
                     <Zap className="w-4 h-4" />
-                    Create Track
+                    {buttonText}
                   </>
                 )}
               </Button>

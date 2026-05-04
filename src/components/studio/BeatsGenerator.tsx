@@ -40,6 +40,7 @@ export function BeatsGenerator({ genre, mood, language, profile }: BeatsGenerato
   const [bpm, setBpm] = useState(110);
   const [loading, setLoading] = useState(false);
   const [beatUrl, setBeatUrl] = useState('');
+  const [beatImageUrl, setBeatImageUrl] = useState('');
   const [error, setError] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -82,15 +83,23 @@ export function BeatsGenerator({ genre, mood, language, profile }: BeatsGenerato
         toast.error('Generation failed', { description: result.error });
       } else {
         const audioUrl = result.audio_url || result.data?.audio_url;
-        if (!audioUrl) {
-          setError('Backend did not return audio URL');
-          toast.error('No audio returned from backend');
+        const imageUrl = result.image_url || result.cover_url || result.data?.image_url;
+
+        if (!audioUrl && !imageUrl) {
+          setError('Backend did not return beat audio or image');
+          toast.error('No beat content returned from backend');
         } else {
-          setBeatUrl(audioUrl);
+          if (audioUrl) {
+            setBeatUrl(audioUrl);
+          }
+          if (imageUrl) {
+            setBeatImageUrl(imageUrl);
+          }
+
           toast.success('Beat generated!', { description: 'Ready to play and download' });
 
           // Save to library
-          if (profile?.id) {
+          if (profile?.id && audioUrl) {
             try {
               await saveGeneratedAudio(profile.id, {
                 title: `🎵 Beat - ${prompt.slice(0, 40)}... (${bpm} BPM)`,
@@ -220,6 +229,27 @@ export function BeatsGenerator({ genre, mood, language, profile }: BeatsGenerato
           )}
         </CardContent>
       </Card>
+
+      {/* Generated Beat Image */}
+      {beatImageUrl && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <Card className="bg-primary/5 border-primary/20">
+            <CardHeader>
+              <CardTitle className="text-sm">Generated Beat Artwork</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <img
+                src={beatImageUrl}
+                alt="Beat artwork"
+                className="w-full rounded-lg object-cover"
+              />
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Audio Player */}
       {beatUrl && (

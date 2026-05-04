@@ -36,6 +36,12 @@ interface SocialLinks {
   spotify?: string | null;
 }
 
+function formatCount(num: number): string {
+  if (num < 1000) return `${num}`;
+  if (num < 1000000) return `${(num / 1000).toFixed(num % 1000 === 0 ? 0 : 1)}K`;
+  return `${(num / 1000000).toFixed(num % 1000000 === 0 ? 0 : 1)}M`;
+}
+
 export default function UserProfilePage() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();

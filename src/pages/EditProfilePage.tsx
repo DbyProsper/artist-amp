@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Camera, Upload, X, MapPin, Save, Youtube, Music2, Globe, Instagram, Maximize2, Move } from 'lucide-react';
+import { ArrowLeft, Camera, Upload, X, MapPin, Save, Youtube, Music2, Globe, Instagram, Maximize2, Move, BadgeCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -328,10 +328,21 @@ export default function EditProfilePage() {
             </button>
             <h1 className="font-display font-bold text-lg">Edit Profile</h1>
           </div>
-          <Button onClick={handleSave} disabled={loading} size="sm">
-            <Save className="w-4 h-4 mr-1" />
-            {loading ? 'Saving...' : 'Save'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => toast.info('Verification request submitted! We\'ll review your application.')}
+              variant="outline"
+              size="sm"
+              className="gap-1"
+            >
+              <BadgeCheck className="w-4 h-4" />
+              Request Verification
+            </Button>
+            <Button onClick={handleSave} disabled={loading} size="sm">
+              <Save className="w-4 h-4 mr-1" />
+              {loading ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
         </div>
       </header>
 

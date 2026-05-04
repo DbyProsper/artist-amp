@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
-import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, Megaphone } from 'lucide-react';
+import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, Megaphone, ArrowLeft, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
 
-export type StudioFeature = 'beat' | 'lyrics' | 'song' | 'cover' | 'poster' | 'merch' | 'chat';
+export type StudioFeature = 'beat' | 'lyrics' | 'song' | 'cover' | 'poster' | 'merch' | 'chat' | 'enhance';
 
 interface StudioEntryScreenProps {
   onFeatureSelect: (feature: StudioFeature) => void;
@@ -58,15 +59,39 @@ const features: Array<{
     label: 'Chat with AI',
     description: 'Get creative suggestions',
   },
+  {
+    id: 'enhance',
+    icon: <Zap className="w-8 h-8" />,
+    label: 'Audio Enhancement',
+    description: 'Enhance existing audio',
+  },
 ];
 
 export function StudioEntryScreen({ onFeatureSelect }: StudioEntryScreenProps) {
+  const navigate = useNavigate();
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-b from-background to-muted/30"
     >
+      {/* Back Button */}
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="self-start mb-8"
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-2 text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </Button>
+      </motion.div>
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}

@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Play, Pause, Download, Volume2, Volume1, VolumeX } from 'lucide-react';
+import { Play, Pause, Download, Volume2, Volume1, VolumeX, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { StudioAudioOptions } from './StudioAudioOptions';
 
 interface AudioPlayerProps {
   src: string;
@@ -28,6 +29,7 @@ export function AudioPlayer({
   const [totalTime, setTotalTime] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const [showVolume, setShowVolume] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   // Update current time
@@ -198,6 +200,17 @@ export function AudioPlayer({
           {/* Spacer */}
           <div className="flex-1" />
 
+          {/* Options Button */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowOptions(true)}
+            className="p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+            title="More options"
+          >
+            <MoreHorizontal className="w-5 h-5" />
+          </motion.button>
+
           {/* Download Button */}
           {onDownload && (
             <motion.button
@@ -213,6 +226,19 @@ export function AudioPlayer({
           )}
         </div>
       </Card>
+
+      {/* Audio Options Modal */}
+      <StudioAudioOptions
+        track={{
+          id: title,
+          title,
+          audioUrl: src,
+          genre,
+          bpm,
+        }}
+        isOpen={showOptions}
+        onClose={() => setShowOptions(false)}
+      />
 
       {/* Hidden audio element */}
       <audio ref={audioRef} src={src} crossOrigin="anonymous" />
