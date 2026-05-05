@@ -530,18 +530,7 @@ export default function StudioPage() {
                     lyrics: item.lyrics || '',
                     prompt: item.prompt,
                   });
-                }
-              }}
-                setShowResultModal(true);
-
-                if (item.audioUrl) {
-                  setCurrentTrack({
-                    id: item.id,
-                    title: item.prompt,
-                    audioUrl: item.audioUrl,
-                    lyrics: item.lyrics,
-                    imageUrl: item.imageUrl,
-                  });
+                  setShowResultModal(true);
                 }
               }}
               onHistoryDelete={(id) => {
