@@ -111,7 +111,7 @@ export function PromptBox({
 
               <Button
                 onClick={onSubmit}
-                disabled={disabled || loading || charCount === 0}
+                disabled={disabled || loading || wordCount === 0}
                 size="lg"
                 className="gap-2 rounded-full font-semibold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40"
               >
