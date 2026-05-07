@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Pause, Download, Volume2, Volume1, VolumeX, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';

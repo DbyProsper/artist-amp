@@ -316,8 +316,23 @@ export async function generateBeats(
     user_tier?: 'free' | 'premium';
   }
 ): Promise<ApiResponse> {
-  // Beats are generated using the music endpoint
-  return generateMusic(prompt, options);
+  if (!prompt?.trim()) {
+    return { success: false, error: 'Prompt cannot be empty' };
+  }
+
+  return callApiRequest(
+    '/beats/generate',
+    'POST',
+    {
+      prompt,
+      genre: options?.genre || 'electronic',
+      mood: options?.mood || 'upbeat',
+      language: options?.language || 'en',
+      bpm: options?.bpm || 128,
+      user_tier: options?.user_tier || DEFAULT_USER_TIER,
+    },
+    API_TIMEOUTS.music
+  );
 }
 
 /**

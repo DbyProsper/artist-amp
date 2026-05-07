@@ -1,5 +1,7 @@
+import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, History, ArrowLeft, Megaphone, Zap } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BPMSlider } from './BPMSlider';
@@ -52,7 +54,7 @@ interface StudioLayoutProps {
   onHistoryDelete?: (id: string) => void;
 }
 
-const featureIcons: Record<StudioFeature, React.ReactNode> = {
+const featureIcons: Record<StudioFeature, ReactNode> = {
   beat: <Music className="w-4 h-4" />,
   lyrics: <Mic2 className="w-4 h-4" />,
   song: <AudioWaveform className="w-4 h-4" />,
