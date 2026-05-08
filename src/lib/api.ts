@@ -608,6 +608,29 @@ export async function enhanceAudio(
 }
 
 /**
+ * Export enhanced audio via backend
+ * POST /audio/enhance/export
+ */
+export async function exportEnhancedAudio(
+  audioUrl: string,
+  format: 'mp3' | 'wav' = 'wav'
+): Promise<ApiResponse> {
+  if (!audioUrl) {
+    return { success: false, error: 'Audio URL is required' };
+  }
+
+  return callApiRequest(
+    '/audio/enhance/export',
+    'POST',
+    {
+      audio_url: audioUrl,
+      format,
+    },
+    API_TIMEOUTS.default
+  );
+}
+
+/**
  * Health check endpoint
  * GET /health
  * Verify backend is online

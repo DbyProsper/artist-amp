@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { StudioEntryScreen, StudioFeature } from '@/components/studio/StudioEntryScreen';
 import { StudioLayout } from '@/components/studio/StudioLayout';
 import { StudioAIChat } from '@/components/studio/StudioAIChat';
+import { AudioEnhancementPanel } from '@/components/studio/AudioEnhancementPanel';
 import { GenerationHistory } from '@/components/studio/GenerationHistory';
 import { GlobalMusicPlayer, GlobalTrack } from '@/components/studio/GlobalMusicPlayer';
 import { ResultDisplayModal } from '@/components/studio/ResultDisplayModal';
@@ -128,11 +129,6 @@ export default function StudioPage() {
    * Handle feature selection from entry screen
    */
   const handleFeatureSelect = (feature: StudioFeature) => {
-    if (feature === 'enhance') {
-      toast.info('Audio Enhancement tool coming soon!');
-      return;
-    }
-
     setCurrentFeature(feature);
     setShowEntry(false);
 
@@ -484,6 +480,22 @@ export default function StudioPage() {
           // Entry Screen
           <motion.div key="entry">
             <StudioEntryScreen onFeatureSelect={handleFeatureSelect} />
+          </motion.div>
+        ) : currentFeature === 'enhance' ? (
+          <motion.div key="audio-enhancement">
+            <AudioEnhancementPanel
+              onBack={handleBackToEntry}
+              generatedAudioUrl={generatedAudioUrl || undefined}
+              generatedTracks={history.filter((item) => item.audioUrl).map((item) => ({
+                id: item.id,
+                title: item.title,
+                prompt: item.prompt,
+                audioUrl: item.audioUrl,
+                createdAt: item.createdAt,
+              }))}
+              userTier={profile?.tier === 'premium' ? 'premium' : 'free'}
+              profileId={profile?.id}
+            />
           </motion.div>
         ) : (
           // Main Studio Layout
