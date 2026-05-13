@@ -8,6 +8,7 @@ interface TrackRowProps {
   track: Track;
   index?: number;
   showIndex?: boolean;
+  queue?: Track[];
 }
 
 function formatDuration(seconds: number): string {
@@ -22,7 +23,7 @@ function formatCount(num: number): string {
   return num.toString();
 }
 
-export function TrackRow({ track, index, showIndex }: TrackRowProps) {
+export function TrackRow({ track, index, showIndex, queue }: TrackRowProps) {
   const { currentTrack, isPlaying, playTrack, pauseTrack, resumeTrack } = usePlayer();
   const isCurrentTrack = currentTrack?.id === track.id;
 
@@ -30,7 +31,7 @@ export function TrackRow({ track, index, showIndex }: TrackRowProps) {
     if (isCurrentTrack) {
       isPlaying ? pauseTrack() : resumeTrack();
     } else {
-      playTrack(track);
+      playTrack(track, queue);
     }
   };
 

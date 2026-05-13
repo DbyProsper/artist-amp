@@ -87,10 +87,20 @@ export default function AuthPage() {
         animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-3 mb-8"
       >
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary via-accent to-secondary flex items-center justify-center">
-          <Music2 className="w-6 h-6 text-white" />
-        </div>
-        <h1 className="font-display font-bold text-2xl gradient-text">MusicInsta</h1>
+        <motion.img 
+          src="/MusicInsta_Logo.png"
+          alt="MusicInsta Logo"
+          className="h-16 w-auto"
+          animate={{ 
+            filter: [
+              'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))',
+              'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.6))',
+              'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))'
+            ]
+          }}
+          transition={{ duration: 2, repeat: Infinity }}
+        />
+        <span className="text-2xl font-display font-bold gradient-text">MusicInsta</span>
       </motion.div>
 
       {/* Auth Card */}

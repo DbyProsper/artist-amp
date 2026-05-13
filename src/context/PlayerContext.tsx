@@ -14,7 +14,7 @@ interface PlayerContextType {
   isShuffled: boolean;
   repeatMode: 'off' | 'all' | 'one';
   showLyrics: boolean;
-  playTrack: (track: Track) => void;
+  playTrack: (track: Track, queueSource?: Track[]) => void;
   pauseTrack: () => void;
   resumeTrack: () => void;
   nextTrack: () => void;
@@ -144,28 +144,34 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const currentIndex = queue.findIndex((t) => t.id === currentTrack.id);
     if (currentIndex === -1 || currentIndex === queue.length - 1) {
       if (repeatMode === 'all') {
-        playTrack(queue[0]);
+        playTrack(queue[0], queue);
       } else {
         setIsPlaying(false);
       }
     } else {
-      playTrack(queue[currentIndex + 1]);
+      playTrack(queue[currentIndex + 1], queue);
     }
   };
 
-  const playTrack = (track: Track) => {
+  const playTrack = (track: Track, queueSource?: Track[]) => {
     setCurrentTrack(track);
     setIsPlaying(true);
     setProgress(0);
     setIsMiniPlayerVisible(true);
+
+    setQueue((prevQueue) => {
+      if (queueSource && queueSource.length > 0) {
+        return queueSource;
+      }
+      if (prevQueue.some((t) => t.id === track.id)) {
+        return prevQueue;
+      }
+      return [...prevQueue, track];
+    });
   };
 
   const closeMiniPlayer = () => {
     setIsMiniPlayerVisible(false);
-    setIsPlaying(false);
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
   };
 
   const openMiniPlayer = () => {
@@ -219,7 +225,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   };
 
   const addToQueue = (track: Track) => {
-    setQueue([...queue, track]);
+    setQueue((prevQueue) => {
+      if (prevQueue.some((t) => t.id === track.id)) return prevQueue;
+      return [...prevQueue, track];
+    });
   };
 
   return (

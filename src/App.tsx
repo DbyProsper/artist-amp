@@ -47,12 +47,7 @@ function LandingRedirect() {
   return <LandingPage />;
 }
 
-// Wrapper for player components - only show when user is signed in
 function PlayerComponents() {
-  const { user } = useAuth();
-  
-  if (!user) return null;
-  
   return (
     <>
       <MiniPlayer />

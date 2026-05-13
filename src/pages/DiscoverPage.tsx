@@ -155,7 +155,7 @@ export default function DiscoverPage() {
                   <h3 className="font-display font-bold text-lg mb-3">Tracks</h3>
                   <div className="space-y-1">
                     {sortTracks(filteredTracks).slice(0, 3).map((track, index) => (
-                      <TrackRow key={track.id} track={track} index={index + 1} showIndex />
+                      <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={sortTracks(filteredTracks)} />
                     ))}
                   </div>
                 </div>
@@ -180,7 +180,7 @@ export default function DiscoverPage() {
 
             <TabsContent value="tracks" className="space-y-1">
               {sortTracks(filteredTracks).map((track, index) => (
-                <TrackRow key={track.id} track={track} index={index + 1} showIndex />
+                <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={sortTracks(filteredTracks)} />
               ))}
             </TabsContent>
 
@@ -250,7 +250,7 @@ export default function DiscoverPage() {
                   </p>
                   <div className="space-y-1">
                     {sortTracks(filteredTracks).slice(0, 4).map((track, index) => (
-                      <TrackRow key={track.id} track={track} index={index + 1} showIndex />
+                      <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={sortTracks(filteredTracks)} />
                     ))}
                   </div>
                 </section>
@@ -365,7 +365,7 @@ export default function DiscoverPage() {
                   </p>
                   <div className="space-y-1">
                     {sortTracks(filteredTracks).slice(0, 5).map((track, index) => (
-                      <TrackRow key={track.id} track={track} index={index + 1} showIndex />
+                      <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={sortTracks(filteredTracks)} />
                     ))}
                   </div>
                 </section>

@@ -52,11 +52,21 @@ export default function HomePage() {
         <div className="flex items-center justify-between px-4 h-14">
           <button
             onClick={handleLogoClick}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity"
           >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary via-accent to-secondary flex items-center justify-center">
-              <Music2 className="w-5 h-5 text-white" />
-            </div>
+            <motion.img 
+              src="/MusicInsta_Logo.png"
+              alt="MusicInsta Logo"
+              className="h-10 w-auto"
+              animate={{ 
+                filter: [
+                  'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))',
+                  'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.6))',
+                  'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))'
+                ]
+              }}
+              transition={{ duration: 2, repeat: Infinity }}
+            />
             <h1 className="text-xl font-display font-bold text-gradient">MusicInsta</h1>
           </button>
           <div className="flex items-center gap-3">
@@ -164,7 +174,7 @@ export default function HomePage() {
         </div>
         <div className="space-y-1">
           {newReleases.map((track, index) => (
-            <TrackRow key={track.id} track={track} index={index + 1} showIndex />
+            <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={newReleases} />
           ))}
         </div>
       </section>

@@ -7,7 +7,6 @@ import {
   ListMusic, X
 } from 'lucide-react';
 import { usePlayer } from '@/context/PlayerContext';
-import { useAuth } from '@/context/FirebaseAuthContext';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
 import { PlayerSettingsModal } from '@/components/modals/PlayerSettingsModal';
@@ -36,10 +35,8 @@ export function MiniPlayer() {
     isMiniPlayerVisible,
     closeMiniPlayer
   } = usePlayer();
-  const { user } = useAuth();
 
-  // Only show mini player when user is signed in and has a track
-  if (!currentTrack || !isMiniPlayerVisible || !user) return null;
+  if (!currentTrack || !isMiniPlayerVisible) return null;
 
   return (
     <motion.div
@@ -149,11 +146,10 @@ export function FullPlayer() {
     toggleRepeat,
     toggleLyrics,
   } = usePlayer();
-  const { user } = useAuth();
   const [showSettings, setShowSettings] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
 
-  if (!currentTrack || !user) return null;
+  if (!currentTrack) return null;
 
   const currentTime = (progress / 100) * currentTrack.duration;
 

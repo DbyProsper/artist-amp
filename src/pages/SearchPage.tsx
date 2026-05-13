@@ -242,7 +242,7 @@ export default function SearchPage() {
                   </h3>
                   <div className="space-y-1">
                     {dbTracks.slice(0, 3).map((track, i) => (
-                      <TrackRow key={track.id} track={track} index={i + 1} showIndex />
+                      <TrackRow key={track.id} track={track} index={i + 1} showIndex queue={dbTracks} />
                     ))}
                   </div>
                 </div>
@@ -289,7 +289,7 @@ export default function SearchPage() {
 
             <TabsContent value="tracks" className="space-y-1">
               {dbTracks.map((track, i) => (
-                <TrackRow key={track.id} track={track} index={i + 1} showIndex />
+                <TrackRow key={track.id} track={track} index={i + 1} showIndex queue={dbTracks} />
               ))}
               {dbTracks.length === 0 && !loadingProfiles && (
                 <div className="py-8 text-center text-muted-foreground">No tracks found</div>

@@ -32,7 +32,7 @@ const testimonials = [
   {
     name: 'Prosper Masuku',
     role: 'Independent Artist',
-    quote: 'MusicInsta helped me grow my fanbase from 100 to 15K in just 6 months. The engagement here is unreal!',
+    quote: 'MusicInsta helped me grow my fanbase from 100 to 15K listeners in just 6 months. The engagement here is unreal!',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
   },
   {
@@ -73,14 +73,20 @@ export default function LandingPage() {
       {/* Header */}
       <header className="relative z-10 py-4 px-4 safe-top">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <motion.div 
-              className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary via-accent to-secondary flex items-center justify-center"
-              animate={{ boxShadow: ['0 0 20px hsla(330, 85%, 60%, 0.3)', '0 0 40px hsla(330, 85%, 60%, 0.6)', '0 0 20px hsla(330, 85%, 60%, 0.3)'] }}
+          <div className="flex items-center gap-3">
+            <motion.img 
+              src="/MusicInsta_Logo.png"
+              alt="MusicInsta Logo"
+              className="h-16 w-auto"
+              animate={{ 
+                filter: [
+                  'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))',
+                  'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.6))',
+                  'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))'
+                ]
+              }}
               transition={{ duration: 2, repeat: Infinity }}
-            >
-              <Music2 className="w-6 h-6 text-white" />
-            </motion.div>
+            />
             <span className="text-2xl font-display font-bold text-gradient">MusicInsta</span>
           </div>
           <Button variant="ghost" size="sm" onClick={() => navigate('/auth')}>
@@ -97,6 +103,19 @@ export default function LandingPage() {
           transition={{ duration: 0.6 }}
           className="text-center max-w-2xl mx-auto"
         >
+          <motion.img 
+            src="/MusicInsta_Logo.png"
+            alt="MusicInsta Logo"
+            className="h-24 md:h-28 w-auto mx-auto mb-6"
+            animate={{ 
+              filter: [
+                'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.5))',
+                'drop-shadow(0 0 40px hsla(330, 85%, 60%, 0.8))',
+                'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.5))'
+              ]
+            }}
+            transition={{ duration: 2, repeat: Infinity }}
+          />
           <motion.h1 
             className="text-4xl md:text-6xl font-display font-bold mb-4"
             initial={{ opacity: 0, y: 20 }}
@@ -568,8 +587,20 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="relative z-10 px-6 py-8 bg-background border-t border-border">
-        <div className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
-          <Music2 className="w-4 h-4" />
+        <div className="flex flex-col items-center gap-4 text-muted-foreground text-sm">
+          <motion.img 
+            src="/MusicInsta_Logo.png"
+            alt="MusicInsta Logo"
+            className="h-8 w-auto"
+            animate={{ 
+              filter: [
+                'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))',
+                'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.5))',
+                'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))'
+              ]
+            }}
+            transition={{ duration: 2, repeat: Infinity }}
+          />
           <span>© 2024 MusicInsta. All rights reserved.</span>
         </div>
       </footer>

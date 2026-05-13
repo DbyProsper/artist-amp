@@ -1,4 +1,3 @@
-import { Music } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AppLogoProps {
@@ -7,16 +6,18 @@ interface AppLogoProps {
 }
 
 const sizeClasses = {
-  sm: 'w-4 h-4',
-  md: 'w-6 h-6',
-  lg: 'w-8 h-8',
-  xl: 'w-12 h-12',
+  sm: 'h-4',
+  md: 'h-6',
+  lg: 'h-8',
+  xl: 'h-12',
 };
 
 export function AppLogo({ size = 'md', className }: AppLogoProps) {
   return (
-    <div className={cn('flex items-center justify-center', className)}>
-      <Music className={cn(sizeClasses[size], 'text-primary')} />
-    </div>
+    <img
+      src="/MusicInsta_Logo.png"
+      alt="MusicInsta Logo"
+      className={cn(sizeClasses[size], 'w-auto', className)}
+    />
   );
 }
