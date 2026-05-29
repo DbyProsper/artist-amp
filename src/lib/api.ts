@@ -606,7 +606,7 @@ export async function enhanceAudio(
     '/audio/enhance',
     'POST',
     formData,
-    60000 // 60 second timeout for audio enhancement
+    API_TIMEOUTS.enhance // longer timeout for audio enhancement (file uploads / long processing)
   );
 }
 
