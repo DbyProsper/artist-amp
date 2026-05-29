@@ -148,13 +148,16 @@ async function callApiRequest(
 
     // Normalize response - backend returns data in different formats
     // Handle: data.audio_url, data.image_url, data.url, data.audio.url, etc.
+    // Also handle audio enhancement responses with previews object
     const audioUrl =
       json.data?.audio_url ||
       json.data?.audio?.url ||
       json.audio_url ||
       json.file ||
       json.audio ||
-      json.file_url;
+      json.file_url ||
+      (json.previews && Object.values(json.previews)[0]) || // Get first preview URL if previews object exists
+      undefined;
 
     const imageUrl =
       json.data?.image_url ||

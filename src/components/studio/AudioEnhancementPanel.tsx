@@ -189,22 +189,53 @@ export function AudioEnhancementPanel({
         throw new Error(result.error || 'Enhancement failed');
       }
 
-      const audioUrl =
-        result.audio_url ||
-        (typeof result.audio_base64 === 'string' ? `data:audio/wav;base64,${result.audio_base64}` : '');
+      // Handle audio enhancement responses that return multiple preview URLs
+      // Backend returns: {success: true, previews: {balanced: url, bass_boost: url, vocal: url, loud: url}, export_locked: true}
+      if (result.data?.previews && typeof result.data.previews === 'object') {
+        // Map backend preview names to component variant names
+        const previewMap: Record<string, EnhancementVariant> = {
+          balanced: 'balanced',
+          bass_boost: 'bass',
+          vocal: 'vocal',
+          loud: 'loud',
+        };
 
-      if (!audioUrl) {
-        throw new Error('Backend did not return an enhanced audio URL.');
+        // Cache all preview URLs
+        const newPreviews: Record<EnhancementVariant, string> = {} as Record<EnhancementVariant, string>;
+        Object.entries(result.data.previews).forEach(([backendKey, url]) => {
+          const componentVariant = previewMap[backendKey];
+          if (componentVariant && typeof url === 'string') {
+            newPreviews[componentVariant] = url;
+          }
+        });
+
+        setPreviewUrls((prev) => ({ ...prev, ...newPreviews }));
+        setPreviewMetadata((prev) => ({
+          ...prev,
+          [variant]: {
+            export_locked: result.data?.export_locked ?? false,
+          },
+        }));
+        toast.success(`All audio enhancements ready!`);
+      } else {
+        // Fallback for single audio URL response
+        const audioUrl =
+          result.audio_url ||
+          (typeof result.audio_base64 === 'string' ? `data:audio/wav;base64,${result.audio_base64}` : '');
+
+        if (!audioUrl) {
+          throw new Error('Backend did not return an enhanced audio URL.');
+        }
+
+        setPreviewUrls((prev) => ({ ...prev, [variant]: audioUrl }));
+        setPreviewMetadata((prev) => ({
+          ...prev,
+          [variant]: {
+            export_locked: result.data?.export_locked ?? false,
+          },
+        }));
+        toast.success(`${variantConfig?.label} preview ready!`);
       }
-
-      setPreviewUrls((prev) => ({ ...prev, [variant]: audioUrl }));
-      setPreviewMetadata((prev) => ({
-        ...prev,
-        [variant]: {
-          export_locked: result.data?.export_locked ?? false,
-        },
-      }));
-      toast.success(`${variantConfig?.label} preview ready!`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to enhance audio';
       setError(message);
