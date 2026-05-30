@@ -584,9 +584,79 @@ export async function generateImageFromUpload(
 }
 
 /**
+ * Poll job status until complete or failed
+ * Helper for async enhancement jobs
+ */
+async function pollJobStatus(
+  jobId: string,
+  maxWaitMs: number = API_TIMEOUTS.enhance
+): Promise<ApiResponse> {
+  const startTime = Date.now();
+  const pollIntervalMs = 2000; // 2 second poll interval
+
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      const statusUrl = buildUrl(`/audio/enhance/status/${jobId}`);
+      const response = await fetchWithTimeout(statusUrl, { method: 'GET' }, 10000);
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        console.error(`[API] Job status fetch failed: ${text}`);
+        continue;
+      }
+
+      const json = await response.json().catch(() => null);
+      if (!json || typeof json !== 'object') {
+        console.warn('[API] Invalid job status response');
+        continue;
+      }
+
+      console.log(`[API] Job ${jobId} status:`, json.status, json);
+
+      // Check if job is complete
+      if (json.status === 'done') {
+        // Normalize response to match expected format
+        return {
+          success: true,
+          data: {
+            previews: json.previews || {},
+            export_locked: json.export_locked ?? false,
+          },
+          // Also provide at top level for backward compatibility
+          audio_url: json.export_url || (json.previews && Object.values(json.previews)[0]) || undefined,
+        };
+      }
+
+      if (json.status === 'failed') {
+        return {
+          success: false,
+          error: json.error || 'Enhancement job failed',
+        };
+      }
+
+      // Still processing, wait before next poll
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Poll error';
+      console.warn(`[API] Error polling job ${jobId}:`, msg);
+      // Continue polling despite errors
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+  }
+
+  // Timeout waiting for job to complete
+  return {
+    success: false,
+    error: `Enhancement job timeout after ${maxWaitMs / 1000} seconds`,
+  };
+}
+
+/**
  * Enhance audio file - denoise, normalize, compress, add reverb, etc.
- * POST /audio/enhance
- * Takes 15-60 seconds depending on type
+ * Uses async job API:
+ * 1. POST /audio/enhance to create job
+ * 2. Poll GET /audio/enhance/status/{job_id} until done
+ * Returns previews when complete
  * Processing types: denoise, normalize, compress, reverb, enhance
  */
 export async function enhanceAudio(
@@ -597,17 +667,51 @@ export async function enhanceAudio(
     return { success: false, error: 'Audio file is required' };
   }
 
-  // Build FormData for multipart file upload
-  const formData = new FormData();
-  formData.append('file', audioFile);
-  formData.append('enhancement_type', enhancementType);
+  try {
+    // Step 1: Create enhancement job
+    const formData = new FormData();
+    formData.append('file', audioFile);
+    formData.append('enhancement_type', enhancementType);
 
-  return callApiRequest(
-    '/audio/enhance',
-    'POST',
-    formData,
-    API_TIMEOUTS.enhance // longer timeout for audio enhancement (file uploads / long processing)
-  );
+    console.log(`[API] Creating enhancement job for ${audioFile.name}`);
+    const createJobUrl = buildUrl('/audio/enhance');
+    const createResponse = await fetchWithTimeout(
+      createJobUrl,
+      {
+        method: 'POST',
+        body: formData,
+      },
+      30000 // 30s timeout just for upload
+    );
+
+    if (!createResponse.ok) {
+      const text = await createResponse.text().catch(() => '');
+      return {
+        success: false,
+        error: `Failed to create enhancement job: ${text}`,
+      };
+    }
+
+    const createJson = await createResponse.json().catch(() => null);
+    if (!createJson || !createJson.job_id) {
+      return {
+        success: false,
+        error: 'Invalid job creation response',
+      };
+    }
+
+    const jobId = createJson.job_id;
+    console.log(`[API] Enhancement job created: ${jobId}, polling for completion...`);
+
+    // Step 2: Poll job status until complete
+    return pollJobStatus(jobId, API_TIMEOUTS.enhance);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Enhancement failed';
+    return {
+      success: false,
+      error: msg,
+    };
+  }
 }
 
 /**
