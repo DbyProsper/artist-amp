@@ -619,10 +619,13 @@ async function pollJobStatus(
         return {
           success: true,
           data: {
+            job_id: json.job_id,
+            status: json.status,
+            selected_preset: json.selected_preset,
             previews: json.previews || {},
+            export_url: json.export_url ?? null,
             export_locked: json.export_locked ?? false,
           },
-          // Also provide at top level for backward compatibility
           audio_url: json.export_url || (json.previews && Object.values(json.previews)[0]) || undefined,
         };
       }
@@ -652,26 +655,51 @@ async function pollJobStatus(
 }
 
 /**
- * Enhance audio file - denoise, normalize, compress, add reverb, etc.
- * Uses async job API:
- * 1. POST /audio/enhance to create job
- * 2. Poll GET /audio/enhance/status/{job_id} until done
+ * Enhance audio file using the async job backend.
+ * 1. POST /audio/enhance with multipart upload and selected preset
+ * 2. Poll GET /audio/enhance/status/{job_id} until done or failed
  * Returns previews when complete
- * Processing types: denoise, normalize, compress, reverb, enhance
  */
 export async function enhanceAudio(
   audioFile: File,
-  enhancementType: 'denoise' | 'normalize' | 'compress' | 'reverb' | 'enhance' = 'denoise'
+  enhancementType:
+    | 'balanced'
+    | 'bass'
+    | 'vocal'
+    | 'loud'
+    | 'denoise'
+    | 'normalize'
+    | 'compress'
+    | 'reverb'
+    | 'enhance' = 'balanced'
 ): Promise<ApiResponse> {
   if (!audioFile) {
     return { success: false, error: 'Audio file is required' };
   }
 
+  const presetMap: Record<
+    'balanced' | 'bass' | 'vocal' | 'loud' | 'denoise' | 'normalize' | 'compress' | 'reverb' | 'enhance',
+    string
+  > = {
+    balanced: 'balanced',
+    bass: 'bass_boost',
+    vocal: 'vocal',
+    loud: 'loud',
+    denoise: 'balanced',
+    normalize: 'vocal',
+    compress: 'bass_boost',
+    reverb: 'loud',
+    enhance: 'balanced',
+  };
+
+  const selectedPreset = presetMap[enhancementType] || 'balanced';
+
   try {
     // Step 1: Create enhancement job
     const formData = new FormData();
     formData.append('file', audioFile);
-    formData.append('enhancement_type', enhancementType);
+    formData.append('selected_preset', selectedPreset);
+    formData.append('job_type', 'preview');
 
     console.log(`[API] Creating enhancement job for ${audioFile.name}`);
     const createJobUrl = buildUrl('/audio/enhance');

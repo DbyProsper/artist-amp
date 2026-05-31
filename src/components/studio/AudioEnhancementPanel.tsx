@@ -390,7 +390,7 @@ export function AudioEnhancementPanel({
 
     try {
       const sourceFileObject = await resolveSourceFile();
-      const result = await enhanceAudio(sourceFileObject, variantConfig?.backendType || 'enhance');
+      const result = await enhanceAudio(sourceFileObject, variant);
 
       if (!result.success) {
         throw new Error(result.error || 'Enhancement failed');
