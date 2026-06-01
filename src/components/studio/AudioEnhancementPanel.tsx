@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WaveSurfer from 'wavesurfer.js';
-import { ArrowLeft, Download, Music2, Sparkles, Volume2, Zap, Lock, Zap as Lightning, Play, Pause, Share2, Link2 } from 'lucide-react';
+import { ArrowLeft, Download, Music2, Sparkles, Volume2, Zap, Lock, Play, Pause, Share2, Link2, Sliders, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -96,14 +96,14 @@ export function AudioEnhancementPanel({
   const [sourceLabel, setSourceLabel] = useState<string>(generatedAudioUrl ? 'Generated track' : 'Upload audio file');
   const [activeVariant, setActiveVariant] = useState<EnhancementVariant>('balanced');
   const [previewUrls, setPreviewUrls] = useState<Record<EnhancementVariant, string>>({});
-  const [allPreviewUrls, setAllPreviewUrls] = useState<Record<string, string>>({}); // Store all 4 presets from backend
+  const [allPreviewUrls, setAllPreviewUrls] = useState<Record<string, string>>({});
   const [previewMetadata, setPreviewMetadata] = useState<Record<EnhancementVariant, { export_locked?: boolean }>>({});
   const [enhancingVariant, setEnhancingVariant] = useState<EnhancementVariant | null>(null);
   const [enhancementPhase, setEnhancementPhase] = useState<'idle' | 'uploading' | 'processing' | 'done' | 'failed'>('idle');
   const [pollProgress, setPollProgress] = useState(0);
   const [pollStatusText, setPollStatusText] = useState('');
   const [previewOptionsOpen, setPreviewOptionsOpen] = useState(false);
-  const [currentJobId, setCurrentJobId] = useState<string | null>(null); // Track current job for cancellation
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -119,7 +119,7 @@ export function AudioEnhancementPanel({
   const enhancedWaveformRef = useRef<HTMLDivElement>(null);
   const originalWaveSurfer = useRef<any>(null);
   const enhancedWaveSurfer = useRef<any>(null);
-  const enhancementAbortController = useRef<AbortController | null>(null); // For cancellation
+  const enhancementAbortController = useRef<AbortController | null>(null);
 
   const isPremium = userTier === 'premium';
   const activeVariantConfig = ENHANCEMENT_VARIANTS.find((item) => item.id === activeVariant);
@@ -153,6 +153,7 @@ export function AudioEnhancementPanel({
     };
   }, [sourceFile, sourcePreviewUrl]);
 
+  // Waveform setup - original
   useEffect(() => {
     if (!originalWaveformRef.current || originalWaveSurfer.current) return;
 
@@ -164,7 +165,7 @@ export function AudioEnhancementPanel({
       cursorWidth: 2,
       barWidth: 3,
       barRadius: 3,
-      height: 110,
+      height: 80,
       normalize: true,
       responsive: true,
       hideScrollbar: true,
@@ -191,6 +192,7 @@ export function AudioEnhancementPanel({
     };
   }, []);
 
+  // Waveform setup - enhanced
   useEffect(() => {
     if (!enhancedWaveformRef.current || enhancedWaveSurfer.current) return;
 
@@ -202,7 +204,7 @@ export function AudioEnhancementPanel({
       cursorWidth: 2,
       barWidth: 3,
       barRadius: 3,
-      height: 110,
+      height: 80,
       normalize: true,
       responsive: true,
       hideScrollbar: true,
@@ -242,19 +244,6 @@ export function AudioEnhancementPanel({
   }, [activePreviewUrl]);
 
   useEffect(() => {
-    if (!compareMode) return;
-    if (compareMode === 'original') {
-      if (originalWaveSurfer.current && duration) {
-        originalWaveSurfer.current.seekTo(duration ? currentTime / duration : 0);
-      }
-    } else {
-      if (enhancedWaveSurfer.current && duration) {
-        enhancedWaveSurfer.current.seekTo(duration ? currentTime / duration : 0);
-      }
-    }
-  }, [currentTime, duration, compareMode]);
-
-  useEffect(() => {
     if (!sourcePreviewUrl) {
       setSourceDuration(0);
       return;
@@ -279,7 +268,6 @@ export function AudioEnhancementPanel({
   const currentPlaybackUrl = activePreviewUrl || sourcePreviewUrl;
   const hasSource = Boolean(sourceFile || sourceUrl);
   const hasGeneratedSources = Boolean(generatedAudioUrl || generatedTracks.length > 0);
-  const isEnhancing = enhancingVariant !== null;
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -299,17 +287,6 @@ export function AudioEnhancementPanel({
     setSourceFile(file);
     setSourceUrl('');
     setSourceLabel(file.name);
-  };
-
-  const handleSeek = (value: number) => {
-    setCurrentTime(value);
-    const position = duration ? value / duration : 0;
-    if (compareMode === 'original' && originalWaveSurfer.current) {
-      originalWaveSurfer.current.seekTo(position);
-    }
-    if (compareMode === 'enhanced' && enhancedWaveSurfer.current) {
-      enhancedWaveSurfer.current.seekTo(position);
-    }
   };
 
   const handleTogglePlayback = () => {
@@ -409,7 +386,6 @@ export function AudioEnhancementPanel({
   };
 
   const handleCancelEnhancement = () => {
-    // Abort upload and polling
     if (enhancementAbortController.current) {
       enhancementAbortController.current.abort();
       enhancementAbortController.current = null;
@@ -441,7 +417,6 @@ export function AudioEnhancementPanel({
     setEnhancingVariant(variant);
 
     try {
-      // Create fresh AbortController for this enhancement job
       enhancementAbortController.current = new AbortController();
       const signal = enhancementAbortController.current.signal;
       const startTime = Date.now();
@@ -451,15 +426,14 @@ export function AudioEnhancementPanel({
       setPollStatusText('Uploading source audio...');
       setPollProgress(15);
 
-      // Call enhanceAudio with cancellation and progress tracking
       const result = await enhanceAudio(sourceFileObject, variant, {
         uploadSignal: signal,
-        uploadTimeoutMs: 60000, // 60s upload timeout
+        uploadTimeoutMs: 60000,
         pollOptions: {
-          maxWaitMs: 600000, // 10 minute total timeout for long uploads
-          initialDelayMs: 1000, // Start at 1s
-          maxBackoffMs: 10000, // Cap at 10s
-          backoffMultiplier: 1.8, // Exponential backoff
+          maxWaitMs: 600000,
+          initialDelayMs: 1000,
+          maxBackoffMs: 10000,
+          backoffMultiplier: 1.8,
           signal: signal,
           onProgress: (status: any) => {
             setEnhancementPhase('processing');
@@ -471,7 +445,6 @@ export function AudioEnhancementPanel({
         },
       });
 
-      // Track job ID if provided
       if (result.data?.job_id) {
         setCurrentJobId(result.data.job_id);
       }
@@ -480,10 +453,7 @@ export function AudioEnhancementPanel({
         throw new Error(result.error || 'Enhancement failed');
       }
 
-      // Handle audio enhancement responses that return multiple preview URLs
-      // Backend returns: {success: true, previews: {balanced: url, bass_boost: url, vocal: url, loud: url}}
       if (result.data?.previews && typeof result.data.previews === 'object') {
-        // Map backend preview names to component variant names
         const previewMap: Record<string, EnhancementVariant> = {
           balanced: 'balanced',
           bass_boost: 'bass',
@@ -491,10 +461,8 @@ export function AudioEnhancementPanel({
           loud: 'loud',
         };
 
-        // Cache all preview URLs for advanced UI (download/share)
         setAllPreviewUrls(result.data.previews);
 
-        // Cache only the selected variant for immediate display
         const newPreviews: Record<EnhancementVariant, string> = {} as Record<EnhancementVariant, string>;
         Object.entries(result.data.previews).forEach(([backendKey, url]) => {
           const componentVariant = previewMap[backendKey];
@@ -512,7 +480,6 @@ export function AudioEnhancementPanel({
         }));
         toast.success(`All audio enhancements ready!`);
       } else {
-        // Fallback for single audio URL response
         const audioUrl =
           result.audio_url ||
           (typeof result.audio_base64 === 'string' ? `data:audio/wav;base64,${result.audio_base64}` : '');
@@ -621,526 +588,596 @@ export function AudioEnhancementPanel({
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-20 backdrop-blur-xl border-b border-border/40 bg-background/80">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            className="gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Studio
+          </Button>
+          <h1 className="text-xl font-bold">Audio Enhancement</h1>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
+              <span className="w-2 h-2 rounded-full bg-primary"></span>
+              {userTier === 'premium' ? 'Premium' : 'Free'}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content - 3 Column Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* LEFT PANEL - Preset Controls */}
+        <motion.div
+          initial={{ x: -300, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          className="w-64 border-r border-border/40 bg-muted/20 overflow-y-auto p-4 space-y-6"
+        >
+          {/* Presets Section */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Mastering Presets
+            </p>
+            <div className="space-y-2">
+              {ENHANCEMENT_VARIANTS.map((variant) => (
+                <motion.button
+                  key={variant.id}
+                  onClick={() => handleEnhanceVariant(variant.id)}
+                  disabled={!hasSource || enhancingVariant === variant.id}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className={cn(
+                    'w-full rounded-lg border px-3 py-2.5 text-left text-sm transition-all duration-200',
+                    activeVariant === variant.id && previewUrls[variant.id]
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border/40 bg-background text-muted-foreground hover:border-border hover:bg-muted/30',
+                    !hasSource && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded text-primary">
+                      {variant.icon}
+                    </span>
+                    <div className="flex-1 text-left">
+                      <p className="text-xs font-semibold">{variant.label}</p>
+                      <p className="text-[10px] text-muted-foreground">{variant.description}</p>
+                    </div>
+                    {enhancingVariant === variant.id ? (
+                      <span className="text-[10px] text-primary">Processing</span>
+                    ) : previewUrls[variant.id] ? (
+                      <span className="text-[10px] text-emerald-400">✓ Ready</span>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">Preview</span>
+                    )}
+                  </div>
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
+          <div className="h-px bg-border/40" />
+
+          {/* Quick Actions */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Actions
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPreviewOptionsOpen(true)}
+              disabled={Object.keys(previewUrls).length === 0}
+              className="w-full justify-start gap-2"
+            >
+              <Share2 className="w-4 h-4" />
+              Share / Download
+            </Button>
+          </div>
+
+          <div className="h-px bg-border/40" />
+
+          {/* Recent History */}
+          {hasGeneratedSources && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <History className="w-3 h-3" />
+                Recent
+              </div>
+              <div className="space-y-2">
+                {generatedAudioUrl && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectGeneratedTrack(generatedAudioUrl, 'Current Track')}
+                    className={cn(
+                      'w-full text-left p-2 rounded-lg text-xs transition-colors',
+                      sourceUrl === generatedAudioUrl
+                        ? 'bg-primary/10 text-foreground'
+                        : 'text-muted-foreground hover:bg-muted/30'
+                    )}
+                  >
+                    <p className="font-medium line-clamp-1">Current Generated Track</p>
+                  </button>
+                )}
+                {generatedTracks.slice(0, 4).map((track) =>
+                  track.audioUrl ? (
+                    <button
+                      key={track.id}
+                      type="button"
+                      onClick={() => handleSelectGeneratedTrack(track.audioUrl!, track.title)}
+                      className={cn(
+                        'w-full text-left p-2 rounded-lg text-xs transition-colors',
+                        sourceUrl === track.audioUrl
+                          ? 'bg-primary/10 text-foreground'
+                          : 'text-muted-foreground hover:bg-muted/30'
+                      )}
+                    >
+                      <p className="font-medium line-clamp-1">{track.title || 'Generated audio'}</p>
+                    </button>
+                  ) : null
+                )}
+              </div>
+            </div>
+          )}
+        </motion.div>
+
+        {/* CENTER PANEL - Upload or Comparison */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="mb-8 rounded-[32px] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur-xl"
+          className="flex-1 overflow-y-auto p-8 flex flex-col"
         >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <button
-                type="button"
-                onClick={onBack}
-                className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white mb-4"
-              >
-                <ArrowLeft className="w-4 h-4" /> Back to Studio
-              </button>
-              <div>
-                <h1 className="text-4xl font-semibold tracking-tight">Audio Enhancement</h1>
-                <p className="mt-3 max-w-2xl text-slate-400">
-                  Compare original and mastered audio in one premium experience.
-                </p>
-              </div>
-            </div>
-            <div className="inline-flex items-center gap-3 rounded-full bg-slate-950/80 px-4 py-2 text-sm text-slate-300">
-              <span className="rounded-full bg-slate-800 px-3 py-1">{userTier === 'premium' ? 'Premium' : 'Free'}</span>
-              <span>{userTier === 'premium' ? 'Export ready' : 'Export locked'}</span>
-            </div>
+          <div className="max-w-4xl mx-auto w-full space-y-8">
+            <AnimatePresence mode="wait">
+              {!hasSource ? (
+                // Upload Section
+                <motion.div
+                  key="upload"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-6"
+                >
+                  <div className="space-y-2">
+                    <h2 className="text-lg font-semibold">Upload Your Audio</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Choose an audio file or select a generated track to enhance
+                    </p>
+                  </div>
+
+                  {/* Drag & Drop Upload */}
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={cn(
+                      'rounded-xl border-2 border-dashed px-8 py-16 text-center transition-all',
+                      dragActive
+                        ? 'border-primary/80 bg-primary/10 shadow-lg shadow-primary/20'
+                        : 'border-border/40 bg-muted/30 hover:border-border'
+                    )}
+                  >
+                    <div className="space-y-4">
+                      <div className="flex justify-center">
+                        <Music2 className="w-12 h-12 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <p className="text-foreground font-medium">Drag and drop your audio file</p>
+                        <p className="text-sm text-muted-foreground">MP3, WAV, or any supported audio format</p>
+                      </div>
+                      <label htmlFor="audio-upload">
+                        <Button asChild>
+                          <span>Choose a file</span>
+                        </Button>
+                      </label>
+                      <input
+                        id="audio-upload"
+                        type="file"
+                        accept="audio/*"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Generated Tracks */}
+                  {hasGeneratedSources && (
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-semibold">Or select from your generated tracks</h3>
+                      <div className="space-y-2">
+                        {generatedAudioUrl && (
+                          <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => handleSelectGeneratedTrack(generatedAudioUrl, 'Current Generated Track')}
+                            className="w-full rounded-lg border border-border/40 bg-muted/30 px-4 py-3 text-left text-sm transition hover:bg-muted/50"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium">Current Generated Track</span>
+                              <Music2 className="w-4 h-4 text-primary" />
+                            </div>
+                          </motion.button>
+                        )}
+                        {generatedTracks.slice(0, 5).map((track) =>
+                          track.audioUrl ? (
+                            <motion.button
+                              key={track.id}
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => handleSelectGeneratedTrack(track.audioUrl!, track.title)}
+                              className="w-full rounded-lg border border-border/40 bg-muted/30 px-4 py-3 text-left text-sm transition hover:bg-muted/50"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium line-clamp-1">{track.title || 'Generated audio'}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {new Date(track.createdAt).toLocaleDateString()}
+                                  </p>
+                                </div>
+                                <Music2 className="w-4 h-4 text-primary" />
+                              </div>
+                            </motion.button>
+                          ) : null
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              ) : (
+                // Comparison Section
+                <motion.div
+                  key="comparison"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="space-y-6"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-semibold">Dual Waveform Preview</h2>
+                      <p className="text-sm text-muted-foreground">{sourceLabel}</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setSourceFile(null)}>
+                      Change Audio
+                    </Button>
+                  </div>
+
+                  {/* Mode Switcher */}
+                  <div className="inline-flex rounded-lg border border-border/40 p-1 bg-muted/30">
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchMode('original')}
+                      className={cn(
+                        'px-4 py-2 rounded-md text-sm font-medium transition-all',
+                        compareMode === 'original'
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      Original
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchMode('enhanced')}
+                      className={cn(
+                        'px-4 py-2 rounded-md text-sm font-medium transition-all',
+                        compareMode === 'enhanced'
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      Enhanced
+                    </button>
+                  </div>
+
+                  {/* Waveforms */}
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-border/40 bg-muted/30 p-4">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                        <span>Original</span>
+                        <span>{compareMode === 'original' ? 'Active' : 'Reference'}</span>
+                      </div>
+                      <div ref={originalWaveformRef} className="rounded-lg bg-background h-20" />
+                    </div>
+                    <div className="rounded-lg border border-border/40 bg-muted/30 p-4">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+                        <span>Enhanced</span>
+                        <span>{previewUrls[activeVariant] ? 'Ready' : 'Pending'}</span>
+                      </div>
+                      <div ref={enhancedWaveformRef} className="rounded-lg bg-background h-20" />
+                    </div>
+                  </div>
+
+                  {/* Playback Controls */}
+                  <div className="rounded-lg border border-border/40 bg-muted/30 p-4">
+                    <div className="flex items-center gap-4">
+                      <motion.button
+                        whileHover={currentPlaybackUrl ? { scale: 1.05 } : {}}
+                        whileTap={currentPlaybackUrl ? { scale: 0.98 } : {}}
+                        onClick={handleTogglePlayback}
+                        disabled={!currentPlaybackUrl}
+                        className={cn(
+                          'inline-flex h-12 w-12 items-center justify-center rounded-full transition-shadow',
+                          currentPlaybackUrl
+                            ? 'bg-primary text-background hover:bg-primary/90'
+                            : 'bg-muted text-muted-foreground cursor-not-allowed'
+                        )}
+                      >
+                        {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                      </motion.button>
+
+                      <div className="flex-1">
+                        <input
+                          type="range"
+                          min={0}
+                          max={duration || sourceDuration || 0}
+                          value={currentTime}
+                          step={0.1}
+                          onChange={(event) => {
+                            const value = Number(event.target.value);
+                            setCurrentTime(value);
+                            const position = (duration || sourceDuration) ? value / (duration || sourceDuration) : 0;
+                            if (compareMode === 'original' && originalWaveSurfer.current) {
+                              originalWaveSurfer.current.seekTo(position);
+                            }
+                            if (compareMode === 'enhanced' && enhancedWaveSurfer.current) {
+                              enhancedWaveSurfer.current.seekTo(position);
+                            }
+                          }}
+                          disabled={!currentPlaybackUrl}
+                          className="w-full h-2 rounded-full appearance-none cursor-pointer bg-muted accent-primary disabled:cursor-not-allowed"
+                        />
+                        <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+                          <span>{formatTime(currentTime)}</span>
+                          <span>{formatTime(duration || sourceDuration)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Enhancement Progress */}
+                  {enhancementPhase !== 'idle' && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="rounded-lg border border-border/40 bg-muted/30 p-4"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-medium">{pollStatusText}</p>
+                        <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                          {enhancementPhase === 'uploading' ? 'Uploading' : enhancementPhase === 'processing' ? 'Processing' : 'Complete'}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full overflow-hidden bg-muted">
+                        <div
+                          className={cn(
+                            'h-full rounded-full transition-all duration-300',
+                            enhancementPhase === 'failed' ? 'bg-destructive' : 'bg-primary'
+                          )}
+                          style={{ width: `${pollProgress}%` }}
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {error && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 bg-destructive/10 border border-destructive/50 rounded-lg"
+                    >
+                      <p className="text-sm text-destructive">{error}</p>
+                    </motion.div>
+                  )}
+
+                  {enhancingVariant && (
+                    <Button
+                      onClick={handleCancelEnhancement}
+                      variant="destructive"
+                      className="w-full"
+                    >
+                      Cancel Enhancement
+                    </Button>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </motion.div>
 
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.05 }}
-              className="rounded-[32px] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur-xl"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold">Source</p>
-                  <h2 className="mt-2 text-2xl font-semibold">Upload & compare</h2>
+        {/* RIGHT PANEL - Settings & Export */}
+        <motion.div
+          initial={{ x: 300, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          className="w-80 border-l border-border/40 bg-muted/20 overflow-y-auto p-4 space-y-6"
+        >
+          {/* Current Settings */}
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              <Sliders className="w-3 h-3" />
+              Enhancement Settings
+            </div>
+            <div className="space-y-4 rounded-lg border border-border/40 bg-background p-4">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-muted-foreground">Intensity</span>
+                  <span className="text-sm font-semibold text-foreground">{intensity}%</span>
                 </div>
-                <div className="rounded-full bg-slate-950/80 px-4 py-2 text-sm text-slate-300">
-                  {sourcePreviewUrl ? 'Ready to master' : 'Drop a file to begin'}
-                </div>
-              </div>
-
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={cn(
-                  'mt-6 rounded-[28px] border-2 border-dashed px-6 py-10 text-center transition-all',
-                  dragActive
-                    ? 'border-sky-400/80 bg-sky-500/10 shadow-[0_0_0_8px_rgba(56,189,248,0.08)]'
-                    : 'border-slate-700 bg-slate-950/80 hover:border-slate-500'
-                )}
-              >
-                <p className="text-slate-300 text-sm font-medium">Drag & drop audio here</p>
-                <p className="mt-2 text-sm text-slate-500">Upload MP3, WAV, or any supported track.</p>
-                <label
-                  htmlFor="audio-upload"
-                  className="mt-6 inline-flex cursor-pointer items-center justify-center rounded-full bg-slate-100/10 px-5 py-3 text-sm font-semibold text-slate-100 shadow-lg shadow-slate-950/20 transition hover:bg-slate-100/15"
-                >
-                  Choose a file
-                </label>
                 <input
-                  id="audio-upload"
-                  type="file"
-                  accept="audio/*"
-                  onChange={handleFileChange}
-                  className="hidden"
+                  type="range"
+                  min={10}
+                  max={100}
+                  value={intensity}
+                  onChange={(e) => setIntensity(Number(e.target.value))}
+                  className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-muted accent-primary"
+                  disabled={!hasSource}
                 />
               </div>
-
-              {hasGeneratedSources && (
-                <div className="mt-6 rounded-[28px] border border-white/10 bg-slate-950/80 p-5 shadow-inner shadow-slate-950/20">
-                  <div className="flex items-center justify-between gap-4 text-sm text-slate-400">
-                    <span>Or select a generated track</span>
-                    <span className="rounded-full bg-slate-900 px-3 py-1">Quick pick</span>
-                  </div>
-                  <div className="mt-4 space-y-3 max-h-52 overflow-y-auto pr-2">
-                    {generatedAudioUrl && (
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => handleSelectGeneratedTrack(generatedAudioUrl, 'Current Generated Track')}
-                        className={cn(
-                          'w-full rounded-3xl border px-4 py-3 text-left text-sm transition',
-                          sourceUrl === generatedAudioUrl
-                            ? 'border-sky-400 bg-sky-500/10 text-white'
-                            : 'border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500 hover:bg-slate-900'
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <span>Current Generated Track</span>
-                          <Music2 className="w-4 h-4 text-sky-400" />
-                        </div>
-                      </motion.button>
-                    )}
-                    {generatedTracks.slice(0, 5).map((track) =>
-                      track.audioUrl ? (
-                        <motion.button
-                          key={track.id}
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => handleSelectGeneratedTrack(track.audioUrl!, track.title)}
-                          className={cn(
-                            'w-full rounded-3xl border px-4 py-3 text-left text-sm transition',
-                            sourceUrl === track.audioUrl
-                              ? 'border-sky-400 bg-sky-500/10 text-white'
-                              : 'border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500 hover:bg-slate-900'
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="truncate">{track.title || 'Generated audio'}</span>
-                            <Music2 className="w-4 h-4 text-sky-400" />
-                          </div>
-                        </motion.button>
-                      ) : null
-                    )}
-                  </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-muted-foreground">EQ Balance</span>
+                  <span className="text-sm font-semibold text-foreground">{eqLevel}%</span>
                 </div>
-              )}
-
-              {sourcePreviewUrl && (
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-[28px] bg-slate-950/80 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Selected</p>
-                    <p className="mt-2 text-sm font-semibold text-white truncate">{sourceLabel}</p>
-                  </div>
-                  <div className="rounded-[28px] bg-slate-950/80 p-4">
-                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Duration</p>
-                    <p className="mt-2 text-sm font-semibold text-white">{formatTime(sourceDuration)}</p>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.1 }}
-              className="rounded-[32px] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur-xl"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold">Compare</p>
-                  <h2 className="mt-2 text-2xl font-semibold">Dual waveform preview</h2>
-                </div>
-                <div className="inline-flex rounded-full bg-slate-950/80 p-1 text-sm text-slate-300">
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchMode('original')}
-                    className={cn(
-                      'rounded-[24px] px-4 py-2 transition',
-                      compareMode === 'original'
-                        ? 'bg-slate-100 text-slate-950 shadow-sky-500/20'
-                        : 'text-slate-400 hover:text-white'
-                    )}
-                  >
-                    Original
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSwitchMode('enhanced')}
-                    className={cn(
-                      'rounded-[24px] px-4 py-2 transition',
-                      compareMode === 'enhanced'
-                        ? 'bg-slate-100 text-slate-950 shadow-indigo-500/20'
-                        : 'text-slate-400 hover:text-white'
-                    )}
-                  >
-                    Enhanced
-                  </button>
-                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={eqLevel}
+                  onChange={(e) => setEqLevel(Number(e.target.value))}
+                  className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-muted accent-secondary"
+                  disabled={!hasSource}
+                />
               </div>
-
-              <div className="mt-6 grid gap-4">
-                <div className="rounded-[28px] bg-slate-950/80 p-4">
-                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-500">
-                    <span>Original waveform</span>
-                    <span className="text-slate-400">{compareMode === 'original' ? 'active' : 'reference'}</span>
-                  </div>
-                  <div ref={originalWaveformRef} className="mt-4 h-28 overflow-hidden rounded-[24px] bg-slate-900" />
-                </div>
-                <div className="rounded-[28px] bg-slate-950/80 p-4">
-                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-500">
-                    <span>Enhanced waveform</span>
-                    <span className="text-slate-400">{previewUrls[activeVariant] ? 'ready' : 'waiting'}</span>
-                  </div>
-                  <div ref={enhancedWaveformRef} className="mt-4 h-28 overflow-hidden rounded-[24px] bg-slate-900" />
-                </div>
-              </div>
-
-              <div className="mt-6 rounded-[28px] bg-slate-950/80 p-5">
-                <div className="flex items-center gap-4">
-                  <motion.button
-                    whileHover={currentPlaybackUrl ? { scale: 1.05 } : {}}
-                    whileTap={currentPlaybackUrl ? { scale: 0.98 } : {}}
-                    onClick={handleTogglePlayback}
-                    disabled={!currentPlaybackUrl}
-                    className={cn(
-                      'inline-flex h-14 w-14 items-center justify-center rounded-full transition-shadow',
-                      currentPlaybackUrl
-                        ? 'bg-gradient-to-br from-sky-400 to-indigo-500 text-slate-950 shadow-2xl shadow-sky-500/20'
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    )}
-                  >
-                    {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
-                  </motion.button>
-
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-500">
-                      <span>{compareMode === 'original' ? 'Original' : 'Enhanced'} track</span>
-                      <span>{previewUrls[activeVariant] ? 'Preview ready' : 'Preview pending'}</span>
-                    </div>
-                    <div className="mt-4">
-                      <input
-                        type="range"
-                        min={0}
-                        max={duration || sourceDuration || 0}
-                        value={currentTime}
-                        step={0.1}
-                        onChange={(event) => handleSeek(Number(event.target.value))}
-                        disabled={!currentPlaybackUrl}
-                        className="w-full h-2 cursor-pointer appearance-none rounded-full bg-slate-800 accent-sky-400"
-                      />
-                      <div className="mt-3 flex items-center justify-between text-sm text-slate-400">
-                        <span>{formatTime(currentTime)}</span>
-                        <span>{formatTime(duration || sourceDuration)}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {enhancementPhase !== 'idle' && (
-                <div className="mt-6 rounded-[28px] border border-slate-700 bg-slate-950/80 p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-100">Enhancement progress</p>
-                      <p className="text-sm text-slate-400">{pollStatusText}</p>
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs text-slate-300">
-                      <span className="h-2.5 w-2.5 rounded-full bg-sky-400 animate-pulse" />
-                      {enhancementPhase === 'uploading' ? 'Uploading' : enhancementPhase === 'processing' ? 'Processing' : enhancementPhase === 'done' ? 'Complete' : 'Failed'}
-                    </div>
-                  </div>
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-800">
-                    <div
-                      className={cn(
-                        'h-full rounded-full transition-all duration-300',
-                        enhancementPhase === 'failed' ? 'bg-rose-500' : 'bg-gradient-to-r from-sky-400 to-indigo-500',
-                      )}
-                      style={{ width: `${pollProgress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </motion.div>
+            </div>
           </div>
 
-          <div className="space-y-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.15 }}
-              className="rounded-[32px] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur-xl"
-            >
-              <div className="mb-6">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold">Mastering Presets</p>
-                <h2 className="mt-2 text-2xl font-semibold">Choose your vibe</h2>
-              </div>
-              <div className="grid gap-4">
-                {ENHANCEMENT_VARIANTS.map((variant) => (
-                  <motion.button
-                    key={variant.id}
-                    onClick={() => handleEnhanceVariant(variant.id)}
-                    disabled={!hasSource || enhancingVariant === variant.id}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className={cn(
-                      'rounded-[28px] border px-5 py-4 text-left transition-all duration-200',
-                      activeVariant === variant.id && previewUrls[variant.id]
-                        ? 'border-sky-400 bg-sky-500/10 text-white shadow-sky-500/10'
-                        : 'border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500 hover:bg-slate-900',
-                      !hasSource && 'opacity-50 cursor-not-allowed'
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-sky-400">
-                          {variant.icon}
-                        </span>
-                        <div>
-                          <p className="text-base font-semibold">{variant.label}</p>
-                          <p className="text-sm text-slate-400">{variant.description}</p>
-                        </div>
-                      </div>
-                      {enhancingVariant === variant.id ? (
-                        <span className="text-sm text-slate-300">Processing</span>
-                      ) : previewUrls[variant.id] ? (
-                        <span className="text-sm text-emerald-300">Ready</span>
-                      ) : (
-                        <span className="text-sm text-slate-500">Preview</span>
-                      )}
-                    </div>
-                  </motion.button>
-                ))}
-              </div>
+          <div className="h-px bg-border/40" />
 
-              {Object.keys(previewUrls).length > 0 && (
-                <div className="mt-6 rounded-[28px] border border-slate-700 bg-slate-950/80 p-5">
-                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Preview switcher</p>
-                      <h3 className="mt-2 text-lg font-semibold text-white">Listen to any preset</h3>
+          {/* Current Preset Info */}
+          {hasSource && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                Current Preset
+              </p>
+              <div className="rounded-lg border border-border/40 bg-background p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{activeVariantConfig?.label}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{activeVariantConfig?.description}</p>
+                </div>
+                <div className="space-y-2">
+                  {previewUrls[activeVariant] && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      <span className="text-emerald-400">Preview ready</span>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setPreviewOptionsOpen(true)}>
-                      <Share2 className="w-4 h-4 mr-2" /> Share / Download
+                  )}
+                  {isLocked && !isPremium && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <Lock className="w-3 h-3 text-primary" />
+                      <span className="text-primary">Premium export</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="h-px bg-border/40" />
+
+          {/* Export Section */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              Export & Save
+            </p>
+            <div className="space-y-2">
+              {(!isPremium || isLocked) ? (
+                <Button
+                  onClick={() => toast.info('Upgrade to premium to export enhanced audio')}
+                  variant="outline"
+                  className="w-full justify-start gap-2"
+                  disabled
+                >
+                  <Download className="w-4 h-4" />
+                  Export (Premium)
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleExport}
+                  disabled={!previewUrls[activeVariant] || isExporting}
+                  className="w-full justify-start gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  {isExporting ? 'Exporting...' : 'Export Master'}
+                </Button>
+              )}
+              <Button
+                onClick={handleSaveToLibrary}
+                variant="outline"
+                disabled={!previewUrls[activeVariant] || isSaving}
+                className="w-full justify-start gap-2"
+              >
+                <Music2 className="w-4 h-4" />
+                {isSaving ? 'Saving...' : 'Save to Library'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="h-px bg-border/40" />
+
+          {/* Status */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              Status
+            </p>
+            <div className="text-xs space-y-2 text-muted-foreground">
+              <div className="flex justify-between">
+                <span>Source</span>
+                <span className="text-foreground">{hasSource ? '✓ Loaded' : '○ Empty'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Presets Ready</span>
+                <span className="text-foreground">{Object.keys(previewUrls).length}/4</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Tier</span>
+                <span className="text-foreground capitalize">{userTier}</span>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Share/Download Modal */}
+      <AlertDialog open={previewOptionsOpen} onOpenChange={setPreviewOptionsOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Share and download previews</AlertDialogTitle>
+            <AlertDialogDescription>
+              Export or copy any ready preset preview from your enhancement session.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="mt-4 space-y-3 max-h-96 overflow-y-auto">
+            {ENHANCEMENT_VARIANTS.map((variant) => {
+              const url = previewUrls[variant.id];
+              return (
+                <div key={variant.id} className="rounded-lg border border-border/40 bg-muted/30 p-3">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div>
+                      <p className="text-sm font-semibold">{variant.label}</p>
+                      <p className="text-xs text-muted-foreground">{url ? 'Ready' : 'Waiting for preview'}</p>
+                    </div>
+                    {url && <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded">✓</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={() => url && handleSelectPreview(variant.id)} disabled={!url}>
+                      Switch
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => url && handleDownloadPreviewLink(url, variant.id)} disabled={!url} className="gap-1">
+                      <Download className="w-3 h-3" />
+                      Download
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => url && handleCopyPreviewLink(url)} disabled={!url} className="gap-1">
+                      <Link2 className="w-3 h-3" />
+                      Copy
                     </Button>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {ENHANCEMENT_VARIANTS.map((variant) => {
-                      const available = Boolean(previewUrls[variant.id]);
-                      return (
-                        <button
-                          key={variant.id}
-                          type="button"
-                          onClick={() => handleSelectPreview(variant.id)}
-                          disabled={!hasSource}
-                          className={cn(
-                            'rounded-3xl border px-4 py-3 text-left text-sm transition duration-200',
-                            available
-                              ? 'border-slate-700 bg-slate-900 text-white hover:border-slate-500'
-                              : 'border-slate-800 bg-slate-950 text-slate-500 cursor-not-allowed',
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="font-semibold">{variant.label}</p>
-                              <p className="text-xs text-slate-400">
-                                {available ? 'Ready to switch' : 'Preview pending'}
-                              </p>
-                            </div>
-                            <span className={cn('rounded-full px-2 py-1 text-[11px] font-semibold', available ? 'bg-emerald-500/10 text-emerald-300' : 'bg-slate-800 text-slate-500')}>
-                              {available ? 'Ready' : 'Pending'}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
                 </div>
-              )}
-
-              {enhancingVariant && (
-                <motion.button
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  onClick={handleCancelEnhancement}
-                  className="mt-4 w-full rounded-[24px] border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300 transition hover:bg-rose-500/20"
-                >
-                  Cancel Enhancement
-                </motion.button>
-              )}
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.2 }}
-              className="rounded-[32px] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur-xl"
-            >
-              <div className="mb-5 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold">Mastering controls</p>
-                  <h2 className="mt-2 text-2xl font-semibold">Intensity & EQ</h2>
-                </div>
-                <span className="rounded-full bg-slate-950 px-3 py-1 text-xs text-slate-300">{intensity}%</span>
-              </div>
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm text-slate-400">
-                    <span>Intensity</span>
-                    <span>{intensity}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={10}
-                    max={100}
-                    value={intensity}
-                    onChange={(event) => setIntensity(Number(event.target.value))}
-                    className="w-full h-2 cursor-pointer appearance-none rounded-full bg-slate-800 accent-sky-400"
-                  />
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm text-slate-400">
-                    <span>EQ Balance</span>
-                    <span>{eqLevel}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={eqLevel}
-                    onChange={(event) => setEqLevel(Number(event.target.value))}
-                    className="w-full h-2 cursor-pointer appearance-none rounded-full bg-slate-800 accent-indigo-400"
-                  />
-                </div>
-              </div>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.25 }}
-              className="rounded-[32px] border border-white/10 bg-slate-900/80 p-6 shadow-2xl shadow-slate-950/30 backdrop-blur-xl"
-            >
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 font-semibold">Export</p>
-                  <h2 className="mt-2 text-2xl font-semibold">Mastered download</h2>
-                </div>
-                <div className="rounded-full bg-slate-950 px-3 py-1 text-xs text-slate-300">
-                  {isPremium ? 'Unlocked' : 'Premium only'}
-                </div>
-              </div>
-              <div className="mt-6 space-y-4">
-                {(!isPremium || isLocked) ? (
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => toast.info('Upgrade to premium to export mastered audio')}
-                    className="w-full rounded-[24px] bg-slate-800 px-5 py-4 text-base font-semibold text-slate-400 transition hover:bg-slate-700"
-                  >
-                    Export (Premium)
-                  </motion.button>
-                ) : (
-                  <Button
-                    onClick={handleExport}
-                    disabled={!previewUrls[activeVariant] || isExporting}
-                    size="lg"
-                    className="w-full"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    {isExporting ? 'Exporting...' : 'Export Master'}
-                  </Button>
-                )}
-                <Button
-                  onClick={handleSaveToLibrary}
-                  disabled={!previewUrls[activeVariant] || isSaving}
-                  variant="outline"
-                  size="lg"
-                  className="w-full"
-                >
-                  Save to My Library
-                </Button>
-              </div>
-            </motion.div>
+              );
+            })}
           </div>
-        </div>
-
-        <AlertDialog open={previewOptionsOpen} onOpenChange={setPreviewOptionsOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Share and download previews</AlertDialogTitle>
-              <AlertDialogDescription>
-                Export or copy any ready preset preview from the current enhancement session.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="mt-4 space-y-4">
-              {ENHANCEMENT_VARIANTS.map((variant) => {
-                const url = previewUrls[variant.id];
-                return (
-                  <div key={variant.id} className="rounded-3xl border border-slate-800 bg-slate-950 p-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="font-semibold text-white">{variant.label}</p>
-                        <p className="text-sm text-slate-400">{url ? 'Preview ready to share' : 'Waiting for preview'}</p>
-                      </div>
-                      {url && <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">Ready</span>}
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button size="sm" onClick={() => url && handleSelectPreview(variant.id)} disabled={!url}>
-                        Switch
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => url && handleDownloadPreviewLink(url, variant.id)} disabled={!url}>
-                        <Download className="w-4 h-4 mr-2" />
-                        Download
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => url && handleCopyPreviewLink(url)} disabled={!url}>
-                        <Link2 className="w-4 h-4 mr-2" />
-                        Copy link
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Close</AlertDialogCancel>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="fixed right-4 top-4 z-50 max-w-sm rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-200 shadow-2xl shadow-rose-950/20"
-          >
-            {error}
-          </motion.div>
-        )}
-      </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
