@@ -585,65 +585,102 @@ export async function generateImageFromUpload(
 
 /**
  * Poll job status until complete or failed
- * Helper for async enhancement jobs
+ * Implements exponential backoff starting at initialMs, maxing out at maxBackoffMs
+ * Supports AbortController for cancellation
  */
-async function pollJobStatus(
-  jobId: string,
-  maxWaitMs: number = API_TIMEOUTS.enhance
-): Promise<ApiResponse> {
+interface PollOptions {
+  maxWaitMs?: number; // Total timeout for polling
+  initialDelayMs?: number; // Starting delay (1000ms)
+  maxBackoffMs?: number; // Max backoff interval (10000ms)
+  backoffMultiplier?: number; // Exponential backoff multiplier (1.8)
+  signal?: AbortSignal; // AbortController signal for cancellation
+  onProgress?: (status: any) => void; // Callback on each poll update
+}
+
+async function pollJobStatus(jobId: string, options?: PollOptions): Promise<ApiResponse> {
+  const maxWaitMs = options?.maxWaitMs ?? API_TIMEOUTS.enhance; // 180s default
+  const initialDelayMs = options?.initialDelayMs ?? 1000; // Start at 1s
+  const maxBackoffMs = options?.maxBackoffMs ?? 10000; // Cap at 10s
+  const backoffMultiplier = options?.backoffMultiplier ?? 1.8;
+  const signal = options?.signal;
+  const onProgress = options?.onProgress;
+
   const startTime = Date.now();
-  const pollIntervalMs = 2000; // 2 second poll interval
+  let delayMs = initialDelayMs;
 
   while (Date.now() - startTime < maxWaitMs) {
+    // Check if cancellation requested
+    if (signal?.aborted) {
+      return {
+        success: false,
+        error: 'Enhancement polling cancelled by user',
+      };
+    }
+
     try {
       const statusUrl = buildUrl(`/audio/enhance/status/${jobId}`);
-      const response = await fetchWithTimeout(statusUrl, { method: 'GET' }, 10000);
+      const response = await fetchWithTimeout(statusUrl, { method: 'GET', signal }, 10000);
 
       if (!response.ok) {
         const text = await response.text().catch(() => '');
         console.error(`[API] Job status fetch failed: ${text}`);
-        continue;
+        // Continue polling on transient network errors
+      } else {
+        const json = await response.json().catch(() => null);
+        if (!json || typeof json !== 'object') {
+          console.warn('[API] Invalid job status response');
+        } else {
+          console.log(`[API] Job ${jobId} status:`, json.status, json);
+
+          // Invoke progress callback if provided
+          onProgress?.(json);
+
+          // Check if job is complete
+          if (json.status === 'done') {
+            // Normalize response to match expected format
+            return {
+              success: true,
+              data: {
+                job_id: json.job_id,
+                status: json.status,
+                selected_preset: json.selected_preset,
+                previews: json.previews || {},
+                export_url: json.export_url ?? null,
+                export_locked: json.export_locked ?? false,
+              },
+              audio_url: json.export_url || (json.previews && Object.values(json.previews)[0]) || undefined,
+            };
+          }
+
+          if (json.status === 'failed') {
+            return {
+              success: false,
+              error: json.error || 'Enhancement job failed',
+            };
+          }
+        }
       }
 
-      const json = await response.json().catch(() => null);
-      if (!json || typeof json !== 'object') {
-        console.warn('[API] Invalid job status response');
-        continue;
-      }
+      // Still processing, wait before next poll with exponential backoff
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
 
-      console.log(`[API] Job ${jobId} status:`, json.status, json);
-
-      // Check if job is complete
-      if (json.status === 'done') {
-        // Normalize response to match expected format
-        return {
-          success: true,
-          data: {
-            job_id: json.job_id,
-            status: json.status,
-            selected_preset: json.selected_preset,
-            previews: json.previews || {},
-            export_url: json.export_url ?? null,
-            export_locked: json.export_locked ?? false,
-          },
-          audio_url: json.export_url || (json.previews && Object.values(json.previews)[0]) || undefined,
-        };
-      }
-
-      if (json.status === 'failed') {
+      // Increase delay exponentially up to max
+      delayMs = Math.min(delayMs * backoffMultiplier, maxBackoffMs);
+    } catch (err) {
+      // Handle cancellation
+      if (err instanceof Error && err.name === 'AbortError') {
         return {
           success: false,
-          error: json.error || 'Enhancement job failed',
+          error: 'Enhancement polling cancelled',
         };
       }
 
-      // Still processing, wait before next poll
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-    } catch (err) {
       const msg = err instanceof Error ? err.message : 'Poll error';
       console.warn(`[API] Error polling job ${jobId}:`, msg);
-      // Continue polling despite errors
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+
+      // Continue polling despite transient errors
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      delayMs = Math.min(delayMs * backoffMultiplier, maxBackoffMs);
     }
   }
 
@@ -656,9 +693,17 @@ async function pollJobStatus(
 
 /**
  * Enhance audio file using the async job backend.
- * 1. POST /audio/enhance with multipart upload and selected preset
+ * 1. POST /audio/enhance with multipart upload and selected preset (with AbortController)
  * 2. Poll GET /audio/enhance/status/{job_id} until done or failed
  * Returns previews when complete
+ * 
+ * Usage with cancellation:
+ * const ac = new AbortController();
+ * const result = enhanceAudio(file, 'balanced', {
+ *   uploadSignal: ac.signal,
+ *   pollOptions: { signal: ac.signal, onProgress: (status) => console.log(status.status) }
+ * });
+ * // To cancel: ac.abort()
  */
 export async function enhanceAudio(
   audioFile: File,
@@ -671,7 +716,12 @@ export async function enhanceAudio(
     | 'normalize'
     | 'compress'
     | 'reverb'
-    | 'enhance' = 'balanced'
+    | 'enhance' = 'balanced',
+  options?: {
+    uploadSignal?: AbortSignal; // Cancel upload with AbortController
+    uploadTimeoutMs?: number; // Upload timeout (30s default)
+    pollOptions?: PollOptions; // Polling options with exponential backoff
+  }
 ): Promise<ApiResponse> {
   if (!audioFile) {
     return { success: false, error: 'Audio file is required' };
@@ -695,21 +745,24 @@ export async function enhanceAudio(
   const selectedPreset = presetMap[enhancementType] || 'balanced';
 
   try {
-    // Step 1: Create enhancement job
+    // Step 1: Create enhancement job with AbortController support
     const formData = new FormData();
     formData.append('file', audioFile);
     formData.append('selected_preset', selectedPreset);
     formData.append('job_type', 'preview');
 
-    console.log(`[API] Creating enhancement job for ${audioFile.name}`);
+    console.log(`[API] Creating enhancement job for ${audioFile.name}, preset: ${selectedPreset}`);
     const createJobUrl = buildUrl('/audio/enhance');
+    const uploadTimeoutMs = options?.uploadTimeoutMs ?? 30000; // 30s timeout for upload
+
     const createResponse = await fetchWithTimeout(
       createJobUrl,
       {
         method: 'POST',
         body: formData,
+        signal: options?.uploadSignal, // Support cancellation during upload
       },
-      30000 // 30s timeout just for upload
+      uploadTimeoutMs
     );
 
     if (!createResponse.ok) {
@@ -724,16 +777,24 @@ export async function enhanceAudio(
     if (!createJson || !createJson.job_id) {
       return {
         success: false,
-        error: 'Invalid job creation response',
+        error: 'Invalid job creation response - no job_id received',
       };
     }
 
     const jobId = createJson.job_id;
     console.log(`[API] Enhancement job created: ${jobId}, polling for completion...`);
 
-    // Step 2: Poll job status until complete
-    return pollJobStatus(jobId, API_TIMEOUTS.enhance);
+    // Step 2: Poll job status until complete with exponential backoff
+    return pollJobStatus(jobId, options?.pollOptions);
   } catch (err) {
+    // Handle cancellation
+    if (err instanceof Error && err.name === 'AbortError') {
+      return {
+        success: false,
+        error: 'Enhancement upload cancelled by user',
+      };
+    }
+
     const msg = err instanceof Error ? err.message : 'Enhancement failed';
     return {
       success: false,

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import WaveSurfer from 'wavesurfer.js';
-import { ArrowLeft, Download, Music2, Sparkles, Volume2, Zap, Lock, Zap as Lightning, Play, Pause } from 'lucide-react';
+import { ArrowLeft, Download, Music2, Sparkles, Volume2, Zap, Lock, Zap as Lightning, Play, Pause, Share2, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel } from '@/components/ui/alert-dialog';
 import { enhanceAudio, exportEnhancedAudio } from '@/lib/api';
 import { downloadAudio } from '@/lib/audioUtils';
 import { saveGeneratedAudio } from '@/lib/aiMusicStorage';
@@ -95,8 +96,14 @@ export function AudioEnhancementPanel({
   const [sourceLabel, setSourceLabel] = useState<string>(generatedAudioUrl ? 'Generated track' : 'Upload audio file');
   const [activeVariant, setActiveVariant] = useState<EnhancementVariant>('balanced');
   const [previewUrls, setPreviewUrls] = useState<Record<EnhancementVariant, string>>({});
+  const [allPreviewUrls, setAllPreviewUrls] = useState<Record<string, string>>({}); // Store all 4 presets from backend
   const [previewMetadata, setPreviewMetadata] = useState<Record<EnhancementVariant, { export_locked?: boolean }>>({});
   const [enhancingVariant, setEnhancingVariant] = useState<EnhancementVariant | null>(null);
+  const [enhancementPhase, setEnhancementPhase] = useState<'idle' | 'uploading' | 'processing' | 'done' | 'failed'>('idle');
+  const [pollProgress, setPollProgress] = useState(0);
+  const [pollStatusText, setPollStatusText] = useState('');
+  const [previewOptionsOpen, setPreviewOptionsOpen] = useState(false);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null); // Track current job for cancellation
   const [isExporting, setIsExporting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -112,6 +119,7 @@ export function AudioEnhancementPanel({
   const enhancedWaveformRef = useRef<HTMLDivElement>(null);
   const originalWaveSurfer = useRef<any>(null);
   const enhancedWaveSurfer = useRef<any>(null);
+  const enhancementAbortController = useRef<AbortController | null>(null); // For cancellation
 
   const isPremium = userTier === 'premium';
   const activeVariantConfig = ENHANCEMENT_VARIANTS.find((item) => item.id === activeVariant);
@@ -361,6 +369,35 @@ export function AudioEnhancementPanel({
     setSourceLabel(title || 'Generated track');
   };
 
+  const handleSelectPreview = async (variant: EnhancementVariant) => {
+    if (previewUrls[variant]) {
+      setActiveVariant(variant);
+      return;
+    }
+    await handleEnhanceVariant(variant);
+  };
+
+  const handleCopyPreviewLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Preview link copied to clipboard');
+    } catch (err) {
+      console.error('[AudioEnhancement] Copy failed', err);
+      toast.error('Unable to copy link');
+    }
+  };
+
+  const handleDownloadPreviewLink = async (url: string, variant: EnhancementVariant) => {
+    try {
+      const ext = parseAudioFileExt(url);
+      await downloadAudio(url, `enhanced-${variant}`, ext);
+      toast.success(`${variant} preview downloaded`);
+    } catch (err) {
+      console.error('[AudioEnhancement] Download failed', err);
+      toast.error('Unable to download preview');
+    }
+  };
+
   const resolveSourceFile = async (): Promise<File> => {
     if (sourceFile) {
       return sourceFile;
@@ -369,6 +406,21 @@ export function AudioEnhancementPanel({
       throw new Error('Please select or upload an audio source first.');
     }
     return fetchAudioFileFromUrl(sourceUrl);
+  };
+
+  const handleCancelEnhancement = () => {
+    // Abort upload and polling
+    if (enhancementAbortController.current) {
+      enhancementAbortController.current.abort();
+      enhancementAbortController.current = null;
+    }
+    setCurrentJobId(null);
+    setEnhancingVariant(null);
+    setEnhancementPhase('idle');
+    setPollProgress(0);
+    setPollStatusText('Enhancement cancelled');
+    setError('Enhancement cancelled by user');
+    toast.info('Enhancement cancelled');
   };
 
   const handleEnhanceVariant = async (variant: EnhancementVariant) => {
@@ -389,15 +441,47 @@ export function AudioEnhancementPanel({
     setEnhancingVariant(variant);
 
     try {
+      // Create fresh AbortController for this enhancement job
+      enhancementAbortController.current = new AbortController();
+      const signal = enhancementAbortController.current.signal;
+      const startTime = Date.now();
+
       const sourceFileObject = await resolveSourceFile();
-      const result = await enhanceAudio(sourceFileObject, variant);
+      setEnhancementPhase('uploading');
+      setPollStatusText('Uploading source audio...');
+      setPollProgress(15);
+
+      // Call enhanceAudio with cancellation and progress tracking
+      const result = await enhanceAudio(sourceFileObject, variant, {
+        uploadSignal: signal,
+        uploadTimeoutMs: 60000, // 60s upload timeout
+        pollOptions: {
+          maxWaitMs: 600000, // 10 minute total timeout for long uploads
+          initialDelayMs: 1000, // Start at 1s
+          maxBackoffMs: 10000, // Cap at 10s
+          backoffMultiplier: 1.8, // Exponential backoff
+          signal: signal,
+          onProgress: (status: any) => {
+            setEnhancementPhase('processing');
+            setPollStatusText(`Processing preview (${status.status || 'waiting'})`);
+            const elapsed = Date.now() - startTime;
+            const estimated = Math.min(98, Math.max(20, Math.floor((elapsed / 600000) * 100)));
+            setPollProgress(estimated);
+          },
+        },
+      });
+
+      // Track job ID if provided
+      if (result.data?.job_id) {
+        setCurrentJobId(result.data.job_id);
+      }
 
       if (!result.success) {
         throw new Error(result.error || 'Enhancement failed');
       }
 
       // Handle audio enhancement responses that return multiple preview URLs
-      // Backend returns: {success: true, previews: {balanced: url, bass_boost: url, vocal: url, loud: url}, export_locked: true}
+      // Backend returns: {success: true, previews: {balanced: url, bass_boost: url, vocal: url, loud: url}}
       if (result.data?.previews && typeof result.data.previews === 'object') {
         // Map backend preview names to component variant names
         const previewMap: Record<string, EnhancementVariant> = {
@@ -407,7 +491,10 @@ export function AudioEnhancementPanel({
           loud: 'loud',
         };
 
-        // Cache all preview URLs
+        // Cache all preview URLs for advanced UI (download/share)
+        setAllPreviewUrls(result.data.previews);
+
+        // Cache only the selected variant for immediate display
         const newPreviews: Record<EnhancementVariant, string> = {} as Record<EnhancementVariant, string>;
         Object.entries(result.data.previews).forEach(([backendKey, url]) => {
           const componentVariant = previewMap[backendKey];
@@ -443,12 +530,19 @@ export function AudioEnhancementPanel({
         }));
         toast.success(`${variantConfig?.label} preview ready!`);
       }
+      setEnhancementPhase('done');
+      setPollProgress(100);
+      setPollStatusText('Preview ready');
     } catch (err) {
+      setEnhancementPhase('failed');
+      setPollStatusText('Preview failed');
       const message = err instanceof Error ? err.message : 'Failed to enhance audio';
       setError(message);
       console.error('[AudioEnhancement] Enhance error:', err);
     } finally {
       setEnhancingVariant(null);
+      setCurrentJobId(null);
+      enhancementAbortController.current = null;
     }
   };
 
@@ -765,6 +859,30 @@ export function AudioEnhancementPanel({
                   </div>
                 </div>
               </div>
+
+              {enhancementPhase !== 'idle' && (
+                <div className="mt-6 rounded-[28px] border border-slate-700 bg-slate-950/80 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-slate-100">Enhancement progress</p>
+                      <p className="text-sm text-slate-400">{pollStatusText}</p>
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs text-slate-300">
+                      <span className="h-2.5 w-2.5 rounded-full bg-sky-400 animate-pulse" />
+                      {enhancementPhase === 'uploading' ? 'Uploading' : enhancementPhase === 'processing' ? 'Processing' : enhancementPhase === 'done' ? 'Complete' : 'Failed'}
+                    </div>
+                  </div>
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-800">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all duration-300',
+                        enhancementPhase === 'failed' ? 'bg-rose-500' : 'bg-gradient-to-r from-sky-400 to-indigo-500',
+                      )}
+                      style={{ width: `${pollProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
 
@@ -816,6 +934,63 @@ export function AudioEnhancementPanel({
                   </motion.button>
                 ))}
               </div>
+
+              {Object.keys(previewUrls).length > 0 && (
+                <div className="mt-6 rounded-[28px] border border-slate-700 bg-slate-950/80 p-5">
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Preview switcher</p>
+                      <h3 className="mt-2 text-lg font-semibold text-white">Listen to any preset</h3>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setPreviewOptionsOpen(true)}>
+                      <Share2 className="w-4 h-4 mr-2" /> Share / Download
+                    </Button>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {ENHANCEMENT_VARIANTS.map((variant) => {
+                      const available = Boolean(previewUrls[variant.id]);
+                      return (
+                        <button
+                          key={variant.id}
+                          type="button"
+                          onClick={() => handleSelectPreview(variant.id)}
+                          disabled={!hasSource}
+                          className={cn(
+                            'rounded-3xl border px-4 py-3 text-left text-sm transition duration-200',
+                            available
+                              ? 'border-slate-700 bg-slate-900 text-white hover:border-slate-500'
+                              : 'border-slate-800 bg-slate-950 text-slate-500 cursor-not-allowed',
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="font-semibold">{variant.label}</p>
+                              <p className="text-xs text-slate-400">
+                                {available ? 'Ready to switch' : 'Preview pending'}
+                              </p>
+                            </div>
+                            <span className={cn('rounded-full px-2 py-1 text-[11px] font-semibold', available ? 'bg-emerald-500/10 text-emerald-300' : 'bg-slate-800 text-slate-500')}>
+                              {available ? 'Ready' : 'Pending'}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {enhancingVariant && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  onClick={handleCancelEnhancement}
+                  className="mt-4 w-full rounded-[24px] border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300 transition hover:bg-rose-500/20"
+                >
+                  Cancel Enhancement
+                </motion.button>
+              )}
             </motion.div>
 
             <motion.div
@@ -912,6 +1087,49 @@ export function AudioEnhancementPanel({
             </motion.div>
           </div>
         </div>
+
+        <AlertDialog open={previewOptionsOpen} onOpenChange={setPreviewOptionsOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Share and download previews</AlertDialogTitle>
+              <AlertDialogDescription>
+                Export or copy any ready preset preview from the current enhancement session.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="mt-4 space-y-4">
+              {ENHANCEMENT_VARIANTS.map((variant) => {
+                const url = previewUrls[variant.id];
+                return (
+                  <div key={variant.id} className="rounded-3xl border border-slate-800 bg-slate-950 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="font-semibold text-white">{variant.label}</p>
+                        <p className="text-sm text-slate-400">{url ? 'Preview ready to share' : 'Waiting for preview'}</p>
+                      </div>
+                      {url && <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">Ready</span>}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => url && handleSelectPreview(variant.id)} disabled={!url}>
+                        Switch
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => url && handleDownloadPreviewLink(url, variant.id)} disabled={!url}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Download
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => url && handleCopyPreviewLink(url)} disabled={!url}>
+                        <Link2 className="w-4 h-4 mr-2" />
+                        Copy link
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Close</AlertDialogCancel>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {error && (
           <motion.div
