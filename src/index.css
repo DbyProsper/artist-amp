@@ -59,6 +59,28 @@
   }
 }
 
+/* Audio Enhancement brand tokens (do not remove existing vars) */
+:root {
+  --ae-bg:           #0d0d0d;
+  --ae-bg-2:         #111111;
+  --ae-bg-3:         #1a1a1a;
+  --ae-bg-4:         #222222;
+  --ae-accent:       #ff2d6b;
+  --ae-accent-dim:   rgba(255, 45, 107, 0.15);
+  --ae-border:       rgba(255, 255, 255, 0.07);
+  --ae-border-hover: rgba(255, 255, 255, 0.13);
+  --ae-text-1:       #ffffff;
+  --ae-text-2:       #888888;
+  --ae-text-3:       #444444;
+  --ae-success:      #22c55e;
+  --ae-radius:       10px;
+}
+
+/* Slider styles used by audio enhancement */
+.ae-slider { -webkit-appearance: none; appearance: none; height: 3px; border-radius: 2px; background: var(--ae-bg-4); outline: none; width: 100%; cursor: pointer; }
+.ae-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--ae-accent); cursor: pointer; }
+.ae-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--ae-accent); cursor: pointer; border: none; }
+
 @layer base {
   * {
     @apply border-border;
