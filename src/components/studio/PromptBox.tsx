@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Send, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useQuotaGate } from '@/hooks/useQuotaGate';
+import QuotaGuard from '@/components/QuotaGuard';
+import type { QuotaKey } from '@/lib/planLimits';
 
 interface PromptBoxProps {
   value: string;
@@ -12,6 +15,7 @@ interface PromptBoxProps {
   placeholder?: string;
   disabled?: boolean;
   buttonText?: string;
+  quotaKey?: QuotaKey;
 }
 
 export function PromptBox({
@@ -23,6 +27,7 @@ export function PromptBox({
   placeholder = 'Describe your idea in up to 500 words... (e.g. soulful amapiano track with catchy hook)',
   disabled = false,
   buttonText = 'Create Track',
+  quotaKey,
 }: PromptBoxProps) {
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -34,18 +39,32 @@ export function PromptBox({
     }
   }, [disabled]);
 
+  const { checkQuota } = useQuotaGate();
   const words = value.trim().split(/\s+/).filter(Boolean);
   const wordCount = words.length;
   const percentFull = (wordCount / maxWords) * 100;
   const remainingWords = maxWords - wordCount;
 
+  const handleSubmit = () => {
+    if (disabled || loading || wordCount === 0) {
+      return;
+    }
+
+    if (quotaKey) {
+      const result = checkQuota(quotaKey);
+      if (!result.allowed) {
+        return;
+      }
+    }
+
+    onSubmit();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Submit on Ctrl/Cmd + Enter
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      if (!loading && wordCount > 0) {
-        onSubmit();
-      }
+      handleSubmit();
     }
   };
 
@@ -109,24 +128,46 @@ export function PromptBox({
                 {wordCount}/{maxWords} words
               </motion.span>
 
-              <Button
-                onClick={onSubmit}
-                disabled={disabled || loading || wordCount === 0}
-                size="lg"
-                className="gap-2 rounded-full font-semibold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40"
-              >
-                {loading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-4 h-4" />
-                    {buttonText}
-                  </>
-                )}
-              </Button>
+              {quotaKey ? (
+                <QuotaGuard quotaKey={quotaKey} onAllowed={onSubmit}>
+                  <Button
+                    disabled={disabled || loading || wordCount === 0}
+                    size="lg"
+                    className="gap-2 rounded-full font-semibold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4" />
+                        {buttonText}
+                      </>
+                    )}
+                  </Button>
+                </QuotaGuard>
+              ) : (
+                <Button
+                  onClick={handleSubmit}
+                  disabled={disabled || loading || wordCount === 0}
+                  size="lg"
+                  className="gap-2 rounded-full font-semibold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40"
+                >
+                  {loading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      {buttonText}
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         </div>

@@ -24,7 +24,21 @@ export interface AudioAnalysis {
   channels: number;
 }
 
-export type ProcessingStage = 'idle' | 'analyzing' | 'enhancing' | 'done' | 'error';
+export interface EnhancementTimings {
+  loadTime:    string | null;   // e.g. "0.42s"
+  processTime: string | null;   // e.g. "18.99s"
+  encodeTime:  string | null;   // e.g. "0.23s"
+  totalTime:   string | null;   // e.g. "19.65s"
+}
+
+export type ProcessingStage =
+  | 'idle'
+  | 'analyzing'
+  | 'uploading'
+  | 'processing'
+  | 'downloading'
+  | 'done'
+  | 'error';
 
 export interface EnhancementState {
   file: File | null;
@@ -38,4 +52,5 @@ export interface EnhancementState {
   stage: ProcessingStage;
   progress: number;
   error: string | null;
+  timings: EnhancementTimings | null;
 }

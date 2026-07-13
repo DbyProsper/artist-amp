@@ -1,6 +1,36 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Users collection - read own, write own but NOT plan/quota fields
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && !('plan' in request.resource.data)
+        && !('quota' in request.resource.data)
+        && !('quotaDaily' in request.resource.data)
+        && !('payfastToken' in request.resource.data)
+        && !('payfastEmail' in request.resource.data)
+        && !('stripeCustomerId' in request.resource.data)
+        && !('stripeSubscriptionId' in request.resource.data);
+    }
+
+    // One-off payment enhance tokens — readable by owner, managed by backend only
+    match /purchases/{uid}/tokens/{tokenId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // PayFast event log — never accessible by clients
+    match /payfastEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    // Stripe events log (written by Cloud Function only, never by client)
+    match /stripeEvents/{eventId} {
+      allow read, write: if false;
+    }
+
     // Users can read all profiles but only write their own
     match /profiles/{userId} {
       allow read: if request.auth != null;

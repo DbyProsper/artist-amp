@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { initUserQuota } from '@/lib/initUserQuota';
 
 interface Profile {
   id: string;
@@ -103,6 +104,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const profileRef = doc(db, 'profiles', user.uid);
       await setDoc(profileRef, profileData);
+      try {
+        await initUserQuota(user.uid);
+      } catch (quotaError) {
+        console.warn('Failed to initialize user quota:', quotaError);
+      }
 
       return profileData;
     } catch (error) {

@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Search, TrendingUp, Sparkles, Filter, Heart, Users, 
   Music2, Radio, ChevronDown, ListMusic, ArrowRight
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { ArtistCard } from '@/components/artists/ArtistCard';
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { mockArtists, mockTracks, genres, mockPlaylists } from '@/data/mockData';
@@ -17,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/context/FirebaseAuthContext';
+import { fetchRecommendations, type Recommendation } from '@/services/recommendationService';
 
 type SortOption = 'trending' | 'newest' | 'popular';
 
@@ -64,10 +67,36 @@ export default function DiscoverPage() {
     navigate(`/user/${artistId}`);
   };
 
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [recommendLoading, setRecommendLoading] = useState(false);
+  const [recommendError, setRecommendError] = useState<string | null>(null);
+
   const sortLabel = {
     trending: 'Trending',
     newest: 'Newest',
     popular: 'Most Popular',
+  };
+
+  const loadRecommendations = async () => {
+    if (!searchQuery.trim()) {
+      setRecommendError('Enter a song name to get recommendations.');
+      setRecommendations([]);
+      return;
+    }
+
+    setRecommendLoading(true);
+    setRecommendError(null);
+
+    try {
+      const results = await fetchRecommendations(searchQuery.trim());
+      setRecommendations(results);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not fetch recommendations.';
+      setRecommendError(message);
+      setRecommendations([]);
+    } finally {
+      setRecommendLoading(false);
+    }
   };
 
   return (
@@ -228,6 +257,72 @@ export default function DiscoverPage() {
               <h1 className="font-display font-bold text-2xl">Discover</h1>
             </div>
             <p className="text-muted-foreground">Your personalized music feed</p>
+          </section>
+
+          <section className="px-4 py-5">
+            <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">MusicInsta recommendations</p>
+                  <h2 className="font-display font-semibold text-xl">Get a fresh playlist for the song you love</h2>
+                </div>
+                <Button onClick={loadRecommendations} disabled={recommendLoading}>
+                  {recommendLoading ? 'Finding recommendations...' : 'Get Recommendations'}
+                </Button>
+              </div>
+
+              <div className="mt-4">
+                {recommendError ? (
+                  <p className="text-sm text-destructive">{recommendError}</p>
+                ) : recommendations.length === 0 && !recommendLoading ? (
+                  <p className="text-sm text-muted-foreground">
+                    Enter a song name in the search bar above, then tap the button to see recommendations.
+                  </p>
+                ) : null}
+              </div>
+
+              {recommendations.length > 0 && (
+                <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {recommendations.map((item, index) => {
+                    const title = item.song || item.title || item.name || `Song ${index + 1}`;
+
+                    return (
+                      <Card
+                        key={`${title}-${index}`}
+                        className="group overflow-hidden border border-border bg-background p-5 transition hover:-translate-y-1 hover:shadow-xl"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-base font-semibold leading-tight text-foreground group-hover:text-primary">
+                                {title}
+                              </p>
+                              {(item.artist || item.genre) && (
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  {item.artist ? `${item.artist}` : ''}
+                                  {item.artist && item.genre ? ' • ' : ''}
+                                  {item.genre ?? ''}
+                                </p>
+                              )}
+                            </div>
+                            <span className="rounded-full bg-muted px-2 py-1 text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
+                              Rec {index + 1}
+                            </span>
+                          </div>
+
+                          {(item.genre || item.mood) && (
+                            <div className="flex flex-wrap gap-2">
+                              {item.genre && <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{item.genre}</span>}
+                              {item.mood && <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{item.mood}</span>}
+                            </div>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </section>
 
           {/* Tabs: For You / Trending */}

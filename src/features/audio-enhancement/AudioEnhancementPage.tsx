@@ -39,9 +39,10 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
     activePreset: 'dsp',
     activeView: 'original',
     status: 'Idle',
-    stage: 'Idle',
+    stage: 'idle',
     progress: 0,
     error: null,
+    timings: null,
   });
   const [showPremiumGate, setShowPremiumGate] = useState(false);
   const [sourceType, setSourceType] = useState<'upload' | 'generated' | 'library'>('upload');
@@ -50,6 +51,16 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
 
   const { decodeFile, previewProcess } = useAudioEngine();
   const enhancement = useEnhancement();
+
+  const stageLabels: Record<string, string> = {
+    idle: 'Preview ready',
+    analyzing: 'Analyzing file',
+    uploading: 'Uploading',
+    processing: 'Processing preview',
+    downloading: 'Receiving enhanced audio',
+    done: 'Export complete',
+    error: 'Error',
+  };
 
   const activeBack = onBack ?? (() => navigate('/studio'));
 
@@ -63,8 +74,9 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
       enhancedBuffer: null,
       enhancedBlob: null,
       status: 'Processing',
-      stage: 'Loading selected track',
+      stage: 'analyzing',
       progress: 5,
+      timings: null,
     }));
 
     try {
@@ -75,35 +87,35 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
       const safeName = label.replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 32) || 'generated_audio';
       const file = new File([blob], `${safeName}.${extension}`, { type: blob.type || 'audio/mpeg' });
       const [buffer, analysis] = await Promise.all([decodeFile(file), analyzeAudio(file)]);
-      setState((s:any) => ({ ...s, file, originalBuffer: buffer, analysis, status: 'Idle', stage: 'Preview ready', progress: 100 }));
+      setState((s:any) => ({ ...s, file, originalBuffer: buffer, analysis, status: 'Idle', stage: 'idle', progress: 100 }));
     } catch (error: any) {
-      setState((s:any) => ({ ...s, status: 'Error', stage: 'Could not load selected track', error: error?.message || 'Could not load selected track.' }));
+      setState((s:any) => ({ ...s, status: 'Error', stage: 'error', error: error?.message || 'Could not load selected track.' }));
     }
   }, [decodeFile]);
 
   const handleFile = useCallback(async (file: File) => {
     setSourceType('upload');
     setSourceLabel('Upload from device');
-    setState((s:any)=>({ ...s, file, status: 'Processing', stage: 'Analyzing file', progress: 0, enhancedBuffer: null, enhancedBlob: null, activeView: 'original' }));
+    setState((s:any)=>({ ...s, file, status: 'Processing', stage: 'analyzing', progress: 0, enhancedBuffer: null, enhancedBlob: null, activeView: 'original', timings: null }));
     try {
       const [buffer, analysis] = await Promise.all([decodeFile(file), analyzeAudio(file)]);
-      setState((s:any)=>({ ...s, originalBuffer: buffer, analysis, status: 'Idle', stage: 'Preview ready', progress: 100 }));
+      setState((s:any)=>({ ...s, originalBuffer: buffer, analysis, status: 'Idle', stage: 'idle', progress: 100 }));
     } catch (e:any) {
-      setState((s:any)=>({ ...s, status: 'Error', stage: 'Could not load audio file', error: 'Could not load audio file.' }));
+      setState((s:any)=>({ ...s, status: 'Error', stage: 'error', error: 'Could not load audio file.' }));
     }
   }, [decodeFile]);
 
   useEffect(()=>{
     if (!state.originalBuffer) return;
     let cancelled = false;
-    setState((s:any)=>({ ...s, status:'Processing', stage:'Preparing preview', progress: 0 }));
+    setState((s:any)=>({ ...s, status:'Processing', stage:'processing', progress: 0 }));
     previewProcess(state.originalBuffer, state.settings, update => {
       if (cancelled) return;
-      setState((s:any)=>({ ...s, status: 'Processing', stage: update.stage, progress: update.progress }));
+      setState((s:any)=>({ ...s, status: 'Processing', stage: 'processing', progress: update.progress }));
     }).then(buf=>{
-      if (!cancelled) setState((s:any)=>({ ...s, enhancedBuffer: buf, status: 'Idle', stage: 'Preview ready', progress: 100 }));
+      if (!cancelled) setState((s:any)=>({ ...s, enhancedBuffer: buf, status: 'Idle', stage: 'idle', progress: 100 }));
     }).catch(()=>{
-      if (!cancelled) setState((s:any)=>({ ...s, enhancedBuffer: null, status: 'Error', stage: 'Preview failed', error: 'Could not create enhanced preview.' }));
+      if (!cancelled) setState((s:any)=>({ ...s, enhancedBuffer: null, status: 'Error', stage: 'error', error: 'Could not create enhanced preview.' }));
     });
     return ()=>{ cancelled = true; };
   }, [state.originalBuffer, state.settings, previewProcess]);
@@ -114,8 +126,9 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
       activePreset: key,
       settings: PRESETS[key],
       status: s.originalBuffer ? 'Processing' : s.status,
-      stage: s.originalBuffer ? 'Applying preset' : s.stage,
+      stage: s.originalBuffer ? 'processing' : s.stage,
       progress: s.originalBuffer ? 0 : s.progress,
+      timings: s.originalBuffer ? null : s.timings,
     }
   )), []);
 
@@ -125,16 +138,39 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
       activePreset: 'custom',
       settings: { ...s.settings, ...patch },
       status: s.originalBuffer ? 'Processing' : s.status,
-      stage: s.originalBuffer ? 'Updating settings' : s.stage,
+      stage: s.originalBuffer ? 'processing' : s.stage,
       progress: s.originalBuffer ? 0 : s.progress,
+      timings: s.originalBuffer ? null : s.timings,
     }
   )), []);
 
   const handleExport = useCallback(()=>{
     if (!state.file) return;
     if (!isPremium) { setShowPremiumGate(true); return; }
-    enhancement.mutate({ file: state.file, settings: state.settings, onProgress: (p:number)=> setState((s:any)=>({ ...s, progress: p })) });
+
+    setState((s:any) => ({ ...s, stage: 'uploading', progress: 0, timings: null }));
+
+    enhancement.mutate({
+      file: state.file,
+      settings: state.settings,
+      onProgress: (pct, stage) => {
+        setState((s:any) => ({
+          ...s,
+          progress: pct,
+          stage: pct >= 35 ? 'downloading' : pct >= 33 ? 'processing' : 'uploading',
+        }));
+      },
+      onTimings: (timings) => {
+        setState((s:any) => ({ ...s, timings, stage: 'done' }));
+      },
+    });
   }, [state.file, state.settings, isPremium, enhancement]);
+
+  useEffect(() => {
+    if (state.stage === 'done' && state.enhancedBuffer) {
+      setState((s:any) => ({ ...s, activeView: 'enhanced' }));
+    }
+  }, [state.stage, state.enhancedBuffer]);
 
   const openLibrary = useCallback(() => {
     setSourceType('library');
@@ -241,7 +277,7 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
               <div className="rounded-2xl border border-border bg-card p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm font-semibold">Status: {state.status}</div>
-                  <div className="text-xs text-muted-foreground">{state.stage}</div>
+                  <div className="text-xs text-muted-foreground">{stageLabels[state.stage] ?? state.stage}</div>
                 </div>
                 <div className="mt-3 h-2 rounded-full bg-border overflow-hidden">
                   <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${state.progress}%` }} />
@@ -258,7 +294,15 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
               />
 
               <div className="mt-3">
-                <ExportActions hasFile={!!state.file} isPremium={isPremium} isProcessing={enhancement.isPending || state.status === 'Processing'} progress={state.progress} onExport={handleExport} />
+                <ExportActions
+                  hasFile={!!state.file}
+                  isPremium={isPremium}
+                  isProcessing={enhancement.isPending || state.status === 'Processing'}
+                  stage={state.stage}
+                  progress={state.progress}
+                  timings={state.timings}
+                  onExport={handleExport}
+                />
               </div>
             </div>
           )}

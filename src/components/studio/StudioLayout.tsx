@@ -11,6 +11,9 @@ import { MoodPresets } from './MoodPresets';
 import { LanguagePresets } from './LanguagePresets';
 import { AudioPlayer } from './AudioPlayer';
 import { GenerationHistory } from './GenerationHistory';
+import PlanBadge from '@/components/PlanBadge';
+import QuotaBar from '@/components/QuotaBar';
+import type { QuotaKey } from '@/lib/planLimits';
 import { StudioFeature } from './StudioEntryScreen';
 
 interface StudioLayoutProps {
@@ -74,6 +77,16 @@ const featureLabels: Record<StudioFeature, string> = {
   chat: 'Chat',
 };
 
+const FEATURE_QUOTA_MAP: Record<StudioFeature, QuotaKey> = {
+  beat: 'beats',
+  lyrics: 'lyrics',
+  song: 'fullSongs',
+  cover: 'images',
+  poster: 'images',
+  merch: 'images',
+  chat: 'lyrics',
+};
+
 export function StudioLayout({
   feature,
   onFeatureChange,
@@ -126,6 +139,7 @@ export function StudioLayout({
           </Button>
           <h1 className="text-xl font-bold">{featureLabels[feature]}</h1>
           <div className="flex items-center gap-2">
+            <PlanBadge />
             <Button
               variant="ghost"
               size="sm"
@@ -327,6 +341,7 @@ export function StudioLayout({
                 disabled={isGenerating}
                 buttonText={buttonText}
                 placeholder={promptPlaceholder}
+                quotaKey={FEATURE_QUOTA_MAP[feature]}
               />
             </div>
 
@@ -425,6 +440,14 @@ export function StudioLayout({
                 <span className="font-medium capitalize">{selectedLanguage}</span>
               </div>
             </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              Plan usage
+            </p>
+            <QuotaBar quotaKey={FEATURE_QUOTA_MAP[feature]} label={`${featureLabels[feature]} remaining`} type="monthly" />
+            <QuotaBar quotaKey={FEATURE_QUOTA_MAP[feature]} label={`${featureLabels[feature]} today`} type="daily" />
           </div>
 
           <div className="h-px bg-border/40" />

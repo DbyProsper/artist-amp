@@ -13,20 +13,50 @@ async function getAuthHeader(): Promise<Record<string, string>> {
   }
 }
 
+async function createAudioContext(): Promise<AudioContext> {
+  return new (window.AudioContext || (window as any).webkitAudioContext)();
+}
+
 export async function analyzeAudio(file: File): Promise<AudioAnalysis> {
-  const form = new FormData();
-  form.append('file', file);
-  const headers = await getAuthHeader();
-  const res = await fetch(`${BASE}/audio/analyze`, { method: 'POST', headers, body: form });
-  if (!res.ok) throw new Error(`Analyze failed: ${res.status}`);
-  return res.json();
+  const arrayBuffer = await file.arrayBuffer();
+  const ctx = await createAudioContext();
+  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+  const channels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const durationSec = audioBuffer.duration;
+  let peak = 0;
+  let sumSquares = 0;
+  let totalSamples = 0;
+
+  for (let ch = 0; ch < channels; ch++) {
+    const data = audioBuffer.getChannelData(ch);
+    for (let i = 0; i < data.length; i++) {
+      const value = Math.abs(data[i]);
+      peak = Math.max(peak, value);
+      sumSquares += data[i] * data[i];
+      totalSamples += 1;
+    }
+  }
+
+  const rms = totalSamples > 0 ? Math.sqrt(sumSquares / totalSamples) : 0;
+  const lufs = rms > 0 ? 20 * Math.log10(rms) - 0.691 : -Infinity;
+  const peakDb = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+
+  return {
+    lufs: Number.isFinite(lufs) ? Number(lufs.toFixed(2)) : null,
+    peak_db: Number.isFinite(peakDb) ? Number(peakDb.toFixed(2)) : -Infinity,
+    duration_sec: Number(durationSec.toFixed(2)),
+    sample_rate: sampleRate,
+    channels,
+  };
 }
 
 export async function enhanceAudio(
   file: File,
   settings: EnhancementSettings,
-  onProgress?: (pct: number) => void,
-): Promise<Blob> {
+  onProgress?: (pct: number, stage: 'uploading' | 'downloading') => void,
+): Promise<{ blob: Blob; timings: EnhancementTimings }> {
   const headers = await getAuthHeader();
   const form = new FormData();
   form.append('file', file);
@@ -51,18 +81,42 @@ export async function enhanceAudio(
     xhr.open('POST', `${BASE}/audio/enhance`);
     Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
     xhr.responseType = 'blob';
+
+    // Upload progress: 0% → 30%
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 35));
+      if (e.lengthComputable) {
+        onProgress?.(Math.round((e.loaded / e.total) * 30), 'uploading');
+      }
     };
+
+    // Upload complete — backend is now processing (30% → 35% indeterminate)
+    xhr.upload.onload = () => {
+      onProgress?.(33, 'uploading');
+    };
+
+    // Download progress: 35% → 98%
     xhr.onprogress = (e) => {
-      if (e.lengthComputable) onProgress?.(35 + Math.round((e.loaded / e.total) * 60));
+      if (e.lengthComputable && e.total > 0) {
+        const dlPct = Math.round((e.loaded / e.total) * 63);
+        onProgress?.(35 + dlPct, 'downloading');
+      }
     };
+
     xhr.onload = () => {
       if (xhr.status === 403) return reject(new Error('PREMIUM_REQUIRED'));
       if (xhr.status !== 200) return reject(new Error(`Server error ${xhr.status}`));
-      onProgress?.(100);
-      resolve(xhr.response as Blob);
+
+      const timings: EnhancementTimings = {
+        loadTime:    xhr.getResponseHeader('X-Enhance-Load-Time')    ?? null,
+        processTime: xhr.getResponseHeader('X-Enhance-Process-Time') ?? null,
+        encodeTime:  xhr.getResponseHeader('X-Enhance-Encode-Time')  ?? null,
+        totalTime:   xhr.getResponseHeader('X-Enhance-Total-Time')   ?? null,
+      };
+
+      onProgress?.(100, 'downloading');
+      resolve({ blob: xhr.response as Blob, timings });
     };
+
     xhr.onerror = () => reject(new Error('Network error'));
     xhr.send(form);
   });
