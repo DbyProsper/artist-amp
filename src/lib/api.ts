@@ -7,6 +7,7 @@
  */
 
 import { API_BASE, API_TIMEOUTS, DEFAULT_USER_TIER } from '@/config/api';
+import { auth } from '@/lib/firebase';
 
 export interface ApiResponse {
   success: boolean;
@@ -29,6 +30,8 @@ export interface ApiResponse {
   cover_url?: string;
   improved_prompt?: string;
   plan?: string;
+  reply?: string;
+  image_url?: string;
 }
 
 function buildUrl(endpoint: string): string {
@@ -95,6 +98,12 @@ async function callApiRequest(
     }
     headers['Accept'] = 'application/json';
 
+    // Send Firebase identity whenever a user is signed in. Public generation
+    // still works without this header, while signed-in requests use their real
+    // plan and quota instead of being treated as anonymous.
+    const idToken = await auth.currentUser?.getIdToken();
+    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+
     console.log(`[API] ${method} ${endpoint}`, body);
 
     const response = await fetchWithTimeout(
@@ -116,11 +125,20 @@ async function callApiRequest(
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
-      const errorMessage = text || `HTTP ${response.status}`;
+      let errorMessage = text || `HTTP ${response.status}`;
+      try {
+        const parsed = JSON.parse(text);
+        errorMessage = parsed.detail?.message || parsed.detail || parsed.error || parsed.message || errorMessage;
+      } catch {
+        // The backend may return plain text for proxy or infrastructure errors.
+      }
+      if (response.status === 429 || /QUOTA_EXCEEDED/i.test(errorMessage)) {
+        errorMessage = `QUOTA_EXCEEDED: ${errorMessage.replace(/^QUOTA_EXCEEDED:\s*/i, '')}`;
+      }
       console.error(`[API] Error response:`, errorMessage);
       return {
         success: false,
-        error: `API error: ${errorMessage}`,
+        error: errorMessage,
       };
     }
 
@@ -220,6 +238,8 @@ export async function generateMusic(
     language?: string;
     bpm?: number;
     user_tier?: 'free' | 'premium';
+    generation_mode?: 'clip' | 'full';
+    music_model?: 'lyria-3-clip' | 'lyria-3-pro';
   }
 ): Promise<ApiResponse> {
   if (!prompt?.trim()) {
@@ -236,6 +256,8 @@ export async function generateMusic(
       language: options?.language || 'en',
       bpm: options?.bpm || 128,
       user_tier: options?.user_tier || DEFAULT_USER_TIER,
+      generation_mode: options?.generation_mode || 'clip',
+      music_model: options?.music_model || (options?.generation_mode === 'full' ? 'lyria-3-pro' : 'lyria-3-clip'),
     },
     API_TIMEOUTS.music // 120 second timeout for music generation
   );
@@ -254,6 +276,8 @@ export async function generateSong(
     language?: string;
     bpm?: number;
     user_tier?: 'free' | 'premium';
+    generation_mode?: 'clip' | 'full';
+    music_model?: 'lyria-3-clip' | 'lyria-3-pro';
   }
 ): Promise<ApiResponse> {
   if (!prompt?.trim()) {
@@ -270,6 +294,8 @@ export async function generateSong(
       language: options?.language || 'en',
       bpm: options?.bpm || 128,
       user_tier: options?.user_tier || DEFAULT_USER_TIER,
+      generation_mode: options?.generation_mode || 'clip',
+      music_model: options?.music_model || (options?.generation_mode === 'full' ? 'lyria-3-pro' : 'lyria-3-clip'),
     },
     API_TIMEOUTS.song // 300 second timeout for complete song
   );
@@ -301,7 +327,7 @@ export async function generateLyrics(
       genre: options?.genre || 'pop',
       language: options?.language || 'en',
     },
-    API_TIMEOUTS.default // 30 second timeout
+    API_TIMEOUTS.lyrics
   );
 }
 
@@ -350,6 +376,8 @@ export async function generateImage(
     genre?: string;
     user_tier?: 'free' | 'premium';
     language?: string;
+    model?: 'gemini-3.1-flash-image' | 'gemini-3-pro-image';
+    text?: string;
   }
 ): Promise<ApiResponse> {
   if (!prompt?.trim()) {
@@ -365,8 +393,10 @@ export async function generateImage(
       genre: options?.genre,
       user_tier: options?.user_tier || DEFAULT_USER_TIER,
       language: options?.language || 'en',
+      model: options?.model || 'gemini-3.1-flash-image',
+      text: options?.text,
     },
-    API_TIMEOUTS.default // 30 second timeout
+    API_TIMEOUTS.image
   );
 }
 
@@ -442,7 +472,7 @@ export async function chatWithAI(
     '/chat',
     'POST',
     payload,
-    API_TIMEOUTS.default // 30 second timeout
+    API_TIMEOUTS.chat
   );
 
   // Normalize the response to include 'message' field

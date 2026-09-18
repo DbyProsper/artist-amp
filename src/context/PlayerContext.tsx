@@ -10,6 +10,8 @@ interface PlayerContextType {
   isExpanded: boolean;
   isMiniPlayerVisible: boolean;
   progress: number;
+  currentTime: number;
+  duration: number;
   volume: number;
   isShuffled: boolean;
   repeatMode: 'off' | 'all' | 'one';
@@ -29,6 +31,7 @@ interface PlayerContextType {
   setQueue: (tracks: Track[]) => void;
   closeMiniPlayer: () => void;
   openMiniPlayer: () => void;
+  openInMainPlayer: (track: Track, queueSource?: Track[]) => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -40,6 +43,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMiniPlayerVisible, setIsMiniPlayerVisible] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(80);
   const [isShuffled, setIsShuffled] = useState(false);
   const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
@@ -67,6 +72,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setIsExpanded(false);
         setIsMiniPlayerVisible(true);
         setProgress(0);
+        setCurrentTime(0);
+        setDuration(0);
       }
     });
 
@@ -91,6 +98,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const audio = audioRef.current;
     audio.src = currentTrack.audioUrl;
     audio.volume = volume / 100;
+    audio.onloadedmetadata = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : currentTrack.duration || 0);
+    audio.ontimeupdate = () => {
+      const nextTime = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      setCurrentTime(nextTime);
+      if (audio.duration) setProgress((nextTime / audio.duration) * 100);
+    };
 
     if (isPlaying) {
       audio.play().catch(console.error);
@@ -117,12 +130,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!audioRef.current) return;
     if (isPlaying) {
       audioRef.current.play().catch(console.error);
-      // Update progress
-      progressIntervalRef.current = window.setInterval(() => {
-        if (audioRef.current && audioRef.current.duration) {
-          setProgress((audioRef.current.currentTime / audioRef.current.duration) * 100);
-        }
-      }, 250);
     } else {
       audioRef.current.pause();
       if (progressIntervalRef.current) {
@@ -157,6 +164,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentTrack(track);
     setIsPlaying(true);
     setProgress(0);
+    setCurrentTime(0);
     setIsMiniPlayerVisible(true);
 
     setQueue((prevQueue) => {
@@ -178,6 +186,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setIsMiniPlayerVisible(true);
   };
 
+  const openInMainPlayer = (track: Track, queueSource?: Track[]) => {
+    playTrack(track, queueSource);
+    setIsExpanded(true);
+  };
+
   const pauseTrack = () => {
     setIsPlaying(false);
   };
@@ -196,6 +209,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (audioRef.current && audioRef.current.currentTime > 3) {
       audioRef.current.currentTime = 0;
       setProgress(0);
+      setCurrentTime(0);
       return;
     }
     const currentIndex = queue.findIndex((t) => t.id === currentTrack.id);
@@ -207,6 +221,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setProgress(newProgress);
     if (audioRef.current && audioRef.current.duration) {
       audioRef.current.currentTime = (newProgress / 100) * audioRef.current.duration;
+      setCurrentTime(audioRef.current.currentTime);
     }
   };
 
@@ -240,6 +255,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         isExpanded,
         isMiniPlayerVisible,
         progress,
+        currentTime,
+        duration,
         volume,
         isShuffled,
         repeatMode,
@@ -259,6 +276,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setQueue,
         closeMiniPlayer,
         openMiniPlayer,
+        openInMainPlayer,
       }}
     >
       {children}

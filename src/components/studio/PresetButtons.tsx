@@ -17,6 +17,12 @@ interface MusicPreset {
 
 const MUSIC_PRESETS: MusicPreset[] = [
   {
+    id: 'afrosoul-live', name: 'Afrosoul (Live)', genre: 'afrosoul', bpm: 92, mood: 'soulful',
+    prompt: 'Rich South African Afrosoul with expressive lead vocals, live bass and guitar, warm keys, deep drums and polished vocal harmonies',
+    icon: <Heart className="w-4 h-4" />, description: 'Warm live soul from South Africa',
+    color: 'from-orange-500/20 to-rose-500/20 border-orange-500/30',
+  },
+  {
     id: 'amapiano-soulful',
     name: 'Amapiano (Soulful)',
     genre: 'amapiano',
@@ -104,6 +110,14 @@ const MUSIC_PRESETS: MusicPreset[] = [
     description: 'Classic hip-hop vibes',
     color: 'from-gray-500/20 to-slate-500/20 border-gray-500/30',
   },
+];
+
+const SONG_PRESETS: MusicPreset[] = [
+  { id: 'song-afrosoul', name: 'Afrosoul Live Song', genre: 'afrosoul', bpm: 92, mood: 'soulful', prompt: 'A complete South African Afrosoul song with intimate verses, a soaring bilingual chorus, expressive live guitar, warm keys, deep bass and strong live drums', icon: <Heart className="w-4 h-4" />, description: 'Organic soul and vocal warmth', color: 'from-orange-500/20 to-rose-500/20 border-orange-500/30' },
+  { id: 'song-amapiano-vocal', name: 'Amapiano Vocal Single', genre: 'amapiano', bpm: 112, mood: 'soulful', prompt: 'A complete soulful amapiano song with a memorable vocal hook, verse and chorus structure, warm piano harmony, log drum bass and a polished radio ending', icon: <Mic2 className="w-4 h-4" />, description: 'Verse, chorus and vocal hook', color: 'from-fuchsia-500/20 to-rose-500/20 border-fuchsia-500/30' },
+  { id: 'song-afrobeats-pop', name: 'Afrobeats Pop Song', genre: 'afrobeats', bpm: 104, mood: 'uplifting', prompt: 'A complete afrobeats pop song with expressive lead vocals, call-and-response backing vocals, layered percussion, bright guitar and a strong chorus', icon: <Mic2 className="w-4 h-4" />, description: 'Bright radio-ready song', color: 'from-emerald-500/20 to-yellow-500/20 border-emerald-500/30' },
+  { id: 'song-rnb-ballad', name: 'Contemporary R&B Song', genre: 'rnb', bpm: 76, mood: 'romantic', prompt: 'A complete contemporary R&B song with intimate lead vocals, emotional verses, a soaring chorus, rich seventh chords and a restrained modern beat', icon: <Heart className="w-4 h-4" />, description: 'Emotional vocal arrangement', color: 'from-purple-500/20 to-pink-500/20 border-purple-500/30' },
+  { id: 'song-hiphop-anthem', name: 'Hip-Hop Anthem', genre: 'hiphop', bpm: 96, mood: 'confident', prompt: 'A complete hip-hop anthem with two focused verses, a chantable hook, punchy boom-bap drums, warm bass and a cinematic final chorus', icon: <Zap className="w-4 h-4" />, description: 'Verses and anthem hook', color: 'from-orange-500/20 to-red-500/20 border-orange-500/30' },
 ];
 
 const LYRICS_PRESETS: MusicPreset[] = [
@@ -479,6 +493,8 @@ interface PresetButtonsProps {
 export function PresetButtons({ feature, onPresetSelect, disabled = false }: PresetButtonsProps) {
   const getPresets = () => {
     switch (feature) {
+      case 'song':
+        return SONG_PRESETS;
       case 'lyrics':
         return LYRICS_PRESETS;
       case 'cover':

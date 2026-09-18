@@ -186,7 +186,7 @@ export default function SettingsPage() {
         >
           <div className="w-16 h-16 rounded-full overflow-hidden gradient-border">
             <img
-              src={profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'}
+              src={profile?.avatar_url || '/placeholder.svg'}
               alt={profile?.name || 'User'}
               className="w-full h-full object-cover"
             />

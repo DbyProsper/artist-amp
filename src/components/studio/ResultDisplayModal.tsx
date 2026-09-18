@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Download, Play, Copy, RefreshCw, Edit2 } from 'lucide-react';
+import { X, Download, Play, Copy, RefreshCw, Edit2, Send, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -13,6 +13,8 @@ interface ResultDisplayModalProps {
   onReuse?: (prompt: string) => void;
   onPlay?: (audioUrl: string) => void;
   onEditImage?: (imageUrl: string) => void;
+  onCreatePost?: () => void;
+  onSendToDaw?: () => void;
   title?: string;
 }
 
@@ -26,6 +28,8 @@ export function ResultDisplayModal({
   onReuse,
   onPlay,
   onEditImage,
+  onCreatePost,
+  onSendToDaw,
   title = 'Generated Content',
 }: ResultDisplayModalProps) {
   if (!isOpen) return null;
@@ -189,6 +193,8 @@ export function ResultDisplayModal({
 
             {/* Footer Actions */}
             <div className="flex-shrink-0 p-6 border-t border-border/40 bg-muted/30 flex gap-3 flex-wrap">
+              {onCreatePost && <Button onClick={onCreatePost} className="gap-2 flex-1 min-w-max"><Send className="w-4 h-4" />Start a new post</Button>}
+              {audioUrl && onSendToDaw && <Button variant="secondary" onClick={onSendToDaw} className="gap-2 flex-1 min-w-max"><SlidersHorizontal className="w-4 h-4" />Send to DAW</Button>}
               {prompt && onReuse && (
                 <Button
                   variant="outline"

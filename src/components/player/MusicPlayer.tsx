@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Play, Pause, SkipBack, SkipForward, 
@@ -15,6 +15,17 @@ function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function buildTimedLyrics(lyrics: string, duration: number) {
+  const lines = lyrics.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const parsed = lines.map(line => {
+    const match = line.match(/^\[(\d{1,2}):(\d{2}(?:\.\d+)?)\]\s*(.*)$/);
+    return match ? { text: match[3], startTime: Number(match[1]) * 60 + Number(match[2]), endTime: 0 } : null;
+  });
+  if (parsed.every(Boolean)) return parsed.map((line, index) => ({ ...line!, endTime: parsed[index + 1]?.startTime ?? duration }));
+  const slot = Math.max(2, (duration || lines.length * 4) / Math.max(lines.length, 1));
+  return lines.map((text, index) => ({ text, startTime: index * slot, endTime: (index + 1) * slot }));
 }
 
 // Extract dominant color from image (simplified - returns theme color)
@@ -85,7 +96,8 @@ export function MiniPlayer() {
             className="p-2 rounded-full hover:bg-muted transition-colors"
             onClick={(e) => {
               e.stopPropagation();
-              isPlaying ? pauseTrack() : resumeTrack();
+              if (isPlaying) pauseTrack();
+              else resumeTrack();
             }}
           >
             <AnimatePresence mode="wait">
@@ -135,6 +147,8 @@ export function FullPlayer() {
     isShuffled,
     repeatMode,
     showLyrics,
+    currentTime,
+    duration,
     pauseTrack,
     resumeTrack,
     nextTrack,
@@ -148,10 +162,22 @@ export function FullPlayer() {
   } = usePlayer();
   const [showSettings, setShowSettings] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const lyricContainerRef = useRef<HTMLDivElement>(null);
+
+  const timedLyrics = useMemo(() => currentTrack?.timestampedLyrics?.length
+    ? currentTrack.timestampedLyrics
+    : buildTimedLyrics(currentTrack?.lyrics || '', duration || currentTrack?.duration || 0), [currentTrack, duration]);
+  // Lyrics advance a little ahead of raw playback to feel responsive during
+  // karaoke. Timestamp markers are parsed for timing but never rendered.
+  const lyricClock = currentTime * 1.06;
+  const activeLyricIndex = timedLyrics.findIndex(line => lyricClock >= line.startTime && lyricClock < line.endTime);
+
+  useEffect(() => {
+    if (activeLyricIndex < 0) return;
+    lyricContainerRef.current?.querySelector(`[data-lyric-index="${activeLyricIndex}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [activeLyricIndex]);
 
   if (!currentTrack) return null;
-
-  const currentTime = (progress / 100) * currentTrack.duration;
 
   return (
     <AnimatePresence>
@@ -210,13 +236,18 @@ export function FullPlayer() {
           <div className="flex-1 flex items-center justify-center px-8">
             {showLyrics && currentTrack?.lyrics ? (
               <motion.div
+                ref={lyricContainerRef}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 className="w-full max-w-sm aspect-square bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center p-6 overflow-y-auto"
               >
-                <p className="text-sm text-center text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                  {currentTrack.lyrics}
-                </p>
+                <div className="w-full space-y-4 py-24 text-center" aria-label="Synchronized lyrics">
+                  {timedLyrics.map((line, index) => (
+                    <p key={`${line.startTime}-${index}`} data-lyric-index={index} className={cn('transition-all duration-300', index === activeLyricIndex ? 'scale-105 text-lg font-bold text-foreground' : 'text-sm text-muted-foreground/60')}>
+                      {line.text}
+                    </p>
+                  ))}
+                </div>
               </motion.div>
             ) : (
               <motion.div
@@ -277,7 +308,7 @@ export function FullPlayer() {
             />
             <div className="flex justify-between mt-2 text-xs text-muted-foreground">
               <span>{formatTime(currentTime)}</span>
-              <span>{formatTime(currentTrack.duration)}</span>
+              <span>{formatTime(duration || currentTrack.duration)}</span>
             </div>
           </div>
 

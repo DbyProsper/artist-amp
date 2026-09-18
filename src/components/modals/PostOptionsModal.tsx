@@ -1,17 +1,24 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Share2, Link2, Flag, UserMinus, Bookmark, Download, ExternalLink } from 'lucide-react';
+import { X, Share2, Link2, Flag, UserMinus, Bookmark } from 'lucide-react';
 import { toast } from 'sonner';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { useAuth } from '@/context/FirebaseAuthContext';
 
 interface PostOptionsModalProps {
   isOpen: boolean;
   onClose: () => void;
   isOwner?: boolean;
   onDelete?: () => void;
+  postId?: string;
 }
 
-export function PostOptionsModal({ isOpen, onClose, isOwner, onDelete }: PostOptionsModalProps) {
-  const handleShare = () => {
-    toast.success('Share link copied to clipboard!');
+export function PostOptionsModal({ isOpen, onClose, isOwner, onDelete, postId }: PostOptionsModalProps) {
+  const { user, profile } = useAuth();
+  const handleShare = async () => {
+    const url = `${window.location.origin}/?post=${postId || ''}`;
+    if (navigator.share) await navigator.share({ title: 'MusicInsta post', url }).catch(() => undefined);
+    else { await navigator.clipboard.writeText(url); toast.success('Link copied.'); }
     onClose();
   };
 
@@ -21,18 +28,14 @@ export function PostOptionsModal({ isOpen, onClose, isOwner, onDelete }: PostOpt
     onClose();
   };
 
-  const handleReport = () => {
-    toast.success('Post reported. We\'ll review it shortly.');
-    onClose();
+  const handleReport = async () => {
+    if (!user || !postId) { toast.error('Sign in to report this post.'); return; }
+    await addDoc(collection(db, 'reports'), { type: 'post', target_id: postId, reporter_id: profile?.id || user.uid, status: 'open', reason: 'Reported from post options', created_at: serverTimestamp() });
+    toast.success('Post reported. Administrators have been notified.'); onClose();
   };
 
   const handleSave = () => {
     toast.success('Post saved to your collection!');
-    onClose();
-  };
-
-  const handleDownload = () => {
-    toast.success('Download started...');
     onClose();
   };
 
@@ -45,7 +48,6 @@ export function PostOptionsModal({ isOpen, onClose, isOwner, onDelete }: PostOpt
     { icon: Share2, label: 'Share', onClick: handleShare },
     { icon: Link2, label: 'Copy Link', onClick: handleCopyLink },
     { icon: Bookmark, label: 'Save', onClick: handleSave },
-    { icon: Download, label: 'Download', onClick: handleDownload },
     ...(isOwner ? [
       { icon: X, label: 'Delete Post', onClick: onDelete, destructive: true },
     ] : [

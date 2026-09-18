@@ -85,23 +85,20 @@ export default function SearchPage() {
         setProfiles(profilesData);
 
         // Search tracks
-        const tracksQuery = query(
-          collection(db, 'tracks'),
-          where('is_public', '==', true),
-          limit(10)
-        );
+        const tracksQuery = query(collection(db, 'tracks'));
         const tracksSnapshot = await getDocs(tracksQuery);
         const tracksData: any[] = [];
         tracksSnapshot.forEach((doc) => {
           const data = doc.data();
-          if (data.title && data.title.toLowerCase().includes(searchQuery.toLowerCase())) {
+          const searchable = [data.title, data.artist, data.credits?.primaryArtist, ...(data.credits?.featuredArtists || [])].filter(Boolean).join(' ').toLowerCase();
+          if (searchable.includes(searchQuery.toLowerCase())) {
             tracksData.push({ id: doc.id, ...data });
           }
         });
 
         // Get profile data for tracks
         const transformed: Track[] = [];
-        for (const track of tracksData.slice(0, 10)) {
+        for (const track of tracksData) {
           let profileData = null;
           try {
             const profileDoc = await getDoc(doc(db, 'profiles', track.profile_id));
@@ -113,7 +110,7 @@ export default function SearchPage() {
           transformed.push({
             id: track.id,
             title: track.title,
-            coverArt: track.cover_url || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400',
+            coverArt: track.cover_url || '/placeholder.svg',
             duration: track.duration || 0,
             plays: track.plays || 0,
             likes: track.likes || 0,
@@ -355,7 +352,7 @@ function ProfileRow({ profile, onClick }: { profile: { id: string; name: string 
       className="w-full flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors text-left"
     >
       <img
-        src={profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'}
+        src={profile.avatar_url || '/placeholder.svg'}
         alt={profile.name || 'User'}
         className="w-12 h-12 rounded-full object-cover"
       />

@@ -20,7 +20,7 @@ import { Playlist, Track, Artist } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, orderBy, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
@@ -50,15 +50,18 @@ export default function PlaylistsPage() {
     try {
       const playlistsQuery = query(
         collection(db, 'playlists'),
-        where('creator_id', '==', profile.id),
-        orderBy('created_at', 'desc')
+        where('creator_id', '==', profile.id)
       );
       const playlistsSnapshot = await getDocs(playlistsQuery);
       const playlistsData = playlistsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      setPlaylists(playlistsData);
+      setPlaylists(playlistsData.sort((a: any, b: any) => {
+        const aTime = a.created_at?.toMillis?.() || a.created_at?.getTime?.() || 0;
+        const bTime = b.created_at?.toMillis?.() || b.created_at?.getTime?.() || 0;
+        return bTime - aTime;
+      }));
     } catch (error) {
       console.error('Error fetching playlists:', error);
       toast.error('Failed to load playlists');
@@ -77,7 +80,7 @@ export default function PlaylistsPage() {
     try {
       let coverUrl = null;
       if (editImageFile) {
-        const fileName = `playlists/${user.uid}/${Date.now()}.${editImageFile.name.split('.').pop()}`;
+        const fileName = `playlists/${profile.id}/${Date.now()}.${editImageFile.name.split('.').pop()}`;
         const storageRef = ref(storage, fileName);
         await uploadBytes(storageRef, editImageFile);
         coverUrl = await getDownloadURL(storageRef);
@@ -209,7 +212,7 @@ export default function PlaylistsPage() {
             <button onClick={() => navigate(-1)} className="p-2 rounded-full hover:bg-muted transition-colors">
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h1 className="font-display font-bold text-xl">Playlists</h1>
+            <h1 className="font-display font-bold text-xl">Your Library</h1>
           </div>
           <Button size="sm" onClick={() => setShowCreate(true)}>
             <Plus className="w-4 h-4 mr-2" />
@@ -256,16 +259,16 @@ export default function PlaylistsPage() {
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="p-2 rounded-full hover:bg-muted transition-colors">
+                  <button onClick={(event) => event.stopPropagation()} className="p-2 rounded-full hover:bg-muted transition-colors">
                     <MoreHorizontal className="w-5 h-5" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => handleEditPlaylist(playlist)}>
+                  <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleEditPlaylist(playlist); }}>
                     <Edit2 className="w-4 h-4 mr-2" />
                     Edit
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleDelete(playlist.id)} className="text-destructive focus:text-destructive">
+                  <DropdownMenuItem onClick={(event) => { event.stopPropagation(); handleDelete(playlist.id); }} className="text-destructive focus:text-destructive">
                     <Trash2 className="w-4 h-4 mr-2" />
                     Delete
                   </DropdownMenuItem>

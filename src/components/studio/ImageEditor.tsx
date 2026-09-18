@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Type,
   Image as ImageIcon,
   Smile,
   Copy,
@@ -14,7 +13,6 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { toast } from 'sonner';
 import {
@@ -51,15 +49,6 @@ export function ImageEditor({
     canvasHeight: 600,
   });
 
-  const [textInput, setTextInput] = useState('');
-  const [selectedTextStyle, setSelectedTextStyle] = useState<TextStyle>({
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    opacity: 1,
-    fontFamily: 'Inter',
-  });
-
   const [emojiPickerActive, setEmojiPickerActive] = useState(false);
   const [imageUploadActive, setImageUploadActive] = useState(false);
 
@@ -75,35 +64,6 @@ export function ImageEditor({
     };
     img.src = baseImageUrl;
   }, [baseImageUrl]);
-
-  // Add text overlay
-  const handleAddText = () => {
-    if (!textInput.trim()) {
-      toast.error('Enter text first');
-      return;
-    }
-
-    const newText: TextOverlay = {
-      type: 'text',
-      id: `text-${Date.now()}`,
-      content: textInput,
-      x: 50,
-      y: 50,
-      scale: 1,
-      rotation: 0,
-      style: selectedTextStyle,
-      animation: 'none',
-    };
-
-    setState((prev) => ({
-      ...prev,
-      overlays: [...prev.overlays, newText],
-      selectedOverlayId: newText.id,
-    }));
-
-    setTextInput('');
-    toast.success('✏️ Text added');
-  };
 
   // Add emoji overlay
   const handleAddEmoji = (emoji: string) => {
@@ -188,14 +148,6 @@ export function ImageEditor({
   };
 
   // Update text style
-  const handleUpdateTextStyle = (overlay: TextOverlay, updates: Partial<TextStyle>) => {
-    const updated: TextOverlay = {
-      ...overlay,
-      style: { ...overlay.style, ...updates },
-    };
-    handleUpdateOverlay(overlay.id, updated);
-  };
-
   // Duplicate overlay
   const handleDuplicate = (id: string) => {
     const overlay = state.overlays.find((o) => o.id === id);
@@ -273,19 +225,6 @@ export function ImageEditor({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => {
-                if (textInput.trim()) handleAddText();
-              }}
-              disabled={!textInput.trim()}
-              className="gap-2"
-            >
-              <Type className="w-4 h-4" />
-              Add Text
-            </Button>
-
-            <Button
-              size="sm"
-              variant="outline"
               onClick={() => setEmojiPickerActive(!emojiPickerActive)}
               className="gap-2"
             >
@@ -344,19 +283,6 @@ export function ImageEditor({
             </div>
           </div>
 
-          {/* Text Input */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Text</label>
-            <div className="flex gap-2">
-              <Input
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="Enter text to add"
-                onKeyPress={(e) => e.key === 'Enter' && handleAddText()}
-              />
-            </div>
-          </div>
-
           {/* Emoji Picker */}
           {emojiPickerActive && (
             <EmojiPickerGrid onSelectEmoji={handleAddEmoji} />
@@ -372,16 +298,6 @@ export function ImageEditor({
                 className="w-full"
               />
             </div>
-          )}
-
-          {/* Text Formatting (Show when text overlay selected) */}
-          {selectedOverlay?.type === 'text' && (
-            <TextFormatPanel
-              overlay={selectedOverlay as TextOverlay}
-              onUpdateStyle={(updates) =>
-                handleUpdateTextStyle(selectedOverlay as TextOverlay, updates)
-              }
-            />
           )}
 
           {/* Overlay Transform Controls (Show when overlay selected) */}

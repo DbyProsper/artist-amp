@@ -19,7 +19,6 @@ import ProfilePage from "./pages/ProfilePage";
 import UserProfilePage from "./pages/UserProfilePage";
 import PlaylistsPage from "./pages/PlaylistsPage";
 import PlaylistDetailPage from "./pages/PlaylistDetailPage";
-import LibraryPage from "./pages/LibraryPage";
 import SettingsPage from "./pages/SettingsPage";
 import EditProfilePage from "./pages/EditProfilePage";
 import PreferencesPage from "./pages/PreferencesPage";
@@ -29,6 +28,8 @@ import AdminPage from "./pages/AdminPage";
 import AnalyticsDashboardPage from "./pages/AnalyticsDashboardPage";
 import OnlineStudioPage from "./pages/OnlineStudioPage";
 import StudioPage from "./pages/StudioPage";
+import StudioDawPage from "./pages/StudioDawPage";
+import AudioEnhancementPage from "./features/audio-enhancement/AudioEnhancementPage";
 import BillingPage from "./pages/BillingPage";
 import BillingSuccessPage from "./pages/BillingSuccessPage";
 import NotFound from "./pages/NotFound";
@@ -70,7 +71,7 @@ const AppRoutes = () => {
   const location = useLocation();
   
   // Hide bottom nav on studio page
-  const showBottomNav = location.pathname !== '/studio';
+  const showBottomNav = !location.pathname.startsWith('/studio');
 
   return (
     <div className="min-h-screen bg-background">
@@ -89,9 +90,9 @@ const AppRoutes = () => {
         <Route path="/messages" element={<MessagesPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/user/:userId" element={<UserProfilePage />} />
-        <Route path="/playlists" element={<PlaylistsPage />} />
+        <Route path="/playlists" element={<Navigate to="/library" replace />} />
         <Route path="/playlists/:id" element={<PlaylistDetailPage />} />
-        <Route path="/library" element={<LibraryPage />} />
+        <Route path="/library" element={<PlaylistsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/edit-profile" element={<EditProfilePage />} />
         <Route path="/settings/preferences" element={<PreferencesPage />} />
@@ -102,6 +103,8 @@ const AppRoutes = () => {
         <Route path="/billing" element={<BillingPage />} />
         <Route path="/billing/success" element={<BillingSuccessPage />} />
         <Route path="/studio" element={<StudioPage />} />
+        <Route path="/studio/daw" element={<StudioDawPage />} />
+        <Route path="/studio/enhance" element={<AudioEnhancementPage />} />
         <Route path="/studio-legacy" element={<OnlineStudioPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

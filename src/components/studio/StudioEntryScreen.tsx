@@ -1,9 +1,9 @@
 import { motion } from 'framer-motion';
-import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, Megaphone, ArrowLeft, Zap } from 'lucide-react';
+import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, Megaphone, ArrowLeft, Zap, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 
-export type StudioFeature = 'beat' | 'lyrics' | 'song' | 'cover' | 'poster' | 'merch' | 'chat' | 'enhance';
+export type StudioFeature = 'beat' | 'lyrics' | 'song' | 'cover' | 'poster' | 'merch' | 'chat' | 'enhance' | 'daw';
 
 interface StudioEntryScreenProps {
   onFeatureSelect: (feature: StudioFeature) => void;
@@ -16,6 +16,13 @@ const features: Array<{
   description: string;
   badge?: string;
 }> = [
+  {
+    id: 'daw',
+    icon: <SlidersHorizontal className="w-8 h-8" />,
+    label: 'Music Studio DAW',
+    description: 'Record, arrange, mix, master and export tracks',
+    badge: 'New',
+  },
   {
     id: 'beat',
     icon: <Music className="w-8 h-8" />,
@@ -33,7 +40,6 @@ const features: Array<{
     icon: <AudioWaveform className="w-8 h-8" />,
     label: 'Full Song',
     description: 'Create complete tracks',
-    badge: 'Premium',
   },
   {
     id: 'cover',
@@ -85,7 +91,7 @@ export function StudioEntryScreen({ onFeatureSelect }: StudioEntryScreenProps) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/profile')}
           className="flex items-center gap-2 text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -99,6 +105,7 @@ export function StudioEntryScreen({ onFeatureSelect }: StudioEntryScreenProps) {
         transition={{ delay: 0.1 }}
         className="text-center mb-16 max-w-2xl"
       >
+        <img src="/MusicInsta_Logo.png" alt="MusicInsta" className="mx-auto mb-5 h-20 w-20 rounded-full object-cover shadow-lg" />
         <h1 className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent mb-4">
           What do you want to create?
         </h1>

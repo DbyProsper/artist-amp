@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Play, Plus, Search, MoreHorizontal, Clock, Music } from 'lucide-react';
+import { ArrowLeft, Play, Plus, Search, MoreHorizontal, Clock, Music, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { collection, query, where, getDocs, doc, getDoc, addDoc, deleteDoc, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, addDoc, deleteDoc, limit, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
+import { usePlayer } from '@/context/PlayerContext';
+import type { Track as PlayerTrack } from '@/types';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 interface Playlist {
   id: string;
@@ -45,7 +48,8 @@ interface PlaylistTrack {
 export default function PlaylistDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const { openInMainPlayer } = usePlayer();
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [tracks, setTracks] = useState<PlaylistTrack[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,8 +95,16 @@ export default function PlaylistDetailPage() {
         where('playlist_id', '==', id)
       );
       const tracksSnapshot = await getDocs(tracksQuery);
+      const playlistSnapshot = await getDoc(doc(db, 'playlists', id));
+      const embeddedIds = (playlistSnapshot.data()?.tracks || []) as string[];
+      const existingIds = new Set(tracksSnapshot.docs.map(item => item.data().track_id));
+      const embeddedDocs = await Promise.all(embeddedIds.filter(trackId => !existingIds.has(trackId)).map(async trackId => ({
+        id: `embedded-${trackId}`,
+        data: () => ({ playlist_id: id, track_id: trackId, added_at: playlistSnapshot.data()?.updated_at }),
+      })));
+      const membershipDocs = [...tracksSnapshot.docs, ...embeddedDocs];
 
-      const trackPromises = tracksSnapshot.docs.map(async (trackDoc) => {
+      const trackPromises = membershipDocs.map(async (trackDoc) => {
         const trackData = trackDoc.data();
         const trackDocRef = await getDoc(doc(db, 'tracks', trackData.track_id));
 
@@ -137,12 +149,7 @@ export default function PlaylistDetailPage() {
 
     setSearchLoading(true);
     try {
-      const tracksQuery = query(
-        collection(db, 'tracks'),
-        where('title', '>=', query),
-        where('title', '<=', query + '\uf8ff'),
-        limit(20)
-      );
+      const tracksQuery = query(collection(db, 'tracks'), limit(200));
 
       const tracksSnapshot = await getDocs(tracksQuery);
       const tracksData = tracksSnapshot.docs
@@ -151,7 +158,9 @@ export default function PlaylistDetailPage() {
           ...doc.data(),
           created_at: doc.data().created_at?.toDate() || new Date(),
         } as Track))
-        .filter(track => !tracks.some(pt => pt.track_id === track.id)); // Exclude already added tracks
+        .filter(track => `${track.title || ''} ${track.artist || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+        .filter(track => !tracks.some(pt => pt.track_id === track.id))
+        .slice(0, 30);
 
       setAvailableTracks(tracksData);
     } catch (error) {
@@ -170,6 +179,7 @@ export default function PlaylistDetailPage() {
         track_id: trackId,
         added_at: new Date(),
       });
+      await updateDoc(doc(db, 'playlists', id), { tracks: arrayUnion(trackId), updated_at: new Date() });
 
       toast.success('Track added to playlist');
       fetchTracks(); // Refresh tracks
@@ -184,7 +194,9 @@ export default function PlaylistDetailPage() {
 
   const removeTrackFromPlaylist = async (playlistTrackId: string) => {
     try {
-      await deleteDoc(doc(db, 'playlist_tracks', playlistTrackId));
+      const membership = tracks.find(item => item.id === playlistTrackId);
+      if (!playlistTrackId.startsWith('embedded-')) await deleteDoc(doc(db, 'playlist_tracks', playlistTrackId));
+      if (id && membership) await updateDoc(doc(db, 'playlists', id), { tracks: arrayRemove(membership.track_id), updated_at: new Date() });
       toast.success('Track removed from playlist');
       fetchTracks(); // Refresh tracks
     } catch (error) {
@@ -193,10 +205,25 @@ export default function PlaylistDetailPage() {
     }
   };
 
+  const playPlaylistTrack = (selected: Track) => {
+    const queue = tracks.filter(item => Boolean(item.track.audio_url)).map(item => ({
+      id: item.track.id,
+      title: item.track.title,
+      artist: { id: item.track.user_id, name: item.track.artist, username: item.track.artist, avatar: '', coverImage: '', bio: '', location: '', genres: [], isVerified: false, followers: 0, following: 0, tracks: 0 },
+      coverArt: item.track.cover_url || '/placeholder.svg',
+      duration: item.track.duration || 0,
+      plays: item.track.plays || 0,
+      likes: item.track.likes || 0,
+      audioUrl: item.track.audio_url || undefined,
+    } satisfies PlayerTrack));
+    const target = queue.find(item => item.id === selected.id);
+    if (target) openInMainPlayer(target, queue);
+  };
+
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return '0:00';
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
@@ -213,7 +240,7 @@ export default function PlaylistDetailPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Playlist not found</h1>
-          <Button onClick={() => navigate('/playlists')}>Back to Playlists</Button>
+          <Button onClick={() => navigate('/library')}>Back to Library</Button>
         </div>
       </div>
     );
@@ -222,26 +249,27 @@ export default function PlaylistDetailPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border">
-        <div className="flex items-center gap-4 p-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/playlists')}>
+      <div className="relative overflow-hidden border-b border-border bg-gradient-to-br from-primary/35 via-background to-accent/20">
+        {playlist.cover_url && <img src={playlist.cover_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-20 blur-2xl" />}
+        <div className="relative flex items-end gap-5 p-6 sm:p-10">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/library')}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="flex items-center gap-4 flex-1">
             <img
-              src={playlist.cover_url || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=100&h=100&fit=crop'}
+              src={playlist.cover_url || '/placeholder.svg'}
               alt={playlist.name}
-              className="w-16 h-16 rounded-lg object-cover"
+              className="h-32 w-32 rounded-xl object-cover shadow-2xl sm:h-48 sm:w-48"
             />
             <div>
-              <h1 className="text-xl font-bold">{playlist.name}</h1>
+              <h1 className="text-3xl font-bold sm:text-5xl">{playlist.name}</h1>
               <p className="text-sm text-muted-foreground">
                 {tracks.length} {tracks.length === 1 ? 'track' : 'tracks'}
                 {playlist.description && ` • ${playlist.description}`}
               </p>
             </div>
           </div>
-          {playlist.creator_id === user?.uid && (
+          {playlist.creator_id === (profile?.id || user?.uid) && (
             <Button onClick={() => setShowAddTracks(true)} size="sm">
               <Plus className="w-4 h-4 mr-2" />
               Add Tracks
@@ -257,12 +285,12 @@ export default function PlaylistDetailPage() {
             <Music className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="text-lg font-semibold mb-2">No tracks yet</h3>
             <p className="text-muted-foreground mb-4">
-              {playlist.creator_id === user?.uid
+              {playlist.creator_id === (profile?.id || user?.uid)
                 ? 'Add some tracks to get started'
                 : 'This playlist is empty'
               }
             </p>
-            {playlist.creator_id === user?.uid && (
+            {playlist.creator_id === (profile?.id || user?.uid) && (
               <Button onClick={() => setShowAddTracks(true)}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Tracks
@@ -277,13 +305,17 @@ export default function PlaylistDetailPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors group"
+                role="button"
+                tabIndex={0}
+                onClick={() => playPlaylistTrack(playlistTrack.track)}
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') playPlaylistTrack(playlistTrack.track); }}
+                className="group flex cursor-pointer items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted/50"
               >
                 <div className="flex items-center justify-center w-8 h-8 rounded bg-muted text-sm font-medium">
                   {index + 1}
                 </div>
                 <img
-                  src={playlistTrack.track.cover_url || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=50&h=50&fit=crop'}
+                  src={playlistTrack.track.cover_url || '/placeholder.svg'}
                   alt={playlistTrack.track.title}
                   className="w-12 h-12 rounded object-cover"
                 />
@@ -295,19 +327,10 @@ export default function PlaylistDetailPage() {
                   <Clock className="w-4 h-4" />
                   {formatDuration(playlistTrack.track.duration)}
                 </div>
-                <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button onClick={event => { event.stopPropagation(); playPlaylistTrack(playlistTrack.track); }} variant="ghost" size="icon" className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                   <Play className="w-4 h-4" />
                 </Button>
-                {playlist.creator_id === user?.uid && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeTrackFromPlaylist(playlistTrack.id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                  >
-                    <MoreHorizontal className="w-4 h-4" />
-                  </Button>
-                )}
+                <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => playPlaylistTrack(playlistTrack.track)}><Play className="mr-2 h-4 w-4" />Play track</DropdownMenuItem>{playlist.creator_id === (profile?.id || user?.uid) && <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => void removeTrackFromPlaylist(playlistTrack.id)}><Trash2 className="mr-2 h-4 w-4" />Remove from playlist</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu>
               </motion.div>
             ))}
           </div>
@@ -349,7 +372,7 @@ export default function PlaylistDetailPage() {
                     <Card key={track.id} className="p-3">
                       <div className="flex items-center gap-3">
                         <img
-                          src={track.cover_url || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=50&h=50&fit=crop'}
+                          src={track.cover_url || '/placeholder.svg'}
                           alt={track.title}
                           className="w-12 h-12 rounded object-cover"
                         />

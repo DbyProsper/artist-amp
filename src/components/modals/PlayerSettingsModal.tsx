@@ -9,6 +9,8 @@ import { Track } from '@/types';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface PlayerSettingsModalProps {
   track: Track;
@@ -106,9 +108,10 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
     {
       icon: Flag,
       label: 'Report',
-      action: () => {
-        toast.success('Thank you for reporting. We will review this.');
-        onClose();
+      action: async () => {
+        if (!user) { toast.error('Sign in to report this track.'); return; }
+        await addDoc(collection(db, 'reports'), { type: 'track', target_id: track.id, reporter_id: user.uid, status: 'open', reason: 'Reported from player options', created_at: serverTimestamp() });
+        toast.success('Thank you for reporting. Administrators have been notified.'); onClose();
       },
       danger: true
     },

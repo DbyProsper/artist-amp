@@ -36,6 +36,20 @@ export interface Track {
     startTime: number;
     endTime: number;
   }>;
+  credits?: MusicCredits;
+  visualFilter?: string;
+  attachedMusic?: string;
+}
+
+export interface MusicCredits {
+  primaryArtist?: string;
+  featuredArtists?: string[];
+  writers?: string[];
+  composers?: string[];
+  producers?: string[];
+  engineers?: string[];
+  label?: string;
+  releaseType?: 'single' | 'ep' | 'album' | 'mixtape' | 'demo';
 }
 
 export interface Post {
@@ -53,6 +67,9 @@ export interface Post {
   createdAt: Date;
   isLiked?: boolean;
   isSaved?: boolean;
+  isNewRelease?: boolean;
+  isNewPost?: boolean;
+  credits?: MusicCredits;
 }
 
 export interface Story {
@@ -60,6 +77,12 @@ export interface Story {
   artist: Artist;
   imageUrl: string;
   viewed: boolean;
+  videoUrl?: string;
+  caption?: string;
+  attachedMusic?: string;
+  createdAt?: Date;
+  clipStart?: number;
+  clipEnd?: number;
 }
 
 export interface Playlist {

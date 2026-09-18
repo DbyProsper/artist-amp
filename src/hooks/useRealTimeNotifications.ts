@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { collection, query, where, orderBy, limit, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, limit, getDocs, getDoc, updateDoc, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
@@ -34,7 +34,6 @@ export function useRealTimeNotifications() {
       const notificationsQuery = query(
         collection(db, 'notifications'),
         where('profile_id', '==', profile.id),
-        orderBy('created_at', 'desc'),
         limit(50)
       );
 
@@ -48,15 +47,11 @@ export function useRealTimeNotifications() {
         let fromProfile = null;
         if (data.from_profile_id) {
           try {
-            const profileDoc = await getDocs(query(
-              collection(db, 'profiles'),
-              where('id', '==', data.from_profile_id),
-              limit(1)
-            ));
-            if (!profileDoc.empty) {
-              const profileData = profileDoc.docs[0].data();
+            const profileDoc = await getDoc(doc(db, 'profiles', data.from_profile_id));
+            if (profileDoc.exists()) {
+              const profileData = profileDoc.data();
               fromProfile = {
-                id: profileDoc.docs[0].id,
+                id: profileDoc.id,
                 username: profileData.username,
                 name: profileData.name,
                 avatar_url: profileData.avatar_url,
@@ -80,6 +75,7 @@ export function useRealTimeNotifications() {
         });
       }
 
+      notificationsData.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
       setNotifications(notificationsData);
       setUnreadCount(notificationsData.filter(n => !n.read).length);
     } catch (error) {
@@ -128,10 +124,9 @@ export function useRealTimeNotifications() {
   useEffect(() => {
     if (!profile?.id) return;
 
-    fetchNotifications();
-
-    // TODO: Implement real-time notifications with Firebase
-    // For now, we'll just fetch on mount and not have real-time updates
+    void fetchNotifications();
+    const liveQuery = query(collection(db, 'notifications'), where('profile_id', '==', profile.id));
+    return onSnapshot(liveQuery, () => void fetchNotifications());
   }, [profile?.id, fetchNotifications]);
 
   return {

@@ -1,10 +1,10 @@
 import { Artist, Track, Post, Story, Playlist } from '@/types';
 
-// Dby Prosper - Featured Artist
-const dbyProsper: Artist = {
+// Sam Keys - Featured Artist
+const samKeys: Artist = {
   id: 'dby-prosper',
-  name: 'Dby Prosper',
-  username: 'dbyprosper',
+  name: 'Sam Keys',
+  username: 'samkeys',
   avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop',
   coverImage: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800&h=400&fit=crop',
   bio: '🇿🇦 South African Artist | Bringing Afro vibes to the world 🎵✨ New music coming soon!',
@@ -21,7 +21,7 @@ const dbyProsper: Artist = {
 };
 
 export const mockArtists: Artist[] = [
-  dbyProsper, // Dby Prosper is the first/featured artist
+  samKeys, // Sam Keys is the first/featured artist
   {
     id: '2',
     name: 'Luna Wave',
@@ -94,12 +94,12 @@ export const mockArtists: Artist[] = [
   },
 ];
 
-// Dby Prosper's tracks
-const dbyProsperTracks: Track[] = [
+// Sam Keys' tracks
+const samKeysTracks: Track[] = [
   {
     id: 'dby-1',
     title: 'Rise Up',
-    artist: dbyProsper,
+    artist: samKeys,
     coverArt: 'https://images.unsplash.com/photo-1571330735066-03aaa9429d89?w=400&h=400&fit=crop',
     duration: 218,
     plays: 45200,
@@ -108,7 +108,7 @@ const dbyProsperTracks: Track[] = [
   {
     id: 'dby-2',
     title: 'African Dreams',
-    artist: dbyProsper,
+    artist: samKeys,
     coverArt: 'https://images.unsplash.com/photo-1598387993441-a364f854c3e1?w=400&h=400&fit=crop',
     duration: 245,
     plays: 32100,
@@ -117,7 +117,7 @@ const dbyProsperTracks: Track[] = [
   {
     id: 'dby-3',
     title: 'Johannesburg Nights',
-    artist: dbyProsper,
+    artist: samKeys,
     coverArt: 'https://images.unsplash.com/photo-1557672172-298e090bd0f1?w=400&h=400&fit=crop',
     duration: 198,
     plays: 28500,
@@ -126,7 +126,7 @@ const dbyProsperTracks: Track[] = [
   {
     id: 'dby-4',
     title: 'Ubuntu',
-    artist: dbyProsper,
+    artist: samKeys,
     coverArt: 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400&h=400&fit=crop',
     duration: 267,
     plays: 51000,
@@ -135,7 +135,7 @@ const dbyProsperTracks: Track[] = [
 ];
 
 export const mockTracks: Track[] = [
-  ...dbyProsperTracks,
+  ...samKeysTracks,
   {
     id: '5',
     title: 'Midnight Dreams',
@@ -186,9 +186,9 @@ export const mockTracks: Track[] = [
 export const mockPosts: Post[] = [
   {
     id: '1',
-    artist: dbyProsper,
+    artist: samKeys,
     type: 'audio',
-    track: dbyProsperTracks[0],
+    track: samKeysTracks[0],
     caption: '🇿🇦 New track "Rise Up" is finally here! This one is for everyone chasing their dreams. Let me know what you think! #Afrobeats #SouthAfrica #NewMusic',
     likes: 8900,
     comments: 234,
@@ -200,9 +200,9 @@ export const mockPosts: Post[] = [
   },
   {
     id: '2',
-    artist: dbyProsper,
+    artist: samKeys,
     type: 'audio',
-    track: dbyProsperTracks[3],
+    track: samKeysTracks[3],
     caption: 'Ubuntu - We are because of each other 🙏🏾 This track is about community and togetherness. Streaming everywhere now!',
     likes: 12400,
     comments: 342,
@@ -256,9 +256,9 @@ export const mockPosts: Post[] = [
   },
   {
     id: '6',
-    artist: dbyProsper,
+    artist: samKeys,
     type: 'audio',
-    track: dbyProsperTracks[1],
+    track: samKeysTracks[1],
     caption: 'African Dreams 🌍 Inspired by the beautiful landscapes and rich culture of our continent. This one hits different at sunset.',
     likes: 15600,
     comments: 456,
@@ -301,8 +301,8 @@ export const mockPosts: Post[] = [
 export const mockStories: Story[] = [
   {
     id: 'story-dby',
-    artist: dbyProsper,
-    imageUrl: dbyProsper.coverImage,
+    artist: samKeys,
+    imageUrl: samKeys.coverImage,
     viewed: false,
   },
   ...mockArtists.slice(1).map((artist, index) => ({
@@ -319,8 +319,8 @@ export const mockPlaylists: Playlist[] = [
     name: 'Afro Vibes',
     description: 'The best Afrobeats and African sounds',
     coverImage: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
-    tracks: dbyProsperTracks,
-    creator: dbyProsper,
+    tracks: samKeysTracks,
+    creator: samKeys,
     followers: 18400,
     isPublic: true,
   },
@@ -339,7 +339,7 @@ export const mockPlaylists: Playlist[] = [
     name: 'Workout Mix',
     description: 'High energy tracks to power your workout',
     coverImage: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=400&fit=crop',
-    tracks: [...dbyProsperTracks.slice(0, 2), ...mockTracks.slice(6, 8)],
+    tracks: [...samKeysTracks.slice(0, 2), ...mockTracks.slice(6, 8)],
     creator: mockArtists[5],
     followers: 34500,
     isPublic: true,
@@ -363,5 +363,5 @@ export const genres = [
   'Afrobeats', 'Gospel', 'Blues', 'Dancehall', 'Trap', 'Lo-Fi',
 ];
 
-// Export Dby Prosper for profile page
-export const currentUserArtist = dbyProsper;
+// Export Sam Keys for profile page
+export const currentUserArtist = samKeys;

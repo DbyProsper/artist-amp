@@ -1,18 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc, Sparkles, Wand2, Zap, BarChart3, ArrowRight } from 'lucide-react';
+import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc, Sparkles, Wand2, Zap, BarChart3, ArrowRight, X } from 'lucide-react';
 import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FeedPost } from '@/components/feed/FeedPost';
 import { StoryViewer } from '@/components/stories/StoryViewer';
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel';
 import { Button } from '@/components/ui/button';
-import { mockStories, mockArtists, mockTracks } from '@/data/mockData';
+import { mockArtists, mockTracks } from '@/data/mockData';
 import { useFeedPosts } from '@/hooks/useFeedPosts';
 import { Story } from '@/types';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
+import { clearUploadProgress, readUploadProgress, UPLOAD_PROGRESS_EVENT, type UploadProgressState } from '@/lib/uploadProgress';
+import { useStories } from '@/hooks/useStories';
+import { useRealTimeNotifications } from '@/hooks/useRealTimeNotifications';
 
 export default function HomePage() {
   const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
@@ -20,9 +23,25 @@ export default function HomePage() {
   const navigate = useNavigate();
   const { posts, loading: postsLoading } = useFeedPosts();
   const { user } = useAuth();
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(() => readUploadProgress());
+  const stories = useStories();
+  const { notifications, unreadCount, markAsRead } = useRealTimeNotifications();
+  const unreadMessages = notifications.filter(notification => notification.type === 'message' && !notification.read);
+  const groupedStories = useMemo(() => {
+    const groups = new Map<string, Story[]>();
+    stories.forEach(story => groups.set(story.artist.id, [...(groups.get(story.artist.id) || []), story]));
+    return [...groups.values()].flat();
+  }, [stories]);
+  const storyBubbles = useMemo(() => groupedStories.filter((story, index) => groupedStories.findIndex(item => item.artist.id === story.artist.id) === index), [groupedStories]);
+
+  useEffect(() => {
+    const update = (event: Event) => setUploadProgress((event as CustomEvent<UploadProgressState>).detail);
+    window.addEventListener(UPLOAD_PROGRESS_EVENT, update);
+    return () => window.removeEventListener(UPLOAD_PROGRESS_EVENT, update);
+  }, []);
 
   const handleStoryClick = (story: Story) => {
-    const index = mockStories.findIndex(s => s.id === story.id);
+    const index = groupedStories.findIndex(s => s.id === story.id);
     setSelectedStoryIndex(index);
   };
 
@@ -40,10 +59,10 @@ export default function HomePage() {
     navigate('/upload');
   };
 
-  // Get trending artists (top 4)
-  const trendingArtists = mockArtists.slice(0, 4);
-  // Get new releases (first 3 tracks)
-  const newReleases = mockTracks.slice(0, 3);
+  const realArtists = posts.map(post => post.artist).filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
+  const trendingArtists = [...realArtists, ...mockArtists.filter(mock => !realArtists.some(real => real.id === mock.id))].slice(0, 8);
+  const realReleases = posts.filter(post => post.track && (post.isNewRelease || post.type === 'audio')).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
+  const newReleases = realReleases.length ? realReleases : mockTracks.slice(0, 3);
 
   return (
     <div className="min-h-screen pb-36">
@@ -83,16 +102,16 @@ export default function HomePage() {
               className="relative p-2 rounded-full hover:bg-muted transition-colors"
             >
               <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
+              {unreadCount > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />}
             </button>
             
             {/* Messages */}
             <button
-              onClick={() => navigate('/messages')}
+              onClick={() => { unreadMessages.forEach(item => void markAsRead(item.id)); navigate('/messages'); }}
               className="relative p-2 rounded-full hover:bg-muted transition-colors"
             >
               <MessageCircle className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
+              {unreadMessages.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />}
             </button>
           </div>
         </div>
@@ -103,6 +122,7 @@ export default function HomePage() {
         isOpen={showNotifications} 
         onClose={() => setShowNotifications(false)} 
       />
+      {uploadProgress && (uploadProgress.active || uploadProgress.progress === 100 || uploadProgress.error) && <div className="sticky top-14 z-30 border-b border-border bg-card px-4 py-3 shadow-sm"><div className="mx-auto max-w-[630px]"><div className="flex items-center justify-between gap-3 text-sm"><span>{uploadProgress.label}</span><span className="ml-auto">{uploadProgress.error ? 'Try again' : `${uploadProgress.progress}%`}</span>{!uploadProgress.active && <button aria-label="Close upload notification" onClick={() => { clearUploadProgress(); setUploadProgress(null); }} className="rounded-full p-1 hover:bg-muted"><X className="h-4 w-4" /></button>}</div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className={`h-full transition-all ${uploadProgress.error ? 'bg-destructive' : 'bg-primary'}`} style={{ width: `${Math.max(2, uploadProgress.progress)}%` }} /></div></div></div>}
 
       {/* Stories with Add Story button */}
       <section className="border-b border-border">
@@ -118,7 +138,7 @@ export default function HomePage() {
             <span className="text-[10px] text-muted-foreground">Add Story</span>
           </button>
           
-          <StoriesRow stories={mockStories} onStoryClick={handleStoryClick} />
+          <StoriesRow stories={storyBubbles} onStoryClick={handleStoryClick} />
         </div>
       </section>
 
@@ -141,7 +161,7 @@ export default function HomePage() {
             <motion.div
               key={artist.id}
               whileTap={{ scale: 0.95 }}
-              onClick={() => navigate(`/user/f671f1d1-85e5-4ee4-baa0-965e851936e4`)}
+              onClick={() => navigate(`/user/${artist.id}`)}
               className="flex-shrink-0 w-28"
             >
               <div className="w-28 h-28 rounded-xl overflow-hidden mb-2">
@@ -302,7 +322,7 @@ export default function HomePage() {
       {/* Story Viewer Modal */}
       {selectedStoryIndex !== null && (
         <StoryViewer
-          stories={mockStories}
+          stories={groupedStories}
           initialIndex={selectedStoryIndex}
           onClose={() => setSelectedStoryIndex(null)}
         />

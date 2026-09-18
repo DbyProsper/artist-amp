@@ -1,18 +1,17 @@
 import { motion } from 'framer-motion';
-import { Download, Lock, Upload, Cpu, ArrowDownRight, CheckCircle2 } from 'lucide-react';
+import { Download, Upload, Cpu, ArrowDownRight, CheckCircle2 } from 'lucide-react';
 import { ProcessingStage, EnhancementTimings } from '../types';
 import React from 'react';
-import QuotaGuard from '@/components/QuotaGuard';
-import type { QuotaKey } from '@/lib/planLimits';
 
 interface Props {
   hasFile: boolean;
-  isPremium: boolean;
   isProcessing: boolean;
   stage: ProcessingStage;
   progress: number;
   timings: EnhancementTimings | null;
   onExport: () => void;
+  onPreviewExport: () => void;
+  hasPreview: boolean;
 }
 
 const STAGE_LABELS: Record<ProcessingStage, { label: string; icon: React.ReactNode }> = {
@@ -27,12 +26,13 @@ const STAGE_LABELS: Record<ProcessingStage, { label: string; icon: React.ReactNo
 
 export default function ExportActions({
   hasFile,
-  isPremium,
   isProcessing,
   stage,
   progress,
   timings,
   onExport,
+  onPreviewExport,
+  hasPreview,
 }: Props) {
   const stageInfo = STAGE_LABELS[stage];
   const showSuccess = stage === 'done' && !isProcessing;
@@ -61,27 +61,27 @@ export default function ExportActions({
         </motion.div>
       )}
 
-      <QuotaGuard
-        quotaKey={isPremium ? 'audioEnhance' : 'audioEnhanceStandard'}
-        disabled={!hasFile || isProcessing}
-      >
+      <div className="grid gap-2 sm:grid-cols-2">
+        <button
+          disabled={!hasPreview || isProcessing}
+          onClick={onPreviewExport}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-semibold transition hover:border-primary/50 disabled:opacity-50"
+        >
+          <Download size={16} /> Download preview
+        </button>
         <button
           disabled={!hasFile || isProcessing}
           onClick={onExport}
-          className={`w-full py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-            isPremium
-              ? 'bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50'
-              : 'border border-border hover:border-primary/50 disabled:opacity-50'
-          }`}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
         >
-          {!isPremium ? <Lock size={16} /> : <Download size={16} />}
+          <Download size={16} />
           {isProcessing
             ? stageInfo.label
             : showSuccess
             ? 'Export Again'
-            : 'Enhance & Export'}
+            : 'Full-quality export'}
         </button>
-      </QuotaGuard>
+      </div>
     </div>
   );
 }

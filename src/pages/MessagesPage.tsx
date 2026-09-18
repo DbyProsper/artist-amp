@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Search, BadgeCheck, PenSquare, ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { Artist } from '@/types';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { useRealTimeNotifications } from '@/hooks/useRealTimeNotifications';
 
 function formatTimeAgo(date: Date): string {
   const now = new Date();
@@ -24,6 +27,7 @@ export default function MessagesPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
+  const { notifications, markAsRead } = useRealTimeNotifications();
   const [selectedArtist, setSelectedArtist] = useState<Artist | null>(() => {
     const toId = searchParams.get('to');
     if (toId) {
@@ -31,6 +35,25 @@ export default function MessagesPage() {
     }
     return null;
   });
+
+  useEffect(() => {
+    notifications.filter(notification => notification.type === 'message' && !notification.read).forEach(notification => void markAsRead(notification.id));
+  }, [notifications, markAsRead]);
+
+  useEffect(() => {
+    const toId = searchParams.get('to');
+    if (!toId || selectedArtist?.id === toId) return;
+    getDoc(doc(db, 'profiles', toId)).then(snapshot => {
+      if (!snapshot.exists()) return;
+      const data = snapshot.data();
+      setSelectedArtist({
+        id: snapshot.id, name: data.name || 'MusicInsta user', username: data.username || 'user',
+        avatar: data.avatar_url || '/placeholder.svg', coverImage: data.cover_url || '/placeholder.svg',
+        bio: data.bio || '', location: data.location || '', genres: data.genres || [],
+        isVerified: Boolean(data.is_verified), followers: 0, following: 0, tracks: 0,
+      });
+    });
+  }, [searchParams, selectedArtist?.id]);
 
   const mockConversations = mockArtists.slice(0, 5).map((artist, index) => ({
     id: `conv-${index}`,

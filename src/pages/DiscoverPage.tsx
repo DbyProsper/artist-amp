@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { fetchRecommendations, type Recommendation } from '@/services/recommendationService';
+import { useFeedPosts } from '@/hooks/useFeedPosts';
 
 type SortOption = 'trending' | 'newest' | 'popular';
 
@@ -30,18 +31,24 @@ export default function DiscoverPage() {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('for-you');
   const [sortBy, setSortBy] = useState<SortOption>('trending');
+  const { posts } = useFeedPosts();
+  const liveTracks = posts.filter(post => post.track).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
+  const liveArtists = posts.map(post => post.artist).filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
+  const catalogTracks = [...liveTracks, ...mockTracks.filter(mock => !liveTracks.some(track => track.id === mock.id))];
+  const catalogArtists = [...liveArtists, ...mockArtists.filter(mock => !liveArtists.some(artist => artist.id === mock.id))];
+  const liveTrackIds = new Set(liveTracks.map(track => track.id));
 
   // Simulated personalization based on user preferences
   const userGenres = profile?.is_artist ? ['Afrobeats', 'R&B'] : ['Hip-Hop', 'Electronic'];
 
-  const filteredArtists = mockArtists.filter((artist) => {
+  const filteredArtists = catalogArtists.filter((artist) => {
     const matchesSearch = artist.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          artist.username.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesGenre = !selectedGenre || artist.genres.includes(selectedGenre);
     return matchesSearch && matchesGenre;
   });
 
-  const filteredTracks = mockTracks.filter((track) => {
+  const filteredTracks = catalogTracks.filter((track) => {
     const matchesSearch = track.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          track.artist.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesGenre = !selectedGenre || track.artist.genres.includes(selectedGenre);
@@ -51,11 +58,11 @@ export default function DiscoverPage() {
   const sortTracks = (tracks: typeof mockTracks) => {
     switch (sortBy) {
       case 'trending':
-        return [...tracks].sort((a, b) => b.plays - a.plays);
+        return [...tracks].sort((a, b) => (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.plays - a.plays);
       case 'newest':
-        return [...tracks]; // Already sorted by newest in mock
+        return [...tracks].sort((a, b) => Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id)));
       case 'popular':
-        return [...tracks].sort((a, b) => b.likes - a.likes);
+        return [...tracks].sort((a, b) => (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.likes - a.likes);
       default:
         return tracks;
     }
@@ -88,7 +95,7 @@ export default function DiscoverPage() {
     setRecommendError(null);
 
     try {
-      const results = await fetchRecommendations(searchQuery.trim());
+      const results = await fetchRecommendations(searchQuery.trim(), profile?.id);
       setRecommendations(results);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not fetch recommendations.';
@@ -284,7 +291,7 @@ export default function DiscoverPage() {
               {recommendations.length > 0 && (
                 <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {recommendations.map((item, index) => {
-                    const title = item.song || item.title || item.name || `Song ${index + 1}`;
+                    const title = item.song || item.song_name || item.title || item.name || `Song ${index + 1}`;
 
                     return (
                       <Card
@@ -316,6 +323,7 @@ export default function DiscoverPage() {
                               {item.mood && <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{item.mood}</span>}
                             </div>
                           )}
+                          {item.reason && <p className="text-xs text-muted-foreground">Because it has {item.reason}.</p>}
                         </div>
                       </Card>
                     );
@@ -362,7 +370,7 @@ export default function DiscoverPage() {
                     </button>
                   </div>
                   <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
-                    {mockArtists.slice(0, 4).map((artist) => (
+                    {catalogArtists.slice(0, 4).map((artist) => (
                       <motion.div
                         key={artist.id}
                         whileTap={{ scale: 0.95 }}
@@ -395,7 +403,7 @@ export default function DiscoverPage() {
                     </button>
                   </div>
                   <div className="space-y-2">
-                    {mockArtists.slice(2, 5).map((artist) => (
+                    {catalogArtists.slice(2, 5).map((artist) => (
                       <ArtistCard
                         key={artist.id}
                         artist={artist}
@@ -477,7 +485,7 @@ export default function DiscoverPage() {
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    {mockArtists.slice(0, 4).map((artist) => (
+                    {catalogArtists.slice(0, 4).map((artist) => (
                       <ArtistCard
                         key={artist.id}
                         artist={artist}

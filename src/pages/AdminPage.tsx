@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, Users, BadgeCheck, CheckCircle, XCircle, 
-  Clock, Shield, Search, RefreshCw
+  Clock, Shield, Search, RefreshCw, Flag
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +39,7 @@ interface Profile {
   is_artist: boolean | null;
   is_verified: boolean | null;
 }
+interface Report { id: string; type: string; target_id: string; reporter_id: string; reason: string; status: string; created_at: Date }
 
 export default function AdminPage() {
   const navigate = useNavigate();
@@ -46,6 +47,7 @@ export default function AdminPage() {
   const { isAdminOrModerator, loading: roleLoading } = useUserRole();
   const [requests, setRequests] = useState<VerificationRequest[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending');
@@ -111,11 +113,18 @@ export default function AdminPage() {
       console.error('Error fetching profiles:', err);
     }
   };
+  const fetchReports = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'reports'));
+      setReports(snapshot.docs.map(item => ({ id: item.id, ...item.data(), created_at: item.data().created_at?.toDate?.() || new Date() } as Report)).sort((a, b) => b.created_at.getTime() - a.created_at.getTime()));
+    } catch (error) { console.error('Error fetching reports:', error); }
+  };
 
   useEffect(() => {
     if (isAdminOrModerator) {
       fetchRequests();
       fetchProfiles();
+      fetchReports();
     }
   }, [isAdminOrModerator]);
 
@@ -253,6 +262,7 @@ export default function AdminPage() {
               <BadgeCheck className="w-4 h-4" />
               History
             </TabsTrigger>
+            <TabsTrigger value="reports" className="flex-1 gap-1"><Flag className="w-4 h-4" />Reports ({reports.filter(report => report.status === 'open').length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="pending" className="space-y-4">
@@ -416,6 +426,11 @@ export default function AdminPage() {
                 <XCircle className="w-5 h-5 text-red-500" />
               </div>
             ))}
+          </TabsContent>
+          <TabsContent value="reports" className="space-y-3">
+            <div className="flex items-center justify-between"><h2 className="font-display font-bold">User reports</h2><Button size="sm" variant="ghost" onClick={() => void fetchReports()}><RefreshCw className="h-4 w-4" /></Button></div>
+            {!reports.length && <p className="py-12 text-center text-muted-foreground">No reports have been submitted.</p>}
+            {reports.map(report => <div key={report.id} className="rounded-xl border border-border bg-muted/30 p-4"><div className="flex items-center justify-between gap-3"><p className="font-semibold capitalize">{report.type} report</p><span className={`rounded-full px-2 py-1 text-xs ${report.status === 'open' ? 'bg-destructive/15 text-destructive' : 'bg-green-500/15 text-green-500'}`}>{report.status}</span></div><p className="mt-2 text-sm text-muted-foreground">{report.reason}</p><p className="mt-2 text-xs text-muted-foreground">Target: {report.target_id} · Reporter: {report.reporter_id} · {report.created_at.toLocaleString()}</p>{report.status === 'open' && <Button className="mt-3" size="sm" onClick={async () => { await updateDoc(doc(db, 'reports', report.id), { status: 'resolved', resolved_at: new Date(), resolved_by: user?.uid }); await fetchReports(); }}>Mark resolved</Button>}</div>)}
           </TabsContent>
         </Tabs>
       </div>

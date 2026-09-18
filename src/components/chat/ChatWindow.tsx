@@ -8,6 +8,8 @@ import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { EmojiPicker } from './EmojiPicker';
+import { addDoc, collection, onSnapshot, query, serverTimestamp, where } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface Message {
   id: string;
@@ -24,22 +26,7 @@ interface ChatWindowProps {
 
 export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
   const { user, profile } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      content: 'Hey! Love your music! 🔥',
-      senderId: 'other',
-      timestamp: new Date(Date.now() - 1000 * 60 * 30),
-      isOwn: false,
-    },
-    {
-      id: '2',
-      content: 'Thanks so much! Appreciate the support! 🙏',
-      senderId: 'me',
-      timestamp: new Date(Date.now() - 1000 * 60 * 25),
-      isOwn: true,
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -48,43 +35,27 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    if (!user) return;
+    const conversationId = [user.uid, recipient.id].sort().join('_');
+    return onSnapshot(query(collection(db, 'messages'), where('conversation_id', '==', conversationId)), snapshot => {
+      const next = snapshot.docs.map(item => {
+        const value = item.data();
+        return { id: item.id, content: value.content || '', senderId: value.sender_id, timestamp: value.created_at?.toDate?.() || new Date(), isOwn: value.sender_id === user.uid };
+      }).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      setMessages(next);
+    }, () => toast.error('Messages could not be loaded.'));
+  }, [recipient.id, user]);
+
   const handleSend = async () => {
     if (!newMessage.trim() || !user || !profile) return;
 
-    const message: Message = {
-      id: Date.now().toString(),
-      content: newMessage.trim(),
-      senderId: user.id,
-      timestamp: new Date(),
-      isOwn: true,
-    };
-
-    setMessages([...messages, message]);
-    setNewMessage('');
-
-    // Simulate reply after a delay
-    setTimeout(() => {
-      const reply: Message = {
-        id: (Date.now() + 1).toString(),
-        content: getRandomReply(),
-        senderId: recipient.id,
-        timestamp: new Date(),
-        isOwn: false,
-      };
-      setMessages(prev => [...prev, reply]);
-      toast.success(`New message from ${recipient.name}`);
-    }, 2000);
-  };
-
-  const getRandomReply = () => {
-    const replies = [
-      'Thanks for reaching out! 🙏',
-      'Appreciate that! 💜',
-      "That's awesome! Let's connect soon 🎵",
-      "Love it! Thanks for the support! 🔥",
-      'Great to hear from you! 😊',
-    ];
-    return replies[Math.floor(Math.random() * replies.length)];
+    const content = newMessage.trim(); setNewMessage('');
+    try {
+      const conversationId = [user.uid, recipient.id].sort().join('_');
+      await addDoc(collection(db, 'messages'), { conversation_id: conversationId, sender_id: user.uid, recipient_id: recipient.id, content, created_at: serverTimestamp(), read: false });
+      await addDoc(collection(db, 'notifications'), { profile_id: recipient.id, from_profile_id: profile.id, type: 'message', message: 'sent you a message', read: false, created_at: serverTimestamp() });
+    } catch { setNewMessage(content); toast.error('Message could not be sent.'); }
   };
 
   const handleEmojiSelect = (emoji: string) => {

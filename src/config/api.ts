@@ -5,7 +5,10 @@ export const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://musicinsta
 
 // Timeout configuration for different endpoints (in milliseconds)
 export const API_TIMEOUTS = {
-  default: 30000,      // 30 seconds - standard requests (image, lyrics)
+  default: 60000,
+  lyrics: 120000,
+  chat: 120000,
+  image: 180000,
   music: 120000,       // 120 seconds - music generation (45-60s typical)
   enhance: 180000,     // 180 seconds - audio enhancement for long tracks
   song: 300000,        // 300 seconds - complete song (90-150s typical)

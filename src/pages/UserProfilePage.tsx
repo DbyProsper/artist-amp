@@ -16,6 +16,7 @@ import { useProfilePosts } from '@/hooks/useProfilePosts';
 import { doc, getDoc, collection, query, where, getDocs, addDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
+import { VideoThumbnail } from '@/components/media/VideoThumbnail';
 
 interface Profile {
   id: string;
@@ -210,7 +211,7 @@ export default function UserProfilePage() {
       {/* Cover Image */}
       <div className="relative h-40">
         <img
-          src={profile.cover_url || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800'}
+          src={profile.cover_url || '/placeholder.svg'}
           alt="Cover"
           className="w-full h-full object-cover"
         />
@@ -222,7 +223,7 @@ export default function UserProfilePage() {
         <div className="flex items-end gap-4 mb-4">
           <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-background gradient-border">
             <img
-              src={profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'}
+              src={profile.avatar_url || '/placeholder.svg'}
               alt={profile.name || 'User'}
               className="w-full h-full object-cover"
             />
@@ -337,11 +338,7 @@ export default function UserProfilePage() {
             <div className="grid grid-cols-3 gap-1">
               {posts.map((post) => (
                 <div key={post.id} className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer">
-                  <img
-                    src={post.imageUrl || post.track?.coverArt || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400'}
-                    alt={post.caption || 'Post'}
-                    className="w-full h-full object-cover"
-                  />
+                  {post.type === 'video' && post.videoUrl ? <VideoThumbnail src={post.videoUrl} poster={post.imageUrl} alt={post.caption || 'Video post'} className="h-full w-full" /> : <img src={post.imageUrl || post.track?.coverArt || '/placeholder.svg'} alt={post.caption || 'Post'} className="h-full w-full object-cover" />}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Play className="w-8 h-8 text-white" fill="currentColor" />
                   </div>
@@ -384,17 +381,18 @@ export default function UserProfilePage() {
         </TabsContent>
 
         <TabsContent value="videos" className="mt-4">
+          {posts.some(post => post.type === 'video' && post.videoUrl) && <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3">{posts.filter(post => post.type === 'video' && post.videoUrl).map(post => <VideoThumbnail key={post.id} src={post.videoUrl!} poster={post.imageUrl} alt={post.caption || 'Video post'} className="aspect-square w-full rounded-xl" />)}</div>}
           {socialLinks.youtube ? (
             <YouTubeEmbed 
               channelUrl={socialLinks.youtube} 
               artistName={profile.name || 'Artist'} 
             />
-          ) : (
+          ) : !posts.some(post => post.type === 'video' && post.videoUrl) ? (
             <div className="py-12 text-center">
               <Youtube className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">No YouTube channel linked</p>
             </div>
-          )}
+          ) : null}
         </TabsContent>
       </Tabs>
 

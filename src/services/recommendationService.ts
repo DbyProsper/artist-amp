@@ -1,17 +1,22 @@
 export interface Recommendation {
-  song: string;
+  song?: string;
+  song_name?: string;
+  title?: string;
+  name?: string;
   genre?: string;
   mood?: string;
   artist?: string;
-  [key: string]: any;
+  score?: number;
+  reason?: string;
 }
 
-export async function fetchRecommendations(song: string): Promise<Recommendation[]> {
+export async function fetchRecommendations(song: string, userId?: string): Promise<Recommendation[]> {
   if (!song.trim()) {
     throw new Error('Please provide a song name to fetch recommendations.');
   }
 
-  const url = `/api/recommend?song=${encodeURIComponent(song)}`;
+  const apiBase = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+  const url = `${apiBase}/api/recommend?song=${encodeURIComponent(song)}&top_n=12${userId ? `&user_id=${encodeURIComponent(userId)}` : ''}`;
   const response = await fetch(url, {
     method: 'GET',
     headers: {

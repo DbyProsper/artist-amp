@@ -18,6 +18,7 @@ import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firesto
 import { db } from '@/lib/firebase';
 import { Post } from '@/types';
 import { toast } from 'sonner';
+import { VideoThumbnail } from '@/components/media/VideoThumbnail';
 
 function formatCount(num: number): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -85,8 +86,21 @@ export default function ProfilePage() {
       }
     };
 
+    const fetchSavedPosts = async () => {
+      try {
+        const savedSnapshot = await getDocs(query(collection(db, 'saved_posts'), where('user_id', '==', profile.id)));
+        setSavedPosts(savedSnapshot.docs.map(item => {
+          const saved = item.data().post_snapshot;
+          return { ...saved, createdAt: new Date(saved.createdAt), isSaved: true } as Post;
+        }));
+      } catch (error) {
+        console.error('Error fetching saved posts:', error);
+      }
+    };
+
     fetchCounts();
     fetchSocialLinks();
+    fetchSavedPosts();
   }, [profile]);
 
   if (!user) {
@@ -115,8 +129,8 @@ export default function ProfilePage() {
   const displayProfile = {
     name: profile?.name || 'User',
     username: profile?.username || 'user',
-    avatar: profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-    coverImage: profile?.cover_url || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800',
+    avatar: profile?.avatar_url || '/placeholder.svg',
+    coverImage: profile?.cover_url || '/placeholder.svg',
     bio: profile?.bio || '',
     location: profile?.location || '',
     isVerified: profile?.is_verified || false,
@@ -251,11 +265,7 @@ export default function ProfilePage() {
                   onClick={() => handlePostClick(index)}
                   className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer"
                 >
-                  <img
-                    src={post.imageUrl || post.track?.coverArt || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400'}
-                    alt={post.caption || 'Post'}
-                    className="w-full h-full object-cover"
-                  />
+                  {post.type === 'video' && post.videoUrl ? <VideoThumbnail src={post.videoUrl} poster={post.imageUrl} alt={post.caption || 'Video post'} className="h-full w-full" /> : <img src={post.imageUrl || post.track?.coverArt || '/placeholder.svg'} alt={post.caption || 'Post'} className="h-full w-full object-cover" />}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Play className="w-8 h-8 text-white" fill="currentColor" />
                   </div>
@@ -298,22 +308,18 @@ export default function ProfilePage() {
         </TabsContent>
 
         <TabsContent value="videos" className="mt-4">
-          {socialLinks.youtube ? (
-            <YouTubeEmbed channelUrl={socialLinks.youtube} artistName={displayProfile.name} />
-          ) : (
+          {posts.some(post => post.type === 'video') && <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3">{posts.filter(post => post.type === 'video' && post.videoUrl).map(post => <VideoThumbnail key={post.id} src={post.videoUrl!} poster={post.imageUrl} alt={post.caption || 'Video post'} className="aspect-square w-full rounded-xl" />)}</div>}
+          {socialLinks.youtube ? <YouTubeEmbed channelUrl={socialLinks.youtube} artistName={displayProfile.name} /> : !posts.some(post => post.type === 'video') && (
             <div className="py-12 text-center">
               <Youtube className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-              <p className="text-sm text-muted-foreground">No YouTube channel linked</p>
-              <Button variant="outline" className="mt-4" onClick={() => navigate('/settings/edit-profile')}>Add YouTube link</Button>
+              <p className="text-sm text-muted-foreground">No uploaded videos yet</p>
+              <Button variant="outline" className="mt-4" onClick={() => navigate('/upload')}>Upload a video</Button>
             </div>
           )}
         </TabsContent>
         
         <TabsContent value="saved" className="mt-4">
-          <div className="py-12 text-center">
-            <Bookmark className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-            <p className="text-muted-foreground">Saved posts coming soon</p>
-          </div>
+          {savedPosts.length ? <div className="grid grid-cols-3 gap-1">{savedPosts.map((post, index) => <button key={post.id} onClick={() => { setSelectedSavedIndex(index); setSavedPostDetailOpen(true); }} className="aspect-square overflow-hidden rounded-lg"><img src={post.imageUrl || post.track?.coverArt || '/placeholder.svg'} alt={post.caption || 'Saved post'} className="h-full w-full object-cover" /></button>)}</div> : <div className="py-12 text-center"><Bookmark className="w-12 h-12 mx-auto text-muted-foreground mb-3" /><p className="text-muted-foreground">Posts you save will appear here.</p></div>}
         </TabsContent>
       </Tabs>
 
@@ -324,6 +330,7 @@ export default function ProfilePage() {
         isOpen={postDetailOpen}
         onClose={() => setPostDetailOpen(false)}
       />
+      <PostDetailModal posts={savedPosts} initialIndex={selectedSavedIndex} isOpen={savedPostDetailOpen} onClose={() => setSavedPostDetailOpen(false)} />
 
       {/* Social Links Modal */}
       {profile && (

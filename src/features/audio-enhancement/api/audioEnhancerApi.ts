@@ -1,6 +1,7 @@
 import { AudioAnalysis, EnhancementSettings } from '../types';
+import { API_BASE } from '@/config/api';
 
-const BASE = import.meta.env.VITE_ENHANCER_API_URL ?? 'http://localhost:8000';
+const BASE = import.meta.env.VITE_ENHANCER_API_URL ?? API_BASE;
 
 async function getAuthHeader(): Promise<Record<string, string>> {
   try {
@@ -56,6 +57,7 @@ export async function enhanceAudio(
   file: File,
   settings: EnhancementSettings,
   onProgress?: (pct: number, stage: 'uploading' | 'downloading') => void,
+  outputFormat: 'wav' | 'mp3' = 'wav',
 ): Promise<{ blob: Blob; timings: EnhancementTimings }> {
   const headers = await getAuthHeader();
   const form = new FormData();
@@ -74,7 +76,7 @@ export async function enhanceAudio(
   form.append('nr_enabled',       String(settings.noiseReduction.enabled));
   form.append('nr_reduction_db',  String(settings.noiseReduction.reductionDb));
   form.append('nr_sensitivity',   String(settings.noiseReduction.sensitivity));
-  form.append('output_format',    'wav');
+  form.append('output_format',    outputFormat);
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -103,7 +105,6 @@ export async function enhanceAudio(
     };
 
     xhr.onload = () => {
-      if (xhr.status === 403) return reject(new Error('PREMIUM_REQUIRED'));
       if (xhr.status !== 200) return reject(new Error(`Server error ${xhr.status}`));
 
       const timings: EnhancementTimings = {
@@ -124,10 +125,37 @@ export async function enhanceAudio(
 
 export function triggerDownload(blob: Blob, originalFilename: string): void {
   const stem = originalFilename.replace(/\.[^/.]+$/, '');
+  const extension = blob.type.includes('mpeg') ? 'mp3' : blob.type.includes('flac') ? 'flac' : 'wav';
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${stem}_enhanced.wav`;
+  a.download = originalFilename.toLowerCase().endsWith(`.${extension}`) ? originalFilename : `${stem}_enhanced.${extension}`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+export function audioBufferToWavBlob(buffer: AudioBuffer): Blob {
+  const channelCount = Math.min(buffer.numberOfChannels, 2);
+  const bytesPerSample = 2;
+  const dataLength = buffer.length * channelCount * bytesPerSample;
+  const arrayBuffer = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(arrayBuffer);
+  const write = (offset: number, value: string) => [...value].forEach((char, index) => view.setUint8(offset + index, char.charCodeAt(0)));
+  write(0, 'RIFF'); view.setUint32(4, 36 + dataLength, true); write(8, 'WAVE'); write(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channelCount, true);
+  view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * channelCount * bytesPerSample, true);
+  view.setUint16(32, channelCount * bytesPerSample, true); view.setUint16(34, 16, true); write(36, 'data'); view.setUint32(40, dataLength, true);
+  let offset = 44;
+  for (let sample = 0; sample < buffer.length; sample += 1) {
+    for (let channel = 0; channel < channelCount; channel += 1) {
+      const value = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[sample]));
+      view.setInt16(offset, value < 0 ? value * 0x8000 : value * 0x7fff, true);
+      offset += 2;
+    }
+  }
+  return new Blob([view], { type: 'audio/wav' });
+}
+
+export function downloadAudioBuffer(buffer: AudioBuffer, originalFilename: string): void {
+  triggerDownload(audioBufferToWavBlob(buffer), originalFilename);
 }

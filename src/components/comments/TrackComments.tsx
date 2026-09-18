@@ -9,6 +9,7 @@ import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import { EmojiPicker } from '@/components/chat/EmojiPicker';
 
 interface Comment {
   id: string;
@@ -79,7 +80,7 @@ export function TrackComments({ track, currentTime = 0 }: TrackCommentsProps) {
       user: {
         id: profile.id,
         name: profile.name || 'User',
-        avatar: profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+        avatar: profile.avatar_url || '/placeholder.svg',
         isVerified: profile.is_verified || false,
       },
     };
@@ -116,6 +117,7 @@ export function TrackComments({ track, currentTime = 0 }: TrackCommentsProps) {
             {formatTime(currentTime)}
           </span>
         </div>
+        <EmojiPicker onEmojiSelect={emoji => setNewComment(current => current + emoji)} />
         <Button size="icon" onClick={handleSubmit} disabled={!newComment.trim()}>
           <Send className="w-4 h-4" />
         </Button>

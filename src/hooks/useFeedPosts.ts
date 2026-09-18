@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, limit, getDocs, getDoc, doc, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, getDoc, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track } from '@/types';
 import { mockPosts } from '@/data/mockData';
@@ -48,25 +48,20 @@ export function useFeedPosts() {
       // Fetch posts from database
       const postsQuery = query(
         collection(db, 'posts'),
-        where('is_story', '==', false),
         orderBy('created_at', 'desc'),
         limit(50)
       );
 
       const postsSnapshot = await getDocs(postsQuery);
 
-      if (postsSnapshot.empty) {
-        // Fall back to mock data - sort by createdAt descending (newest first)
-        const sortedMockPosts = [...mockPosts].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-        setPosts(sortedMockPosts);
-        return;
-      }
+      if (postsSnapshot.empty) { setPosts(mockPosts); return; }
 
       // Transform database posts to Post type
       const transformedPosts: Post[] = [];
 
       for (const postDoc of postsSnapshot.docs) {
         const post = postDoc.data();
+        if (post.is_story === true) continue;
 
         // Fetch profile data
         let profileData = null;
@@ -94,8 +89,8 @@ export function useFeedPosts() {
           id: profileData.id || post.profile_id,
           name: profileData.name || 'Unknown',
           username: profileData.username || 'unknown',
-          avatar: profileData.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          coverImage: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800',
+          avatar: profileData.avatar_url || '/placeholder.svg',
+          coverImage: profileData.cover_url || '/placeholder.svg',
           bio: '',
           location: profileData.location || '',
           genres: [],
@@ -111,11 +106,14 @@ export function useFeedPosts() {
             id: post.track_id,
             title: trackData.title,
             artist: artist,
-            coverArt: trackData.cover_url || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400',
+            coverArt: trackData.cover_url || post.image_url || '/placeholder.svg',
             duration: trackData.duration || 0,
             plays: trackData.plays || 0,
             likes: trackData.likes || 0,
             audioUrl: trackData.audio_url || undefined,
+            lyrics: trackData.lyrics || trackData.metadata?.lyrics || undefined,
+            timestampedLyrics: trackData.timestamped_lyrics || trackData.metadata?.timestamped_lyrics || undefined,
+            credits: trackData.credits || trackData.metadata?.credits || undefined,
           };
         }
 
@@ -131,17 +129,22 @@ export function useFeedPosts() {
           comments: post.comments || 0,
           shares: post.shares || 0,
           saves: 0,
-          createdAt: post.created_at?.toDate() || new Date(),
+          createdAt: post.created_at?.toDate?.() || (post.created_at ? new Date(post.created_at) : new Date(0)),
           isLiked: false,
           isSaved: false,
+          isNewRelease: post.is_new_release === true || Boolean(trackData?.is_new_release),
+          isNewPost: post.is_new_post === true,
+          credits: post.credits || trackData?.credits || trackData?.metadata?.credits || undefined,
+          visualFilter: post.visual_filter || undefined,
+          attachedMusic: post.attached_music || undefined,
         });
       }
 
-      // Combine with mock posts for a richer feed
-      const combinedPosts = [...transformedPosts, ...mockPosts];
-      // Sort by date
-      combinedPosts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      setPosts(combinedPosts);
+      transformedPosts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      // Uploaded posts remain first, followed by the original demonstration
+      // feed so the home page keeps its complete populated layout.
+      const realIds = new Set(transformedPosts.map(post => post.id));
+      setPosts([...transformedPosts, ...mockPosts.filter(post => !realIds.has(post.id))]);
     } catch (err) {
       console.error('Error:', err);
       setError('Failed to load posts');
@@ -156,13 +159,15 @@ export function useFeedPosts() {
 
     const postsQuery = query(
       collection(db, 'posts'),
-      where('is_story', '==', false),
       orderBy('created_at', 'desc'),
       limit(50)
     );
 
     const unsubscribe = onSnapshot(postsQuery, () => {
       fetchPosts();
+    }, (snapshotError) => {
+      console.error('Feed subscription error:', snapshotError);
+      setError('Live feed updates are temporarily unavailable');
     });
 
     return () => unsubscribe();

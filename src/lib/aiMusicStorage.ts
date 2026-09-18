@@ -1,7 +1,8 @@
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, addDoc, doc, setDoc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 
-const AI_GENERATED_PLAYLIST_NAME = 'AI Generated Music';
+const STUDIO_PLAYLIST_NAME = 'Studio Generated Music';
+const LEGACY_PLAYLIST_NAME = 'AI Generated Music';
 
 export interface GeneratedAudioItem {
   title: string;
@@ -22,14 +23,17 @@ export async function getOrCreateAIPlaylist(profileId: string) {
     const playlistsRef = collection(db, 'playlists');
     const q = query(
       playlistsRef,
-      where('creator_id', '==', profileId),
-      where('name', '==', AI_GENERATED_PLAYLIST_NAME)
+      where('creator_id', '==', profileId)
     );
     const querySnapshot = await getDocs(q);
+    const matchingPlaylist = querySnapshot.docs.find(item => [STUDIO_PLAYLIST_NAME, LEGACY_PLAYLIST_NAME].includes(String(item.data().name)));
 
-    if (!querySnapshot.empty) {
-      const existingPlaylist = querySnapshot.docs[0];
-      console.log('[AI Music] Using existing AI Generated Music playlist:', existingPlaylist.id);
+    if (matchingPlaylist) {
+      const existingPlaylist = matchingPlaylist;
+      if (existingPlaylist.data().name === LEGACY_PLAYLIST_NAME) {
+        await updateDoc(existingPlaylist.ref, { name: STUDIO_PLAYLIST_NAME, updated_at: new Date() });
+      }
+      console.log('[Studio Music] Using Studio Generated Music playlist:', existingPlaylist.id);
       return { id: existingPlaylist.id, ...existingPlaylist.data() };
     }
 
@@ -37,8 +41,8 @@ export async function getOrCreateAIPlaylist(profileId: string) {
     console.log('[AI Music] Creating new AI Generated Music playlist...');
     const newPlaylistData = {
       creator_id: profileId,
-      name: AI_GENERATED_PLAYLIST_NAME,
-      description: 'Automatically generated music and beats',
+      name: STUDIO_PLAYLIST_NAME,
+      description: 'Songs and beats created in MusicInsta Studio',
       is_public: false,
       is_collaborative: false,
       created_at: new Date(),

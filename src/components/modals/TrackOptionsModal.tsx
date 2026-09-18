@@ -3,6 +3,9 @@ import { X, Share2, Link2, ListPlus, UserPlus, Radio, Heart, Download, Flag } fr
 import { Track } from '@/types';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { useAuth } from '@/context/FirebaseAuthContext';
 
 interface TrackOptionsModalProps {
   isOpen: boolean;
@@ -12,6 +15,7 @@ interface TrackOptionsModalProps {
 
 export function TrackOptionsModal({ isOpen, onClose, track }: TrackOptionsModalProps) {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
 
   if (!track) return null;
 
@@ -51,9 +55,10 @@ export function TrackOptionsModal({ isOpen, onClose, track }: TrackOptionsModalP
     onClose();
   };
 
-  const handleReport = () => {
-    toast.success('Track reported. We\'ll review it shortly.');
-    onClose();
+  const handleReport = async () => {
+    if (!user) { toast.error('Sign in to report this track.'); return; }
+    await addDoc(collection(db, 'reports'), { type: 'track', target_id: track.id, reporter_id: profile?.id || user.uid, status: 'open', reason: 'Reported from track options', created_at: serverTimestamp() });
+    toast.success('Track reported. Administrators have been notified.'); onClose();
   };
 
   const options = [

@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, History, ArrowLeft, Megaphone, Zap } from 'lucide-react';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BPMSlider } from './BPMSlider';
@@ -9,12 +8,12 @@ import { PromptBox } from './PromptBox';
 import { PresetButtons } from './PresetButtons';
 import { MoodPresets } from './MoodPresets';
 import { LanguagePresets } from './LanguagePresets';
-import { AudioPlayer } from './AudioPlayer';
 import { GenerationHistory } from './GenerationHistory';
 import PlanBadge from '@/components/PlanBadge';
 import QuotaBar from '@/components/QuotaBar';
 import type { QuotaKey } from '@/lib/planLimits';
 import { StudioFeature } from './StudioEntryScreen';
+import { useNavigate } from 'react-router-dom';
 
 interface StudioLayoutProps {
   feature: StudioFeature;
@@ -33,6 +32,8 @@ interface StudioLayoutProps {
   onMoodChange: (mood: string) => void;
   selectedLanguage: string;
   onLanguageChange: (language: string) => void;
+  generationMode?: 'clip' | 'full';
+  onGenerationModeChange?: (mode: 'clip' | 'full') => void;
 
   // Generation
   onGenerate: () => void;
@@ -49,6 +50,7 @@ interface StudioLayoutProps {
   onPlayToggle?: () => void;
   onDownload?: () => void;
   onSave?: () => void;
+  onSaveToPlaylist?: () => void;
   isSaving?: boolean;
 
   // History
@@ -65,6 +67,8 @@ const featureIcons: Record<StudioFeature, ReactNode> = {
   poster: <Megaphone className="w-4 h-4" />,
   merch: <Shirt className="w-4 h-4" />,
   chat: <MessageCircle className="w-4 h-4" />,
+  enhance: <Zap className="w-4 h-4" />,
+  daw: <AudioWaveform className="w-4 h-4" />,
 };
 
 const featureLabels: Record<StudioFeature, string> = {
@@ -75,16 +79,19 @@ const featureLabels: Record<StudioFeature, string> = {
   poster: 'Posters',
   merch: 'Merch',
   chat: 'Chat',
+  enhance: 'Audio Enhancement',
+  daw: 'Music Studio DAW',
 };
 
-const FEATURE_QUOTA_MAP: Record<StudioFeature, QuotaKey> = {
+const FEATURE_QUOTA_MAP: Partial<Record<StudioFeature, QuotaKey>> = {
   beat: 'beats',
   lyrics: 'lyrics',
-  song: 'fullSongs',
   cover: 'images',
   poster: 'images',
   merch: 'images',
   chat: 'lyrics',
+  enhance: 'audioEnhanceStandard',
+  daw: 'audioEnhanceStandard',
 };
 
 export function StudioLayout({
@@ -102,6 +109,8 @@ export function StudioLayout({
   onMoodChange,
   selectedLanguage,
   onLanguageChange,
+  generationMode = 'clip',
+  onGenerationModeChange,
   onGenerate,
   isGenerating,
   error,
@@ -113,11 +122,13 @@ export function StudioLayout({
   onPlayToggle,
   onDownload,
   onSave,
+  onSaveToPlaylist,
   isSaving,
   history = [],
   onHistorySelect,
   onHistoryDelete,
 }: StudioLayoutProps) {
+  const navigate = useNavigate();
   const features: StudioFeature[] = ['beat', 'lyrics', 'song', 'cover', 'poster', 'merch'];
 
   const isAudioFeature = feature === 'beat' || feature === 'song';
@@ -127,7 +138,7 @@ export function StudioLayout({
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="sticky top-0 z-20 backdrop-blur-xl border-b border-border/40 bg-background/80">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-2 sm:px-4 h-16 flex items-center justify-between gap-2">
           <Button
             variant="ghost"
             size="sm"
@@ -137,38 +148,29 @@ export function StudioLayout({
             <ArrowLeft className="w-4 h-4" />
             Back
           </Button>
-          <h1 className="text-xl font-bold">{featureLabels[feature]}</h1>
+          <div className="flex min-w-0 items-center gap-2"><img src="/MusicInsta_Logo.png" alt="MusicInsta" className="h-8 w-8 rounded-full object-cover" /><h1 className="truncate text-base font-bold sm:text-xl">{featureLabels[feature]}</h1></div>
           <div className="flex items-center gap-2">
-            <PlanBadge />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => toast.info('Upgrade to Premium coming soon!')}
-              className="gap-2 text-primary"
-            >
-              <Zap className="w-4 h-4" />
-              Upgrade
-            </Button>
+            <div className="hidden sm:block"><PlanBadge /></div>
             <Button
               variant="ghost"
               size="sm"
               onClick={onChatOpen}
-              className="gap-2"
+              className="gap-2 px-2 sm:px-3"
             >
               <MessageCircle className="w-4 h-4" />
-              Chat
+              <span className="hidden sm:inline">Chat</span>
             </Button>
           </div>
         </div>
       </header>
 
       {/* Main Content - 3 Column Layout */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-visible lg:flex-row lg:overflow-hidden">
         {/* LEFT PANEL - Controls */}
         <motion.div
           initial={{ x: -300, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          className="w-64 border-r border-border/40 bg-muted/20 overflow-y-auto p-4 space-y-6"
+          className="w-full border-b border-border/40 bg-muted/20 p-4 space-y-6 lg:w-64 lg:flex-none lg:overflow-y-auto lg:border-b-0 lg:border-r"
         >
           {/* Feature Switcher */}
           <div className="space-y-2">
@@ -240,7 +242,7 @@ export function StudioLayout({
                 variant="outline"
                 size="sm"
                 className="w-full justify-start gap-2"
-                onClick={() => toast.info('Provide your own lyrics coming soon!')}
+                onClick={() => navigate('/studio/daw')}
               >
                 <Music className="w-4 h-4" />
                 Provide Lyrics
@@ -250,7 +252,7 @@ export function StudioLayout({
                   variant="outline"
                   size="sm"
                   className="w-full justify-start gap-2"
-                  onClick={() => toast.info('Record feature coming soon!')}
+                  onClick={() => navigate('/studio/daw')}
                 >
                   <Mic2 className="w-4 h-4" />
                   Record
@@ -260,7 +262,7 @@ export function StudioLayout({
                 variant="outline"
                 size="sm"
                 className="w-full justify-start gap-2"
-                onClick={() => toast.info('Upload feature coming soon!')}
+                onClick={() => navigate('/studio/daw')}
               >
                 <AudioWaveform className="w-4 h-4" />
                 Upload Track
@@ -304,7 +306,7 @@ export function StudioLayout({
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex-1 overflow-y-auto p-8 flex flex-col"
+          className="flex-1 p-4 sm:p-8 flex flex-col lg:overflow-y-auto"
         >
           <div className="max-w-3xl mx-auto w-full space-y-8">
             {/* Presets */}
@@ -330,6 +332,12 @@ export function StudioLayout({
 
             {/* Prompt Box */}
             <div className="space-y-3">
+              {feature === 'song' && onGenerationModeChange && (
+                <div className="grid grid-cols-2 rounded-xl border border-border bg-muted/30 p-1">
+                  <button type="button" onClick={() => onGenerationModeChange('clip')} className={`rounded-lg px-3 py-2 text-sm font-medium ${generationMode === 'clip' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`}>30-second clip · Lyria 3 Clip</button>
+                  <button type="button" onClick={() => onGenerationModeChange('full')} className={`rounded-lg px-3 py-2 text-sm font-medium ${generationMode === 'full' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground'}`}>Full song · Lyria 3 Pro</button>
+                </div>
+              )}
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Describe Your {featureLabels[feature]}
               </p>
@@ -380,13 +388,7 @@ export function StudioLayout({
                     />
                   </div>
                 )}
-                <AudioPlayer
-                  src={audioUrl}
-                  title={generatedTitle || prompt || 'Generated Track'}
-                  genre={selectedGenre}
-                  bpm={bpm}
-                  onDownload={onDownload}
-                />
+                <Button onClick={onPlayToggle} variant="outline" className="w-full h-14">▶ Open in MusicInsta player</Button>
                 <div className="flex gap-3 pt-4">
                   <Button
                     onClick={onSave}
@@ -403,6 +405,7 @@ export function StudioLayout({
                     ⬇️ Download
                   </Button>
                 </div>
+                <Button onClick={onSaveToPlaylist} variant="secondary" className="w-full">Save to another playlist</Button>
                 <p className="text-xs text-muted-foreground text-center pt-2">
                   💡 Save to Library if you want to play this outside the studio
                 </p>
@@ -415,7 +418,7 @@ export function StudioLayout({
         <motion.div
           initial={{ x: 300, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          className="w-80 border-l border-border/40 bg-muted/20 overflow-y-auto p-4 space-y-6"
+          className="w-full border-t border-border/40 bg-muted/20 p-4 space-y-6 lg:w-80 lg:flex-none lg:overflow-y-auto lg:border-l lg:border-t-0"
         >
           {/* Current Settings */}
           <div>
@@ -446,8 +449,18 @@ export function StudioLayout({
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
               Plan usage
             </p>
-            <QuotaBar quotaKey={FEATURE_QUOTA_MAP[feature]} label={`${featureLabels[feature]} remaining`} type="monthly" />
-            <QuotaBar quotaKey={FEATURE_QUOTA_MAP[feature]} label={`${featureLabels[feature]} today`} type="daily" />
+            {feature === 'song' ? (
+              <p className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
+                Full-song generation is currently open without plan limits.
+              </p>
+            ) : FEATURE_QUOTA_MAP[feature] ? (
+              <>
+                <QuotaBar quotaKey={FEATURE_QUOTA_MAP[feature]!} label={`${featureLabels[feature]} remaining`} type="monthly" />
+                <QuotaBar quotaKey={FEATURE_QUOTA_MAP[feature]!} label={`${featureLabels[feature]} today`} type="daily" />
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">This studio tool has no usage limit.</p>
+            )}
           </div>
 
           <div className="h-px bg-border/40" />

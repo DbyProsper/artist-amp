@@ -3,7 +3,11 @@
     "default": "musicinsta-v1"
   },
   "firestore": {
+    "database": "musicinsta",
     "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
   },
   "hosting": {
     "public": "dist",
