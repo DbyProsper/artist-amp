@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Share2, Link2, Flag, UserMinus, Bookmark } from 'lucide-react';
+import { X, Share2, Link2, Flag, UserMinus, Bookmark, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -10,10 +10,11 @@ interface PostOptionsModalProps {
   onClose: () => void;
   isOwner?: boolean;
   onDelete?: () => void;
+  onEdit?: () => void;
   postId?: string;
 }
 
-export function PostOptionsModal({ isOpen, onClose, isOwner, onDelete, postId }: PostOptionsModalProps) {
+export function PostOptionsModal({ isOpen, onClose, isOwner, onDelete, onEdit, postId }: PostOptionsModalProps) {
   const { user, profile } = useAuth();
   const handleShare = async () => {
     const url = `${window.location.origin}/?post=${postId || ''}`;
@@ -49,6 +50,7 @@ export function PostOptionsModal({ isOpen, onClose, isOwner, onDelete, postId }:
     { icon: Link2, label: 'Copy Link', onClick: handleCopyLink },
     { icon: Bookmark, label: 'Save', onClick: handleSave },
     ...(isOwner ? [
+      { icon: Pencil, label: 'Edit Post', onClick: onEdit },
       { icon: X, label: 'Delete Post', onClick: onDelete, destructive: true },
     ] : [
       { icon: UserMinus, label: 'Unfollow', onClick: handleUnfollow },

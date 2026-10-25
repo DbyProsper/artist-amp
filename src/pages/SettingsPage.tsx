@@ -186,7 +186,7 @@ export default function SettingsPage() {
         >
           <div className="w-16 h-16 rounded-full overflow-hidden gradient-border">
             <img
-              src={profile?.avatar_url || '/placeholder.svg'}
+              src={profile?.avatar_url || '/musicinsta-default-cover.webp'}
               alt={profile?.name || 'User'}
               className="w-full h-full object-cover"
             />

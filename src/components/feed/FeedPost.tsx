@@ -12,9 +12,13 @@ import { useNavigate } from 'react-router-dom';
 import { PostOptionsModal } from '@/components/modals/PostOptionsModal';
 import { toast } from 'sonner';
 import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { PostCommentsModal } from '@/components/feed/PostCommentsModal';
+import { DEFAULT_MEDIA_IMAGE, formatMediaDuration } from '@/lib/media';
+import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 
 interface FeedPostProps {
   post: Post;
@@ -39,6 +43,14 @@ export function FeedPost({ post }: FeedPostProps) {
   const [videoSpeed, setVideoSpeed] = useState(1);
   const [playCount, setPlayCount] = useState(post.track?.plays || 0);
   const [showNewBadge, setShowNewBadge] = useState(() => Boolean((post.isNewPost || post.isNewRelease) && !sessionStorage.getItem(`musicinsta_seen_post_${post.id}`)));
+  const [captionExpanded, setCaptionExpanded] = useState(false);
+  const [displayCaption, setDisplayCaption] = useState(post.caption);
+  const [displayImage, setDisplayImage] = useState(post.imageUrl || post.track?.coverArt || '');
+  const [editingPost, setEditingPost] = useState(false);
+  const [editCaption, setEditCaption] = useState(post.caption);
+  const [editArtwork, setEditArtwork] = useState<File | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleted, setDeleted] = useState(false);
   const lastTapRef = useRef(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playCountedRef = useRef(false);
@@ -191,24 +203,46 @@ export function FeedPost({ post }: FeedPostProps) {
 
   // Determine the display image for the post
   const getPostImage = () => {
-    if (post.type === 'image' && post.imageUrl) return post.imageUrl;
+    if (post.type === 'image' && displayImage) return displayImage;
     if (post.type === 'video' && post.videoUrl) return post.videoUrl;
-    if (post.type === 'audio' && post.track?.coverArt) return post.track.coverArt;
+    if (post.type === 'audio' && displayImage) return displayImage;
+    if (post.type === 'album' && post.album?.coverArt) return post.album.coverArt;
     // Fallback for image posts without imageUrl
-    if (post.imageUrl) return post.imageUrl;
+    if (displayImage) return displayImage;
     if (post.track?.coverArt) return post.track.coverArt;
     // Use placeholder for posts without images
-    return '/placeholder.svg';
+    return DEFAULT_MEDIA_IMAGE;
   };
 
   const postImage = getPostImage();
 
+  const savePostEdit = async () => {
+    if (!user) return;
+    setSavingEdit(true);
+    try {
+      let imageUrl = displayImage;
+      if (editArtwork) {
+        const object = storageRef(storage, `post-artwork/${user.uid}/${post.id}-${Date.now()}-${editArtwork.name}`);
+        await uploadBytes(object, editArtwork); imageUrl = await getDownloadURL(object);
+      }
+      await updateDoc(doc(db, 'posts', post.id), { caption: editCaption.trim(), image_url: imageUrl || null, updated_at: serverTimestamp() });
+      if (post.track && imageUrl) await updateDoc(doc(db, 'tracks', post.track.id), { cover_url: imageUrl, updated_at: serverTimestamp() });
+      setDisplayCaption(editCaption.trim()); setDisplayImage(imageUrl); setEditingPost(false); setEditArtwork(null); toast.success('Post updated.');
+    } catch { toast.error('The post could not be updated.'); }
+    finally { setSavingEdit(false); }
+  };
+
+  const removePost = async () => {
+    if (!window.confirm('Delete this post? The uploaded song will remain in your music library.')) return;
+    await deleteDoc(doc(db, 'posts', post.id)); setDeleted(true); setShowOptions(false); toast.success('Post deleted.');
+  };
+
+  if (deleted) return null;
+
   return (
     <>
       <motion.article
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-[630px] mx-auto border-x border-b border-border bg-background"
+        className="w-full max-w-[630px] mx-auto border-x border-b border-border bg-background transition-[border-color,box-shadow] duration-300 hover:border-primary/20 hover:shadow-[0_14px_40px_hsl(var(--primary)/0.06)]"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4">
@@ -247,7 +281,8 @@ export function FeedPost({ post }: FeedPostProps) {
         {/* Content - show image for ALL post types */}
         {postImage && (
           <div
-            className={cn('relative overflow-hidden bg-black group', post.type === 'image' ? '' : 'aspect-[4/5] sm:aspect-square')}
+            className={cn('relative overflow-hidden bg-black group', post.type === 'image' ? '' : 'aspect-[4/5] sm:aspect-square', post.type === 'album' && 'cursor-pointer')}
+            onClick={post.type === 'album' && post.album ? () => navigate(`/albums/${post.album!.id}`) : undefined}
             onDoubleClick={post.type === 'video' ? undefined : likeFromMedia}
             onPointerUp={post.type === 'video' ? undefined : handleMediaPointerUp}
           >
@@ -287,7 +322,7 @@ export function FeedPost({ post }: FeedPostProps) {
             {post.track && (
               <div className={cn('pointer-events-none absolute left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4', post.type === 'video' ? 'bottom-10' : 'bottom-0')}>
                 <p className="font-bold text-white">{post.track.title}</p>
-                <p className="text-sm text-white/70">{formatCount(playCount)} plays</p>
+                <p className="text-sm text-white/70">{formatCount(playCount)} plays · {formatMediaDuration(post.track.duration)}</p>
               </div>
             )}
             
@@ -314,6 +349,13 @@ export function FeedPost({ post }: FeedPostProps) {
           </div>
         )}
 
+        {post.type === 'album' && post.album && (
+          <div className="border-t border-border bg-card/60 p-3">
+            <button onClick={() => navigate(`/albums/${post.album!.id}`)} className="mb-2 flex w-full items-center justify-between text-left"><span><strong>{post.album.title}</strong><span className="ml-2 text-xs uppercase text-muted-foreground">{post.album.type}</span></span><span className="text-xs text-primary">Open release</span></button>
+            <div className="space-y-1">{post.album.tracks.slice(0, 5).map((track, index) => <button key={track.id} onClick={() => playTrack(track, post.album!.tracks)} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted"><span className="w-5 text-xs text-muted-foreground">{index + 1}</span><span className="min-w-0 flex-1 truncate text-sm">{track.title}</span><Play className="h-4 w-4 text-primary" /></button>)}</div>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-4">
@@ -331,6 +373,7 @@ export function FeedPost({ post }: FeedPostProps) {
             </motion.button>
             <button onClick={handleComment} className="flex items-center gap-1">
               <MessageCircle className="w-6 h-6" />
+              <span className="text-xs">{formatCount(commentCount)}</span>
             </button>
             <button onClick={handleShare} className="flex items-center gap-1">
               <Share2 className="w-6 h-6" />
@@ -360,7 +403,8 @@ export function FeedPost({ post }: FeedPostProps) {
             >
               {post.artist.username}
             </button>{' '}
-            <span className="text-muted-foreground">{post.caption}</span>
+            <span className={cn('whitespace-pre-wrap text-muted-foreground', !captionExpanded && displayCaption.length > 180 && 'line-clamp-3')}>{displayCaption}</span>
+            {displayCaption.length > 180 && <button type="button" onClick={() => setCaptionExpanded(value => !value)} className="ml-1 font-medium text-foreground hover:underline">{captionExpanded ? 'Show less' : 'Read more'}</button>}
           </p>
           {post.credits && (
             <details className="rounded-lg bg-muted/40 px-3 py-2 text-xs">
@@ -375,14 +419,9 @@ export function FeedPost({ post }: FeedPostProps) {
             </details>
           )}
           {post.attachedMusic && <p className="flex items-center gap-2 text-xs text-muted-foreground">♫ {post.attachedMusic}</p>}
-          {post.comments > 0 && (
-            <button
-              onClick={handleComment}
-              className="text-sm text-muted-foreground"
-            >
-              View all {formatCount(commentCount)} comments
-            </button>
-          )}
+          <button onClick={handleComment} className="text-sm text-muted-foreground">
+            {commentCount === 0 ? 'No comments yet' : `View all ${formatCount(commentCount)} comments`}
+          </button>
         </div>
       </motion.article>
 
@@ -391,12 +430,15 @@ export function FeedPost({ post }: FeedPostProps) {
         onClose={() => setShowOptions(false)}
         postId={post.id}
         isOwner={Boolean(user && (post.artist.id === user.uid || post.artist.id === profile?.id))}
+        onEdit={() => { setShowOptions(false); setEditingPost(true); }}
+        onDelete={() => void removePost()}
       />
       <PostCommentsModal postId={post.id} ownerId={post.artist.id} open={showComments} onClose={() => setShowComments(false)} onAdded={() => {
         setCommentCount(count => count + 1);
         updateDoc(doc(db, 'posts', post.id), { comments: increment(1) }).catch(() => undefined);
       }} />
       {showPlaylistPicker && <div className="fixed inset-0 z-[110] grid place-items-center bg-black/70 p-4" onClick={() => setShowPlaylistPicker(false)}><div className="w-full max-w-sm rounded-2xl border border-border bg-card p-4" onClick={event => event.stopPropagation()}><div className="mb-3 flex items-center justify-between"><h3 className="font-bold">Add to playlist</h3><button onClick={() => setShowPlaylistPicker(false)}><X className="h-4 w-4" /></button></div><div className="space-y-2">{playlists.map(playlist => <button key={playlist.id} onClick={() => void addToPlaylist(playlist.id)} className="w-full rounded-xl bg-muted p-3 text-left text-sm font-medium hover:bg-muted/70">{playlist.name}</button>)}{!playlists.length && <button onClick={() => navigate('/library')} className="w-full rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">Create a playlist in your library first</button>}</div></div></div>}
+      {editingPost && <div className="fixed inset-0 z-[120] grid place-items-center bg-black/70 p-4" onClick={() => setEditingPost(false)}><section className="w-full max-w-lg space-y-4 rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between"><div><h2 className="font-bold">Edit post</h2><p className="text-xs text-muted-foreground">The uploaded song cannot be replaced.</p></div><button onClick={() => setEditingPost(false)}><X className="h-5 w-5" /></button></div><Textarea value={editCaption} onChange={event => setEditCaption(event.target.value)} className="min-h-28" /><label className="block rounded-xl border border-dashed border-border p-4 text-center text-sm">Choose replacement artwork<input className="hidden" type="file" accept="image/*" onChange={event => setEditArtwork(event.target.files?.[0] || null)} /></label>{editArtwork && <p className="text-xs text-muted-foreground">{editArtwork.name}</p>}<Button className="w-full" disabled={savingEdit} onClick={() => void savePostEdit()}>{savingEdit ? 'Saving…' : 'Save changes'}</Button></section></div>}
     </>
   );
 }

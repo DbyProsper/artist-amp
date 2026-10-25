@@ -53,7 +53,7 @@ export function ArtistCard({ artist, variant = 'default', onClick }: ArtistCardP
       <motion.div
         whileTap={{ scale: 0.98 }}
         onClick={onClick}
-        className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden group cursor-pointer"
+        className="relative mx-auto aspect-square w-full max-w-56 overflow-hidden rounded-2xl group cursor-pointer"
       >
         <img
           src={artist.coverImage}

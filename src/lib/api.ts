@@ -126,14 +126,19 @@ async function callApiRequest(
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       let errorMessage = text || `HTTP ${response.status}`;
+      let quotaDetail: Record<string, unknown> | null = null;
       try {
         const parsed = JSON.parse(text);
+        if (parsed.detail && typeof parsed.detail === 'object') quotaDetail = parsed.detail;
         errorMessage = parsed.detail?.message || parsed.detail || parsed.error || parsed.message || errorMessage;
       } catch {
         // The backend may return plain text for proxy or infrastructure errors.
       }
       if (response.status === 429 || /QUOTA_EXCEEDED/i.test(errorMessage)) {
         errorMessage = `QUOTA_EXCEEDED: ${errorMessage.replace(/^QUOTA_EXCEEDED:\s*/i, '')}`;
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('musicinsta:quota-exceeded', { detail: quotaDetail }));
+        }
       }
       console.error(`[API] Error response:`, errorMessage);
       return {

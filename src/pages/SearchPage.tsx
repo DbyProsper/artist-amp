@@ -10,6 +10,7 @@ import { useAuth } from '@/context/FirebaseAuthContext';
 import { collection, query, where, orderBy, limit, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Track, Artist } from '@/types';
+import { DEFAULT_MEDIA_IMAGE, hydrateTrackDurations } from '@/lib/media';
 
 interface Profile {
   id: string;
@@ -20,7 +21,6 @@ interface Profile {
   is_artist: boolean | null;
   is_verified: boolean | null;
 }
-
 interface DbPlaylist {
   id: string;
   name: string;
@@ -28,6 +28,12 @@ interface DbPlaylist {
   cover_url: string | null;
   is_public: boolean | null;
   creator_id: string;
+}
+
+interface DbTrackSearch {
+  id: string; title?: string; artist?: string; profile_id?: string; cover_url?: string;
+  duration?: number; plays?: number; likes?: number; audio_url?: string;
+  credits?: { primaryArtist?: string; featuredArtists?: string[] };
 }
 
 export default function SearchPage() {
@@ -87,7 +93,7 @@ export default function SearchPage() {
         // Search tracks
         const tracksQuery = query(collection(db, 'tracks'));
         const tracksSnapshot = await getDocs(tracksQuery);
-        const tracksData: any[] = [];
+        const tracksData: DbTrackSearch[] = [];
         tracksSnapshot.forEach((doc) => {
           const data = doc.data();
           const searchable = [data.title, data.artist, data.credits?.primaryArtist, ...(data.credits?.featuredArtists || [])].filter(Boolean).join(' ').toLowerCase();
@@ -110,7 +116,7 @@ export default function SearchPage() {
           transformed.push({
             id: track.id,
             title: track.title,
-            coverArt: track.cover_url || '/placeholder.svg',
+            coverArt: track.cover_url || '/musicinsta-default-cover.webp',
             duration: track.duration || 0,
             plays: track.plays || 0,
             likes: track.likes || 0,
@@ -119,8 +125,8 @@ export default function SearchPage() {
               id: profileData?.id || track.profile_id,
               name: profileData?.name || 'Unknown',
               username: profileData?.username || 'unknown',
-              avatar: profileData?.avatar_url || '',
-              coverImage: '',
+              avatar: profileData?.avatar_url || DEFAULT_MEDIA_IMAGE,
+              coverImage: profileData?.cover_url || DEFAULT_MEDIA_IMAGE,
               bio: '',
               location: '',
               genres: [],
@@ -131,7 +137,7 @@ export default function SearchPage() {
             } as Artist,
           });
         }
-        setDbTracks(transformed);
+        setDbTracks(await hydrateTrackDurations(transformed));
 
         // Search playlists
         const playlistsQuery = query(
@@ -352,7 +358,7 @@ function ProfileRow({ profile, onClick }: { profile: { id: string; name: string 
       className="w-full flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors text-left"
     >
       <img
-        src={profile.avatar_url || '/placeholder.svg'}
+        src={profile.avatar_url || '/musicinsta-default-cover.webp'}
         alt={profile.name || 'User'}
         className="w-12 h-12 rounded-full object-cover"
       />

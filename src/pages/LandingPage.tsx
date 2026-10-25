@@ -1,609 +1,123 @@
-import { motion } from 'framer-motion';
-import { Play, ArrowRight, Music2, Users, Radio, Headphones, Heart, TrendingUp, Star, Zap, Globe, Sparkles, Wand2, BarChart3 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { type MouseEvent, type ReactNode } from 'react';
+import { motion, useMotionTemplate, useMotionValue, useReducedMotion, useSpring, useTransform } from 'framer-motion';
+import { ArrowRight, AudioLines, Bot, Disc3, Image as ImageIcon, Mic2, Music2, Radio, SlidersHorizontal, Sparkles, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { FloatingMusicNotes } from '@/components/ui/FloatingMusicNotes';
-import landingHero from '@/assets/landing-hero.jpg';
+import { AppLogo } from '@/components/ui/AppLogo';
+import { Button } from '@/components/ui/button';
 
-const features = [
-  {
-    icon: Music2,
-    title: 'Upload & Share',
-    description: 'Share your music with fans worldwide. Upload tracks, create posts, and build your audience.',
-  },
-  {
-    icon: Users,
-    title: 'Connect with Artists',
-    description: 'Follow your favorite artists, discover new talent, and collaborate on music projects.',
-  },
-  {
-    icon: Radio,
-    title: 'Personalized Discovery',
-    description: 'Get music recommendations tailored to your taste. The more you listen, the better it gets.',
-  },
-  {
-    icon: Heart,
-    title: 'Engage & Interact',
-    description: 'Like, comment, and share music. Build meaningful connections in the music community.',
-  },
+const studioTools = [
+  { icon: Bot, title: 'AI music assistant', copy: 'Turn an idea into a clear creative direction, prompts and release-ready assets.' },
+  { icon: Music2, title: 'Full songs and beats', copy: 'Generate original instrumentals, song concepts and complete compositions.' },
+  { icon: Mic2, title: 'Lyrics and vocals', copy: 'Write lyrics, record vocals and shape performances inside one connected workflow.' },
+  { icon: SlidersHorizontal, title: 'Browser DAW', copy: 'Arrange, edit, mix and apply pitch, EQ, compression, delay and reverb.' },
+  { icon: AudioLines, title: 'Enhance and master', copy: 'Clean recordings and prepare balanced exports for sharing and release.' },
+  { icon: ImageIcon, title: 'Visual studio', copy: 'Create cover art, merchandise concepts and promotional posters for each release.' },
 ];
 
-const testimonials = [
-  {
-    name: 'Prosper Masuku',
-    role: 'Independent Artist',
-    quote: 'MusicInsta helped me grow my fanbase from 100 to 15K listeners in just 6 months. The engagement here is unreal!',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-  },
-  {
-    name: 'Luna Wave',
-    role: 'Electronic Producer',
-    quote: 'Finally a platform that understands what independent artists need. The analytics alone are game-changing.',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-  },
-  {
-    name: 'Marcus Stone',
-    role: 'Hip-Hop Producer',
-    quote: 'The community here is incredibly supportive. I\'ve collaborated with artists I never would have met otherwise.',
-    avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150',
-  },
+const journeyImages = [
+  { src: '/landing/vocal-studio.webp', alt: 'Artist recording vocals in the MusicInsta studio', title: 'Create in one studio' },
+  { src: '/landing/daw-workspace.webp', alt: 'MusicInsta digital audio workstation', title: 'Produce and mix in the browser' },
+  { src: '/landing/music-discovery.webp', alt: 'Listener discovering independent music on MusicInsta', title: 'Reach listeners by taste' },
+  { src: '/landing/artist-collaboration.webp', alt: 'Independent artists collaborating with MusicInsta', title: 'Collaborate with artists' },
 ];
+
+const ease = [0.22, 1, 0.36, 1] as const;
+
+function Reveal({ children, className = '', delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
+  return <motion.div initial={{ opacity: 0, y: 44, filter: 'blur(8px)' }} whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }} viewport={{ once: true, amount: 0.18, margin: '-8% 0px -8% 0px' }} transition={{ duration: 0.7, delay, ease }} className={className}>{children}</motion.div>;
+}
+
+function InteractiveImage({ src, alt, className = '', priority = false }: { src: string; alt: string; className?: string; priority?: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const pointerX = useMotionValue(0);
+  const pointerY = useMotionValue(0);
+  const rotateX = useSpring(useTransform(pointerY, [-0.5, 0.5], [3, -3]), { stiffness: 150, damping: 22 });
+  const rotateY = useSpring(useTransform(pointerX, [-0.5, 0.5], [-3, 3]), { stiffness: 150, damping: 22 });
+  const move = (event: MouseEvent<HTMLElement>) => {
+    if (reduceMotion) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    pointerX.set((event.clientX - bounds.left) / bounds.width - 0.5);
+    pointerY.set((event.clientY - bounds.top) / bounds.height - 0.5);
+  };
+  const reset = () => { pointerX.set(0); pointerY.set(0); };
+
+  return <motion.figure onMouseMove={move} onMouseLeave={reset} style={reduceMotion ? undefined : { rotateX, rotateY, transformPerspective: 1000 }} className="group relative overflow-hidden rounded-3xl bg-muted shadow-2xl">
+    <motion.img src={src} alt={alt} className={`w-full object-cover ${className}`} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : 'auto'} whileHover={reduceMotion ? undefined : { scale: 1.045 }} transition={{ duration: 0.65, ease }} />
+    <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-primary/15 via-transparent to-white/10 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+  </motion.figure>;
+}
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const reduceMotion = useReducedMotion();
+  const pointerX = useMotionValue(0);
+  const pointerY = useMotionValue(0);
+  const glowX = useMotionValue(50);
+  const glowY = useMotionValue(35);
+  const heroX = useSpring(useTransform(pointerX, [-1, 1], [-14, 14]), { stiffness: 90, damping: 25 });
+  const heroY = useSpring(useTransform(pointerY, [-1, 1], [-9, 9]), { stiffness: 90, damping: 25 });
+  const cursorGlow = useMotionTemplate`radial-gradient(520px circle at ${glowX}% ${glowY}%, hsl(var(--primary) / 0.13), transparent 70%)`;
 
-  return (
-    <div className="min-h-screen bg-background overflow-x-hidden relative">
-      {/* Full-page Background with Floating Notes */}
-      <div className="fixed inset-0 -z-10">
-        <img
-          src={landingHero}
-          alt="Young person enjoying music"
-          className="w-full h-full object-cover object-top"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-background" />
+  const movePage = (event: MouseEvent<HTMLDivElement>) => {
+    if (reduceMotion) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) / bounds.width;
+    const y = Math.min(1, Math.max(0, event.clientY / window.innerHeight));
+    pointerX.set(x * 2 - 1); pointerY.set(y * 2 - 1); glowX.set(x * 100); glowY.set(y * 100);
+  };
+  const resetPage = () => { pointerX.set(0); pointerY.set(0); glowX.set(50); glowY.set(35); };
+
+  return <div className="relative min-h-screen overflow-hidden bg-background text-foreground" onMouseMove={movePage} onMouseLeave={resetPage}>
+    <motion.div aria-hidden className="pointer-events-none fixed inset-0 z-30" style={{ background: cursorGlow }} />
+    <motion.header initial={{ opacity: 0, y: -18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }} className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-background/80 backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-5">
+        <motion.div className="flex items-center gap-3" whileHover={reduceMotion ? undefined : { scale: 1.025 }}><AppLogo size="lg" /><span className="font-display text-xl font-bold text-primary">MusicInsta</span></motion.div>
+        <div className="flex gap-1 sm:gap-2"><Button variant="ghost" onClick={() => navigate('/search')}>Explore</Button><Button onClick={() => navigate('/auth')}>Sign in</Button></div>
       </div>
+    </motion.header>
 
-      {/* Floating Music Notes - Full Page */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <FloatingMusicNotes />
-      </div>
-
-      {/* Header */}
-      <header className="relative z-10 py-4 px-4 safe-top">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <motion.img 
-              src="/MusicInsta_Logo.png"
-              alt="MusicInsta Logo"
-              className="h-16 w-auto"
-              animate={{ 
-                filter: [
-                  'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))',
-                  'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.6))',
-                  'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-            />
-            <span className="text-2xl font-display font-bold text-gradient">MusicInsta</span>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => navigate('/auth')}>
-            Sign In
-          </Button>
+    <main className="pt-16">
+      <section className="relative min-h-[88vh] overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden">
+          <motion.img src="/landing/live-concert.webp" alt="MusicInsta artists performing live" className="absolute inset-0 block h-full w-full max-w-none object-cover object-center" fetchPriority="high" initial={{ scale: 1.14 }} animate={{ scale: 1.08 }} style={reduceMotion ? undefined : { x: heroX, y: heroY }} transition={{ duration: 1.5, ease }} />
         </div>
-      </header>
-
-      {/* Hero Content */}
-      <div className="relative z-10 px-6 pt-16 pb-8">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="text-center max-w-2xl mx-auto"
-        >
-          <motion.img 
-            src="/MusicInsta_Logo.png"
-            alt="MusicInsta Logo"
-            className="h-24 md:h-28 w-auto mx-auto mb-6"
-            animate={{ 
-              filter: [
-                'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.5))',
-                'drop-shadow(0 0 40px hsla(330, 85%, 60%, 0.8))',
-                'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.5))'
-              ]
-            }}
-            transition={{ duration: 2, repeat: Infinity }}
-          />
-          <motion.h1 
-            className="text-4xl md:text-6xl font-display font-bold mb-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-          >
-            Where{' '}
-            <motion.span 
-              className="text-gradient relative inline-block"
-              animate={{ 
-                textShadow: [
-                  '0 0 20px hsla(330, 85%, 60%, 0.5)',
-                  '0 0 40px hsla(330, 85%, 60%, 0.8)',
-                  '0 0 20px hsla(330, 85%, 60%, 0.5)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              Music
-            </motion.span>
-            {' '}Meets{' '}
-            <motion.span 
-              className="text-gradient relative inline-block"
-              animate={{ 
-                textShadow: [
-                  '0 0 20px hsla(280, 70%, 50%, 0.5)',
-                  '0 0 40px hsla(280, 70%, 50%, 0.8)',
-                  '0 0 20px hsla(280, 70%, 50%, 0.5)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
-            >
-              Community
-            </motion.span>
-          </motion.h1>
-          <motion.p 
-            className="text-base md:text-lg text-muted-foreground mb-8 max-w-md mx-auto"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
-            Discover, share, and connect through music. Join thousands of artists and fans 
-            on the social platform built for music lovers.
-          </motion.p>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.5 }}
-            className="flex flex-col gap-3 max-w-sm mx-auto"
-          >
-            <Button
-              size="lg"
-              onClick={() => navigate('/search')}
-              className="w-full text-base py-6 rounded-xl animate-glow"
-            >
-              <Play className="w-5 h-5 mr-2" fill="currentColor" />
-              Start Listening
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              onClick={() => navigate('/auth')}
-              className="w-full text-base py-6 rounded-xl"
-            >
-              I'm an Artist
-              <ArrowRight className="w-5 h-5 ml-2" />
-            </Button>
+        <div className="absolute inset-0 bg-gradient-to-r from-black via-black/75 to-black/20" />
+        <div className="relative mx-auto flex min-h-[88vh] max-w-7xl items-center px-5 py-20 sm:px-6">
+          <motion.div initial="hidden" animate="visible" variants={{ hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.12, delayChildren: 0.12 } } }} className="max-w-3xl">
+            <motion.span variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }} className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/15 px-4 py-2 text-sm font-semibold text-primary backdrop-blur-md"><Sparkles className="h-4 w-4" />Create, release and get discovered</motion.span>
+            <motion.h1 variants={{ hidden: { opacity: 0, y: 28 }, visible: { opacity: 1, y: 0 } }} className="mt-6 font-display text-4xl font-black leading-[.95] text-white sm:text-6xl lg:text-7xl">The music platform built around independent artists.</motion.h1>
+            <motion.p variants={{ hidden: { opacity: 0, y: 22 }, visible: { opacity: 1, y: 0 } }} className="mt-6 max-w-2xl text-base leading-7 text-white/75 sm:text-lg sm:leading-8">MusicInsta connects an AI-powered production studio, a complete browser DAW and a social music community. Make the work, publish it and reach listeners whose taste genuinely matches your sound.</motion.p>
+            <motion.div variants={{ hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0 } }} className="mt-8 flex flex-wrap gap-3"><Button size="lg" onClick={() => navigate('/auth')}>Start creating <ArrowRight className="ml-2 h-4 w-4" /></Button><Button size="lg" variant="secondary" onClick={() => navigate('/search')}>Discover music</Button></motion.div>
           </motion.div>
-
-          <p className="text-xs text-muted-foreground mt-4">
-            Free to use • No credit card required
-          </p>
-        </motion.div>
-      </div>
-
-      {/* Features Section */}
-      <section className="relative z-10 px-6 py-16 bg-gradient-to-b from-transparent via-background/95 to-background">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-12"
-        >
-          <h2 className="text-2xl md:text-3xl font-display font-bold mb-3">
-            Everything You Need for{' '}
-            <motion.span 
-              className="text-gradient"
-              animate={{ 
-                textShadow: [
-                  '0 0 10px hsla(330, 85%, 60%, 0.3)',
-                  '0 0 20px hsla(330, 85%, 60%, 0.5)',
-                  '0 0 10px hsla(330, 85%, 60%, 0.3)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              Music
-            </motion.span>
-          </h2>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            Whether you're an artist or a fan, MusicInsta has the tools you need to enjoy music like never before.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-          {features.map((feature, index) => (
-            <motion.div
-              key={feature.title}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              whileHover={{ scale: 1.02, boxShadow: '0 0 30px hsla(330, 85%, 60%, 0.2)' }}
-              className="p-6 rounded-2xl bg-muted/30 backdrop-blur-sm border border-border transition-all"
-            >
-              <motion.div 
-                className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mb-4"
-                whileHover={{ 
-                  boxShadow: '0 0 20px hsla(330, 85%, 60%, 0.4)'
-                }}
-              >
-                <feature.icon className="w-6 h-6 text-primary" />
-              </motion.div>
-              <h3 className="font-display font-bold text-lg mb-2">{feature.title}</h3>
-              <p className="text-sm text-muted-foreground">{feature.description}</p>
-            </motion.div>
-          ))}
         </div>
       </section>
 
-      {/* Stats Section */}
-      <section className="relative z-10 px-6 py-16 bg-background">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="grid grid-cols-3 gap-6 max-w-2xl mx-auto text-center"
-        >
-          <motion.div
-            whileHover={{ scale: 1.05 }}
-            className="p-4 rounded-xl"
-          >
-            <motion.p 
-              className="text-3xl md:text-4xl font-display font-bold text-gradient"
-              animate={{ 
-                textShadow: [
-                  '0 0 10px hsla(330, 85%, 60%, 0.3)',
-                  '0 0 25px hsla(330, 85%, 60%, 0.6)',
-                  '0 0 10px hsla(330, 85%, 60%, 0.3)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              10K+
-            </motion.p>
-            <p className="text-sm text-muted-foreground mt-1">Artists</p>
-          </motion.div>
-          <motion.div
-            whileHover={{ scale: 1.05 }}
-            className="p-4 rounded-xl"
-          >
-            <motion.p 
-              className="text-3xl md:text-4xl font-display font-bold text-gradient"
-              animate={{ 
-                textShadow: [
-                  '0 0 10px hsla(280, 70%, 50%, 0.3)',
-                  '0 0 25px hsla(280, 70%, 50%, 0.6)',
-                  '0 0 10px hsla(280, 70%, 50%, 0.3)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity, delay: 0.3 }}
-            >
-              50K+
-            </motion.p>
-            <p className="text-sm text-muted-foreground mt-1">Tracks</p>
-          </motion.div>
-          <motion.div
-            whileHover={{ scale: 1.05 }}
-            className="p-4 rounded-xl"
-          >
-            <motion.p 
-              className="text-3xl md:text-4xl font-display font-bold text-gradient"
-              animate={{ 
-                textShadow: [
-                  '0 0 10px hsla(240, 60%, 55%, 0.3)',
-                  '0 0 25px hsla(240, 60%, 55%, 0.6)',
-                  '0 0 10px hsla(240, 60%, 55%, 0.3)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity, delay: 0.6 }}
-            >
-              100K+
-            </motion.p>
-            <p className="text-sm text-muted-foreground mt-1">Fans</p>
-          </motion.div>
+      <section className="mx-auto max-w-7xl px-5 py-20 sm:px-6 sm:py-24">
+        <Reveal className="max-w-3xl"><p className="font-bold uppercase tracking-[.25em] text-primary">MusicInsta AI Studio</p><h2 className="mt-3 font-display text-3xl font-black sm:text-5xl">Every tool between the first idea and the final release.</h2><p className="mt-4 text-base leading-7 text-muted-foreground sm:text-lg">Tools share the same project context, so generated songs, cover art and DAW sessions can move directly into publishing without rebuilding the release from scratch.</p></Reveal>
+        <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.12 }} variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.09 } } }} className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {studioTools.map(tool => <motion.article key={tool.title} variants={{ hidden: { opacity: 0, y: 34, scale: 0.97 }, visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.65, ease } } }} whileHover={reduceMotion ? undefined : { y: -7, scale: 1.018, boxShadow: '0 22px 55px hsl(var(--primary) / 0.13)' }} className="group rounded-2xl border border-border bg-card p-6 transition-colors hover:border-primary/35">
+            <motion.div whileHover={reduceMotion ? undefined : { rotate: -5, scale: 1.1 }} className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10"><tool.icon className="h-7 w-7 text-primary" /></motion.div><h3 className="mt-5 text-xl font-bold">{tool.title}</h3><p className="mt-2 leading-7 text-muted-foreground">{tool.copy}</p>
+          </motion.article>)}
         </motion.div>
       </section>
 
-      {/* How It Works */}
-      <section className="relative z-10 px-6 py-16 bg-gradient-to-b from-background to-muted/20">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-12"
-        >
-          <h2 className="text-2xl md:text-3xl font-display font-bold mb-3">
-            How It{' '}
-            <motion.span 
-              className="text-gradient"
-              animate={{ 
-                textShadow: [
-                  '0 0 15px hsla(330, 85%, 60%, 0.4)',
-                  '0 0 30px hsla(330, 85%, 60%, 0.7)',
-                  '0 0 15px hsla(330, 85%, 60%, 0.4)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              Works
-            </motion.span>
-          </h2>
-        </motion.div>
+      <section className="border-y border-border bg-card/40 py-20 sm:py-24"><div className="mx-auto max-w-7xl px-5 sm:px-6"><div className="grid items-center gap-10 lg:grid-cols-2">
+        <Reveal><InteractiveImage src="/landing/daw-workspace.webp" alt="MusicInsta browser DAW showing a multitrack session" className="aspect-[16/11]" /></Reveal>
+        <Reveal delay={0.1}><p className="font-bold uppercase tracking-[.25em] text-primary">Real production workflow</p><h2 className="mt-3 font-display text-3xl font-black sm:text-4xl">Your projects follow you.</h2><p className="mt-5 text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">Cloud-synced DAW sessions keep arrangements, audio tracks and mixer settings available across devices, while local copies provide resilient recovery and fast reopening.</p><div className="mt-7 grid gap-3 sm:grid-cols-2">
+          {[['Multitrack arranging', 'Record, trim, move and mix'], ['Professional effects', 'Pitch, EQ, dynamics and space']].map(([title, copy]) => <motion.span key={title} whileHover={reduceMotion ? undefined : { y: -4, scale: 1.02 }} className="rounded-xl bg-muted p-4"><strong className="block">{title}</strong><small className="text-muted-foreground">{copy}</small></motion.span>)}
+        </div></Reveal>
+      </div></div></section>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-          {[
-            { step: '1', icon: Zap, title: 'Create Account', desc: 'Sign up for free and set up your profile in minutes.' },
-            { step: '2', icon: Globe, title: 'Explore Music', desc: 'Discover new artists and tracks tailored to your taste.' },
-            { step: '3', icon: Star, title: 'Connect & Share', desc: 'Follow artists, share tracks, and join the community.' },
-          ].map((item, index) => (
-            <motion.div
-              key={item.step}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: index * 0.15 }}
-              className="text-center"
-            >
-              <motion.div 
-                className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 text-primary font-display font-bold text-xl flex items-center justify-center mx-auto mb-4"
-                animate={{ 
-                  boxShadow: [
-                    '0 0 10px hsla(330, 85%, 60%, 0.2)',
-                    '0 0 25px hsla(330, 85%, 60%, 0.4)',
-                    '0 0 10px hsla(330, 85%, 60%, 0.2)'
-                  ]
-                }}
-                transition={{ duration: 2, repeat: Infinity, delay: index * 0.3 }}
-              >
-                <item.icon className="w-7 h-7" />
-              </motion.div>
-              <h3 className="font-display font-bold text-lg mb-2">{item.title}</h3>
-              <p className="text-sm text-muted-foreground">{item.desc}</p>
-            </motion.div>
-          ))}
-        </div>
+      <section className="mx-auto max-w-7xl px-5 py-20 sm:px-6 sm:py-24"><Reveal className="mb-10 text-center"><p className="font-bold uppercase tracking-[.25em] text-primary">One connected journey</p><h2 className="mt-3 font-display text-3xl font-black sm:text-4xl">From idea to audience</h2></Reveal><div className="grid gap-6 md:grid-cols-2">
+        {journeyImages.map((item, index) => <Reveal key={item.src} delay={(index % 2) * 0.1} className={index === 0 ? 'md:col-span-2' : ''}><article><InteractiveImage src={item.src} alt={item.alt} className={index === 0 ? 'max-h-[560px] aspect-[16/9]' : 'aspect-[16/10]'} /><motion.h3 whileHover={reduceMotion ? undefined : { x: 5 }} className="mt-4 inline-block text-xl font-bold">{item.title}</motion.h3></article></Reveal>)}
+      </div></section>
+
+      <section className="relative overflow-hidden bg-gradient-to-br from-primary/20 via-background to-accent/15 py-20 sm:py-24">
+        <motion.div aria-hidden className="absolute -right-32 -top-32 h-80 w-80 rounded-full bg-primary/15 blur-3xl" animate={reduceMotion ? undefined : { scale: [1, 1.15, 1], opacity: [0.45, 0.7, 0.45] }} transition={{ duration: 5, repeat: Infinity }} />
+        <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-5 sm:px-6 lg:grid-cols-2"><Reveal><div className="flex gap-3">{[Radio, Users, Disc3].map((Icon, index) => <motion.div key={index} whileHover={reduceMotion ? undefined : { y: -4, rotate: index === 1 ? 4 : -4 }}><Icon className="h-7 w-7 text-primary" /></motion.div>)}</div><h2 className="mt-5 font-display text-3xl font-black sm:text-4xl">Discovery that gives independent music a fair chance.</h2><p className="mt-5 text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8">MusicInsta learns from each listener's plays, completed listens, likes and skips. Familiar music comes first, followed by new artists with genuinely similar sound—not simply whoever already has the largest numbers.</p><Button className="mt-8" size="lg" onClick={() => navigate('/auth')}>Join MusicInsta</Button></Reveal><Reveal delay={0.1}><InteractiveImage src="/landing/music-discovery.webp" alt="Listener discovering artists through MusicInsta" className="aspect-[16/11]" /></Reveal></div>
       </section>
+    </main>
 
-      {/* AI Features Section - For Artists */}
-      <section className="relative z-10 px-6 py-16 bg-gradient-to-b from-background to-muted/20">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-12"
-        >
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <Sparkles className="w-5 h-5 text-primary" />
-            <span className="text-sm font-medium text-primary">AI-Powered Studio</span>
-          </div>
-          <h2 className="text-2xl md:text-3xl font-display font-bold mb-3">
-            Next-Gen Music Production for{' '}
-            <motion.span 
-              className="text-gradient"
-              animate={{ 
-                textShadow: [
-                  '0 0 15px hsla(330, 85%, 60%, 0.4)',
-                  '0 0 30px hsla(330, 85%, 60%, 0.7)',
-                  '0 0 15px hsla(330, 85%, 60%, 0.4)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              Artists
-            </motion.span>
-          </h2>
-          <p className="text-muted-foreground max-w-2xl mx-auto">
-            Unlock professional music production with AI assistance. Generate lyrics, produce beats, create full compositions, and get advanced analytics—all in one studio.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto mb-8">
-          {[
-            {
-              icon: Wand2,
-              title: 'AI Lyrics Generator',
-              description: 'Create original, unique lyrics in any style with AI-powered creativity',
-              color: 'from-primary/20 to-accent/20',
-            },
-            {
-              icon: Music2,
-              title: 'Beat Production',
-              description: 'Generate royalty-free beats across multiple genres and styles',
-              color: 'from-accent/20 to-secondary/20',
-            },
-            {
-              icon: Sparkles,
-              title: 'Full Song Composition',
-              description: 'Create complete songs with lyrics, melody, and instrumentation',
-              color: 'from-secondary/20 to-primary/20',
-            },
-            {
-              icon: Zap,
-              title: 'Pro Mixing & Mastering',
-              description: 'Professional mixing with Free, Pro, and Premium tiers',
-              color: 'from-green-500/20 to-emerald-500/20',
-            },
-          ].map((feature, index) => (
-            <motion.div
-              key={feature.title}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              whileHover={{ scale: 1.02 }}
-              className={`p-6 rounded-2xl bg-gradient-to-br ${feature.color} backdrop-blur-sm border border-border transition-all`}
-            >
-              <motion.div 
-                className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center mb-3"
-                whileHover={{ 
-                  boxShadow: '0 0 20px hsla(330, 85%, 60%, 0.3)'
-                }}
-              >
-                <feature.icon className="w-6 h-6 text-primary" />
-              </motion.div>
-              <h3 className="font-display font-bold text-lg mb-2">{feature.title}</h3>
-              <p className="text-sm text-muted-foreground">{feature.description}</p>
-            </motion.div>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-center gap-3 max-w-2xl mx-auto">
-          <BarChart3 className="w-5 h-5 text-primary flex-shrink-0" />
-          <p className="text-sm text-muted-foreground text-center">
-            <span className="font-medium text-foreground">AI Performance Analytics</span> — Get deep insights into listener behavior, engagement patterns, and revenue trends
-          </p>
-        </div>
-      </section>
-
-      {/* Testimonials */}
-      <section className="relative z-10 px-6 py-16 bg-muted/10">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-12"
-        >
-          <h2 className="text-2xl md:text-3xl font-display font-bold mb-3">
-            What Artists Are{' '}
-            <motion.span 
-              className="text-gradient"
-              animate={{ 
-                textShadow: [
-                  '0 0 15px hsla(330, 85%, 60%, 0.4)',
-                  '0 0 30px hsla(330, 85%, 60%, 0.7)',
-                  '0 0 15px hsla(330, 85%, 60%, 0.4)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              Saying
-            </motion.span>
-          </h2>
-        </motion.div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-          {testimonials.map((testimonial, index) => (
-            <motion.div
-              key={testimonial.name}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              className="p-6 rounded-2xl bg-muted/30 backdrop-blur-sm border border-border"
-            >
-              <p className="text-sm text-muted-foreground mb-4 italic">"{testimonial.quote}"</p>
-              <div className="flex items-center gap-3">
-                <img
-                  src={testimonial.avatar}
-                  alt={testimonial.name}
-                  className="w-10 h-10 rounded-full object-cover"
-                />
-                <div>
-                  <p className="font-medium text-sm">{testimonial.name}</p>
-                  <p className="text-xs text-muted-foreground">{testimonial.role}</p>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="relative z-10 px-6 py-20 bg-gradient-to-b from-muted/20 to-background">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-          className="text-center max-w-md mx-auto"
-        >
-          <motion.div
-            animate={{ 
-              boxShadow: [
-                '0 0 30px hsla(330, 85%, 60%, 0.3)',
-                '0 0 60px hsla(330, 85%, 60%, 0.5)',
-                '0 0 30px hsla(330, 85%, 60%, 0.3)'
-              ]
-            }}
-            transition={{ duration: 2, repeat: Infinity }}
-            className="w-20 h-20 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mx-auto mb-6"
-          >
-            <Headphones className="w-10 h-10 text-primary" />
-          </motion.div>
-          <h2 className="text-2xl md:text-3xl font-display font-bold mb-3">
-            Ready to{' '}
-            <motion.span 
-              className="text-gradient"
-              animate={{ 
-                textShadow: [
-                  '0 0 20px hsla(330, 85%, 60%, 0.5)',
-                  '0 0 40px hsla(330, 85%, 60%, 0.8)',
-                  '0 0 20px hsla(330, 85%, 60%, 0.5)'
-                ]
-              }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              Start?
-            </motion.span>
-          </h2>
-          <p className="text-muted-foreground mb-8">
-            Join MusicInsta today and be part of the next generation of music discovery.
-          </p>
-          <div className="flex flex-col gap-3">
-            <Button
-              size="lg"
-              onClick={() => navigate('/auth')}
-              className="w-full text-base py-6 rounded-xl animate-glow"
-            >
-              Get Started Free
-            </Button>
-            <Button
-              size="lg"
-              variant="ghost"
-              onClick={() => navigate('/search')}
-              className="w-full text-base py-6 rounded-xl"
-            >
-              Browse Music First
-            </Button>
-          </div>
-        </motion.div>
-      </section>
-
-      {/* Footer */}
-      <footer className="relative z-10 px-6 py-8 bg-background border-t border-border">
-        <div className="flex flex-col items-center gap-4 text-muted-foreground text-sm">
-          <motion.img 
-            src="/MusicInsta_Logo.png"
-            alt="MusicInsta Logo"
-            className="h-8 w-auto"
-            animate={{ 
-              filter: [
-                'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))',
-                'drop-shadow(0 0 20px hsla(330, 85%, 60%, 0.5))',
-                'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))'
-              ]
-            }}
-            transition={{ duration: 2, repeat: Infinity }}
-          />
-          <span>© 2024 MusicInsta. All rights reserved.</span>
-        </div>
-      </footer>
-    </div>
-  );
+    <Reveal><footer className="border-t border-border py-10"><div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 text-center sm:flex-row sm:text-left"><motion.div whileHover={reduceMotion ? undefined : { scale: 1.035 }} className="flex items-center gap-3"><AppLogo size="lg" /><strong>MusicInsta</strong></motion.div><p className="text-sm text-muted-foreground">Create boldly. Connect genuinely. Grow independently.</p></div></footer></Reveal>
+  </div>;
 }

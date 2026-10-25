@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Camera, Image, Music2, Video, X, Upload, Loader2, Sparkles, Edit2 } from 'lucide-react';
+import { Camera, Disc3, Image, Music2, Video, X, Upload, Loader2, Sparkles, Edit2, Save, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import { EmojiPicker } from '@/components/chat/EmojiPicker';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { ImageEditorModal } from '@/components/studio/ImageEditorModal';
@@ -20,6 +20,8 @@ import { EditorOverlay } from '@/types/imageEditor';
 import { publishUploadProgress } from '@/lib/uploadProgress';
 import { takeDawAudio } from '@/lib/dawTransfer';
 import { generateImage } from '@/lib/api';
+import { DEFAULT_MEDIA_IMAGE, readMediaDuration } from '@/lib/media';
+import { deletePostDraft, loadPostDraft, savePostDraft } from '@/lib/postDrafts';
 
 type UploadType = 'audio' | 'video' | 'image' | 'story';
 
@@ -27,10 +29,13 @@ export default function UploadPage() {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const studioGenerated = searchParams.get('studioGenerated') === '1';
+  const existingTrackId = searchParams.get('existingTrack');
   const [uploadType, setUploadType] = useState<UploadType | null>(null);
   const [loading, setLoading] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [generatedCoverUrl, setGeneratedCoverUrl] = useState('');
+  const [draftAvailable, setDraftAvailable] = useState(false);
   const [mediaDuration, setMediaDuration] = useState(0);
   const [storyClipStart, setStoryClipStart] = useState(0);
   const [storyClipEnd, setStoryClipEnd] = useState(30);
@@ -70,9 +75,42 @@ export default function UploadPage() {
       const file = new File([result.blob], result.name, { type: mime });
       const type: UploadType = mime.startsWith('image/') ? 'image' : 'audio';
       setUploadType(type);
-      setFormData(current => ({ ...current, file, filePreview: URL.createObjectURL(file), title: searchParams.get('title') || result.name.replace(/\.[^.]+$/, ''), caption: searchParams.get('caption') || current.caption, lyrics: searchParams.get('lyrics') || current.lyrics, genre: searchParams.get('genre') || current.genre }));
+      const inheritedCover = searchParams.get('cover') || '';
+      if (inheritedCover) setGeneratedCoverUrl(inheritedCover);
+      void readMediaDuration(file).then(setMediaDuration);
+      setFormData(current => ({ ...current, file, filePreview: URL.createObjectURL(file), coverPreview: inheritedCover || current.coverPreview, title: searchParams.get('title') || result.name.replace(/\.[^.]+$/, ''), caption: searchParams.get('caption') || current.caption, lyrics: searchParams.get('lyrics') || current.lyrics, genre: searchParams.get('genre') || current.genre, composers: studioGenerated ? 'MusicInsta AI' : current.composers, producers: studioGenerated ? 'MusicInsta AI' : current.producers, engineers: studioGenerated ? 'MusicInsta AI' : current.engineers, label: studioGenerated ? 'MusicInsta AI' : current.label }));
     });
-  }, [searchParams]);
+  }, [searchParams, studioGenerated]);
+
+  useEffect(() => {
+    if (!existingTrackId || !profile) return;
+    void getDoc(doc(db, 'tracks', existingTrackId)).then(snapshot => {
+      if (!snapshot.exists()) { toast.error('That track could not be found.'); return; }
+      const track = snapshot.data();
+      if (track.profile_id !== profile.id) { toast.error('You can only post tracks from your own profile.'); return; }
+      const cover = track.cover_url || DEFAULT_MEDIA_IMAGE;
+      setUploadType('audio'); setMediaDuration(Number(track.duration) || 0); setGeneratedCoverUrl(cover);
+      setFormData(current => ({ ...current, title: track.title || 'Untitled track', caption: current.caption || `${track.title || 'New music'} by ${profile.name || 'MusicInsta artist'}`, lyrics: track.lyrics || '', genre: track.genre || 'other', filePreview: track.audio_url || '', coverPreview: cover, composers: track.credits?.composers?.join(', ') || '', producers: track.credits?.producers?.join(', ') || '', engineers: track.credits?.engineers?.join(', ') || '', label: track.credits?.label || '' }));
+    });
+  }, [existingTrackId, profile]);
+
+  useEffect(() => { if (user) void loadPostDraft(user.uid).then(draft => setDraftAvailable(Boolean(draft))); }, [user]);
+
+  const saveDraft = async () => {
+    if (!user || !uploadType) { toast.error('Choose a post type before saving a draft.'); return; }
+    await savePostDraft(user.uid, { uploadType, formData: { ...formData, filePreview: '', coverPreview: '' }, mediaDuration, storyClipStart, storyClipEnd, generatedCoverUrl, savedAt: Date.now() });
+    setDraftAvailable(true); toast.success('Draft saved on this device.');
+  };
+
+  const restoreDraft = async () => {
+    if (!user) return;
+    const draft = await loadPostDraft<{ uploadType: UploadType; formData: typeof formData; mediaDuration: number; storyClipStart: number; storyClipEnd: number; generatedCoverUrl: string }>(user.uid);
+    if (!draft) return;
+    const restored = draft.formData;
+    setUploadType(draft.uploadType); setMediaDuration(draft.mediaDuration || 0); setStoryClipStart(draft.storyClipStart || 0); setStoryClipEnd(draft.storyClipEnd || 30); setGeneratedCoverUrl(draft.generatedCoverUrl || '');
+    setFormData({ ...restored, filePreview: restored.file ? URL.createObjectURL(restored.file) : '', coverPreview: restored.coverFile ? URL.createObjectURL(restored.coverFile) : draft.generatedCoverUrl || '' });
+    toast.success('Draft restored.');
+  };
 
   if (!user) {
     return (
@@ -91,6 +129,7 @@ export default function UploadPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     let duration = 0;
+    if (file.type.startsWith('audio/')) duration = await readMediaDuration(file);
     if (file.type.startsWith('video/')) {
       const url = URL.createObjectURL(file);
       try {
@@ -184,10 +223,10 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.file || !uploadType) { toast.error('Please select a file to upload'); return; }
+    if ((!formData.file && !existingTrackId) || !uploadType) { toast.error('Please select a file to upload'); return; }
     if (uploadType === 'audio' && !formData.title.trim()) { toast.error('Please enter a title'); return; }
     if (uploadType === 'audio' && !formData.genre) { toast.error('Please select a genre'); return; }
-    if ((uploadType === 'story' || formData.addToStory) && formData.file.type.startsWith('video/') && storyClipEnd - storyClipStart < 5) { toast.error('Select a story clip between 5 and 30 seconds.'); return; }
+    if ((uploadType === 'story' || formData.addToStory) && formData.file?.type.startsWith('video/') && storyClipEnd - storyClipStart < 5) { toast.error('Select a story clip between 5 and 30 seconds.'); return; }
 
     setLoading(true);
     publishUploadProgress({ active: true, progress: 1, label: 'Preparing your post' });
@@ -195,23 +234,31 @@ export default function UploadPage() {
     try {
       let fileUrl: string | null = null;
       let coverUrl: string | null = null;
-      let createdTrackId: string | null = null;
+      let createdTrackId: string | null = existingTrackId;
 
       const creatorId = profile?.id || user.uid;
       const splitCredits = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
-      const credits = {
-        primaryArtist: profile?.name || user.displayName || 'Unknown artist',
+      const artistName = profile?.name || user.displayName || 'Unknown artist';
+      const credits = studioGenerated ? {
+        primaryArtist: artistName, promptBy: artistName, featuredArtists: splitCredits(formData.featuredArtists),
+        writers: [], composers: ['MusicInsta AI'], producers: ['MusicInsta AI'], engineers: ['MusicInsta AI'],
+        label: 'MusicInsta AI', releaseType: formData.releaseType, generatedBy: 'MusicInsta AI Studio', locked: true,
+      } : {
+        primaryArtist: artistName,
         featuredArtists: splitCredits(formData.featuredArtists), writers: splitCredits(formData.writers),
         composers: splitCredits(formData.composers), producers: splitCredits(formData.producers),
         engineers: splitCredits(formData.engineers), label: formData.label.trim() || null,
         releaseType: formData.releaseType,
       };
 
-      if (uploadType === 'audio') {
+      if (uploadType === 'audio' && existingTrackId) {
+        const existing = await getDoc(doc(db, 'tracks', existingTrackId));
+        fileUrl = existing.exists() ? existing.data().audio_url || null : null;
+      } else if (uploadType === 'audio' && formData.file) {
         const fileExt = formData.file.name.split('.').pop();
         const fileName = `audio/${user.uid}/${Date.now()}.${fileExt}`;
         fileUrl = await uploadFile(formData.file, fileName);
-      } else {
+      } else if (formData.file) {
         const fileExt = formData.file.name.split('.').pop();
         const fileName = `uploads/${user.uid}/${Date.now()}.${fileExt}`;
         fileUrl = await uploadFile(formData.file, fileName);
@@ -224,12 +271,16 @@ export default function UploadPage() {
         coverUrl = await uploadFile(formData.coverFile, fileName);
       }
       if (uploadType === 'audio' && !coverUrl && generatedCoverUrl) coverUrl = generatedCoverUrl;
-      if (uploadType === 'video' || (uploadType === 'story' && formData.file.type.startsWith('video/'))) {
+      if (uploadType === 'audio' && !coverUrl) coverUrl = DEFAULT_MEDIA_IMAGE;
+      if (formData.file && (uploadType === 'video' || (uploadType === 'story' && formData.file.type.startsWith('video/')))) {
         const thumbnail = await createVideoThumbnail(formData.file, uploadType === 'story' || formData.addToStory ? storyClipStart : 0);
         if (thumbnail) coverUrl = await uploadFile(thumbnail, `uploads/${user.uid}/thumbnails/${Date.now()}.jpg`);
       }
 
-      if (uploadType === 'audio') {
+      if (uploadType === 'audio' && existingTrackId) {
+        if (coverUrl && coverUrl !== DEFAULT_MEDIA_IMAGE) await updateDoc(doc(db, 'tracks', existingTrackId), { cover_url: coverUrl, updated_at: new Date() });
+        await addDoc(collection(db, 'posts'), { profile_id: creatorId, type: 'audio', track_id: existingTrackId, image_url: coverUrl, caption: formData.caption, is_story: false, expires_at: null, created_at: new Date(), is_new_release: false, is_new_post: true });
+      } else if (uploadType === 'audio') {
         // Create track document
         const trackData = {
           profile_id: creatorId,
@@ -238,11 +289,13 @@ export default function UploadPage() {
           lyrics: formData.lyrics || null,
           audio_url: fileUrl,
           cover_url: coverUrl,
+          duration: mediaDuration || null,
           created_at: new Date(),
           updated_at: new Date(),
           credits,
           is_new_release: true,
           is_new_post: true,
+          studio_generated: studioGenerated,
         };
         const trackRef = await addDoc(collection(db, 'tracks'), trackData);
         createdTrackId = trackRef.id;
@@ -312,11 +365,14 @@ export default function UploadPage() {
       }
 
       toast.success(uploadType === 'story' ? 'Story published!' : 'Post published!');
+      window.dispatchEvent(new Event('musicinsta:feed-refresh'));
+      await deletePostDraft(user.uid); setDraftAvailable(false);
       publishUploadProgress({ active: false, progress: 100, label: uploadType === 'story' ? 'Story published' : 'Post published' });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload error:', error);
-      toast.error(error.message || 'Failed to publish');
-      publishUploadProgress({ active: false, progress: 0, label: 'Upload failed', error: error.message || 'Failed to publish' });
+      const message = error instanceof Error ? error.message : 'Failed to publish';
+      toast.error(message);
+      publishUploadProgress({ active: false, progress: 0, label: 'Upload failed', error: message });
     } finally {
       setLoading(false);
     }
@@ -375,15 +431,16 @@ export default function UploadPage() {
             <X className="w-5 h-5" />
           </button>
           <h1 className="font-display font-bold text-lg">{uploadType ? `New ${uploadType === 'story' ? 'Story' : 'Post'}` : 'Create'}</h1>
-          <Button size="sm" onClick={handleSubmit} disabled={loading || !uploadType || !formData.file}>
+          <div className="flex items-center gap-2">{uploadType && <Button size="sm" variant="outline" onClick={() => void saveDraft()} disabled={loading}><Save className="mr-1 h-4 w-4" />Draft</Button>}<Button size="sm" onClick={handleSubmit} disabled={loading || !uploadType || (!formData.file && !existingTrackId)}>
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Post'}
-          </Button>
+          </Button></div>
         </div>
       </header>
 
       <div className="p-4 space-y-6">
         {!uploadType ? (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="border-2 border-dashed border-muted rounded-2xl p-8 text-center">
+            {draftAvailable && <Button type="button" variant="outline" className="mb-5" onClick={() => void restoreDraft()}><FolderOpen className="mr-2 h-4 w-4" />Continue saved draft</Button>}
             <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary via-accent to-secondary mx-auto mb-4 flex items-center justify-center">
               <Upload className="w-8 h-8 text-white" />
             </div>
@@ -396,6 +453,7 @@ export default function UploadPage() {
                   <span className="text-xs">{option.label}</span>
                 </motion.button>
               ))}
+              <motion.button whileTap={{ scale: 0.95 }} onClick={() => navigate('/upload/album')} className="flex flex-col items-center gap-2 p-4 rounded-xl bg-muted hover:bg-muted/80 transition-colors"><Disc3 className="h-6 w-6 text-primary" /><span className="text-xs">Album / EP</span></motion.button>
             </div>
           </motion.div>
         ) : (
@@ -408,8 +466,8 @@ export default function UploadPage() {
                     <div className="flex items-center gap-4 p-4 rounded-xl bg-muted">
                       <Music2 className="w-12 h-12 text-primary" />
                       <div className="text-left">
-                        <p className="font-medium">{formData.file?.name}</p>
-                        <p className="text-sm text-muted-foreground">Audio file selected</p>
+                        <p className="font-medium">{formData.file?.name || formData.title}</p>
+                        <p className="text-sm text-muted-foreground">{existingTrackId ? 'Existing profile track selected' : 'Audio file selected'}</p>
                       </div>
                     </div>
                   ) : uploadType === 'video' || (uploadType === 'story' && formData.file?.type.startsWith('video/')) ? (
@@ -495,10 +553,10 @@ export default function UploadPage() {
                   <div className="space-y-2"><Label>Release type</Label><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={formData.releaseType} onChange={e => setFormData({ ...formData, releaseType: e.target.value })}><option value="single">Single</option><option value="ep">EP</option><option value="album">Album</option><option value="mixtape">Mixtape</option><option value="demo">Demo</option></select></div>
                   <div className="space-y-2"><Label>Featured artists</Label><Input placeholder="Artist A, Artist B" value={formData.featuredArtists} onChange={e => setFormData({ ...formData, featuredArtists: e.target.value })} /></div>
                   <div className="space-y-2"><Label>Writers</Label><Input placeholder="Comma-separated names" value={formData.writers} onChange={e => setFormData({ ...formData, writers: e.target.value })} /></div>
-                  <div className="space-y-2"><Label>Composers</Label><Input placeholder="Comma-separated names" value={formData.composers} onChange={e => setFormData({ ...formData, composers: e.target.value })} /></div>
-                  <div className="space-y-2"><Label>Producers</Label><Input placeholder="Comma-separated names" value={formData.producers} onChange={e => setFormData({ ...formData, producers: e.target.value })} /></div>
-                  <div className="space-y-2"><Label>Engineers</Label><Input placeholder="Comma-separated names" value={formData.engineers} onChange={e => setFormData({ ...formData, engineers: e.target.value })} /></div>
-                  <div className="space-y-2 sm:col-span-2"><Label>Label</Label><Input placeholder="Independent or label name" value={formData.label} onChange={e => setFormData({ ...formData, label: e.target.value })} /></div>
+                  <div className="space-y-2"><Label>Composers</Label><Input disabled={studioGenerated} placeholder="Comma-separated names" value={formData.composers} onChange={e => setFormData({ ...formData, composers: e.target.value })} /></div>
+                  <div className="space-y-2"><Label>Producers</Label><Input disabled={studioGenerated} placeholder="Comma-separated names" value={formData.producers} onChange={e => setFormData({ ...formData, producers: e.target.value })} /></div>
+                  <div className="space-y-2"><Label>Engineers</Label><Input disabled={studioGenerated} placeholder="Comma-separated names" value={formData.engineers} onChange={e => setFormData({ ...formData, engineers: e.target.value })} /></div>
+                  <div className="space-y-2 sm:col-span-2"><Label>Label</Label><Input disabled={studioGenerated} placeholder="Independent or label name" value={formData.label} onChange={e => setFormData({ ...formData, label: e.target.value })} />{studioGenerated && <p className="text-xs text-muted-foreground">Studio production credits are verified and locked. You are credited for the prompt.</p>}</div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2"><Label>Cover Art</Label><Button type="button" size="sm" variant="outline" disabled={coverGenerating || !formData.title.trim() || !formData.genre} onClick={() => void generateCoverArt()}>{coverGenerating ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-2 h-3.5 w-3.5" />}Generate cover</Button></div>

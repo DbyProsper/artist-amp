@@ -1,12 +1,10 @@
 import { motion } from 'framer-motion';
-import { X, Zap, Lock, RefreshCw } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { X, Lock, RefreshCw } from 'lucide-react';
 import type { QuotaKey } from '@/lib/planLimits';
 
 interface Props {
   reason: 'monthly_limit' | 'daily_limit' | 'plan_blocked' | null;
   quotaKey: QuotaKey;
-  currentPlan: string;
   onClose: () => void;
 }
 
@@ -38,9 +36,7 @@ const REASON_COPY = {
   },
 };
 
-export default function UpgradeModal({ reason, quotaKey, currentPlan, onClose }: Props) {
-  const navigate = useNavigate();
-
+export default function UpgradeModal({ reason, quotaKey, onClose }: Props) {
   if (!reason) return null;
 
   const { title, icon: Icon, sub } = REASON_COPY[reason];
@@ -78,18 +74,19 @@ export default function UpgradeModal({ reason, quotaKey, currentPlan, onClose }:
             <p className="mt-3 text-sm text-muted-foreground">{sub}</p>
           </div>
 
-          {currentPlan !== 'studio' && (
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                navigate('/billing');
-              }}
-              className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary/90"
-            >
-              {currentPlan === 'free' ? 'Upgrade to Pro — $19/mo' : 'Upgrade to Studio — $49/mo'}
-            </button>
-          )}
+          <div className="grid grid-cols-2 gap-3" aria-label="Upgrade options">
+            <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4">
+              <p className="font-semibold">Pro</p>
+              <p className="mt-1 text-xl font-bold">R199<span className="text-xs font-normal text-muted-foreground">/month</span></p>
+              <p className="mt-2 text-xs text-muted-foreground">Higher limits for regular creators.</p>
+            </div>
+            <div className="rounded-2xl border border-primary bg-primary/10 p-4">
+              <p className="font-semibold">Premium</p>
+              <p className="mt-1 text-xl font-bold">R399<span className="text-xs font-normal text-muted-foreground">/month</span></p>
+              <p className="mt-2 text-xs text-muted-foreground">Unlimited AI Studio access.</p>
+            </div>
+          </div>
+          <p className="text-center text-xs text-muted-foreground">Upgrades are coming soon. No payment will be taken.</p>
 
           <button
             type="button"

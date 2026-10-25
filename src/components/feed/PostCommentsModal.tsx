@@ -14,7 +14,6 @@ interface CommentItem {
   authorName: string;
   avatar: string;
 }
-
 interface Props {
   postId: string;
   ownerId: string;
@@ -38,7 +37,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
           id: item.id,
           text: data.text || '',
           authorName: data.author_name || 'MusicInsta user',
-          avatar: data.avatar_url || '/placeholder.svg',
+          avatar: data.avatar_url || '/musicinsta-default-cover.webp',
         };
       }));
     }, () => toast.error('Comments could not be loaded.'));
@@ -51,15 +50,15 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
     setText('');
     await addDoc(collection(db, 'posts', postId, 'comments'), {
       text: cleanText,
-      author_id: user.uid,
+      author_id: profile?.id || user.uid,
       author_name: profile?.name || user.displayName || 'MusicInsta user',
-      avatar_url: profile?.avatar_url || user.photoURL || '/placeholder.svg',
+      avatar_url: profile?.avatar_url || user.photoURL || '/musicinsta-default-cover.webp',
       created_at: serverTimestamp(),
     });
-    if (ownerId && ownerId !== user.uid) {
+    if (ownerId && ownerId !== (profile?.id || user.uid)) {
       await addDoc(collection(db, 'notifications'), {
         profile_id: ownerId,
-        from_profile_id: user.uid,
+        from_profile_id: profile?.id || user.uid,
         post_id: postId,
         type: 'comment',
         message: `commented: “${cleanText.slice(0, 80)}”`,

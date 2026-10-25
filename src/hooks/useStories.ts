@@ -19,11 +19,11 @@ export function useStories() {
         const person = profile.data();
         const artist: Artist = {
           id: profile.id, name: person.name || 'MusicInsta artist', username: person.username || 'artist',
-          avatar: person.avatar_url || '/placeholder.svg', coverImage: person.cover_url || '/placeholder.svg',
+          avatar: person.avatar_url || '/musicinsta-default-cover.webp', coverImage: person.cover_url || '/musicinsta-default-cover.webp',
           bio: person.bio || '', location: person.location || '', genres: person.genres || [],
           isVerified: Boolean(person.is_verified), followers: 0, following: 0, tracks: 0,
         };
-        return { id: item.id, artist, imageUrl: data.image_url || '/placeholder.svg', videoUrl: data.video_url || undefined, caption: data.caption || '', attachedMusic: data.attached_music || '', viewed: false, createdAt, clipStart: Number(data.story_start_time || 0), clipEnd: data.story_end_time == null ? undefined : Number(data.story_end_time) } as Story;
+        return { id: item.id, artist, imageUrl: data.image_url || '/musicinsta-default-cover.webp', videoUrl: data.video_url || undefined, caption: data.caption || '', attachedMusic: data.attached_music || '', viewed: false, createdAt, clipStart: Number(data.story_start_time || 0), clipEnd: data.story_end_time == null ? undefined : Number(data.story_end_time) } as Story;
       }))).filter(Boolean) as Story[];
       realStories.sort((a, b) => (a.createdAt?.getTime() || 0) - (b.createdAt?.getTime() || 0));
       setStories(realStories);

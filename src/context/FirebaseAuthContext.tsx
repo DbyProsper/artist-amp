@@ -39,6 +39,8 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<{ error: Error | null; profile?: Profile | null; isNew?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  isOfficialIdentity: boolean;
+  switchIdentity: (identity: 'personal' | 'official') => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -46,6 +48,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [officialIdentity, setOfficialIdentity] = useState(() => sessionStorage.getItem('musicinsta_identity') === 'official');
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
@@ -66,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           location: data?.location || null,
           is_artist: data?.is_artist || false,
           is_verified: data?.is_verified || false,
-          is_admin: true,
+          is_admin: Boolean(data?.is_admin || data?.role === 'admin' || (Array.isArray(data?.roles) && data.roles.includes('admin'))),
           onboarding_completed: data?.onboarding_completed || false,
           email: data?.email || '',
           created_at: data?.created_at || new Date(),
@@ -95,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         is_artist: false,
         is_verified: false,
         onboarding_completed: false,
-        is_admin: true,
+        is_admin: false,
         email: user.email || '',
         created_at: new Date(),
         updated_at: new Date(),
@@ -180,6 +183,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
+      sessionStorage.removeItem('musicinsta_identity');
+      setOfficialIdentity(false);
       await firebaseSignOut(auth);
     } catch (error) {
       console.error('Sign out error:', error);
@@ -256,7 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 location: data?.location || null,
                 is_artist: data?.is_artist || false,
                 is_verified: data?.is_verified || false,
-                is_admin: true,
+                is_admin: Boolean(data?.is_admin || data?.role === 'admin' || (Array.isArray(data?.roles) && data.roles.includes('admin'))),
                 onboarding_completed: data?.onboarding_completed || false,
                 email: data?.email || user.email || '',
                 created_at: data?.created_at || new Date(),
@@ -291,15 +296,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  const canUseOfficialIdentity = Boolean(profile?.is_admin || user?.email?.toLowerCase() === 'mthabisisebata113@gmail.com');
+  const activeProfile = officialIdentity && canUseOfficialIdentity && profile ? {
+    ...profile,
+    id: 'musicinsta-official',
+    user_id: 'musicinsta-official',
+    username: 'musicinsta',
+    name: 'MusicInsta',
+    bio: 'The official MusicInsta account.',
+    avatar_url: '/musicinsta-default-cover.webp',
+    cover_url: '/musicinsta-default-cover.webp',
+    is_artist: false,
+    is_verified: true,
+    onboarding_completed: true,
+    is_admin: true,
+  } : profile;
+  const switchIdentity = (identity: 'personal' | 'official') => {
+    if (identity === 'official' && !canUseOfficialIdentity) return;
+    setOfficialIdentity(identity === 'official');
+    sessionStorage.setItem('musicinsta_identity', identity);
+  };
+
   const value: AuthContextType = {
     user,
-    profile,
+    profile: activeProfile,
     loading,
     signUp,
     signIn,
     signInWithGoogle,
     signOut,
     refreshProfile,
+    isOfficialIdentity: officialIdentity && canUseOfficialIdentity,
+    switchIdentity,
   };
 
   return (

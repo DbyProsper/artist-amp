@@ -2,16 +2,18 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, Users, BadgeCheck, CheckCircle, XCircle, 
-  Clock, Shield, Search, RefreshCw, Flag
+  Clock, Shield, Search, RefreshCw, Flag, FileImage, Trash2, Pencil, Crown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
-import { collection, query, orderBy, getDocs, updateDoc, doc, addDoc, where, limit, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { collection, query, orderBy, getDocs, updateDoc, doc, addDoc, limit, getDoc, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { db, storage } from '@/lib/firebase';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { toast } from 'sonner';
 
 interface VerificationRequest {
@@ -38,19 +40,29 @@ interface Profile {
   avatar_url: string | null;
   is_artist: boolean | null;
   is_verified: boolean | null;
+  is_admin?: boolean;
+  email?: string | null;
 }
 interface Report { id: string; type: string; target_id: string; reporter_id: string; reason: string; status: string; created_at: Date }
+interface OfficialPost { id: string; caption: string; image_url?: string; created_at: Date }
 
 export default function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { isAdminOrModerator, loading: roleLoading } = useUserRole();
+  const { isAdminOrModerator, isSuperAdmin, loading: roleLoading } = useUserRole();
   const [requests, setRequests] = useState<VerificationRequest[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('pending');
+  const [officialCaption, setOfficialCaption] = useState('');
+  const [officialImageUrl, setOfficialImageUrl] = useState('');
+  const [postingOfficial, setPostingOfficial] = useState(false);
+  const [officialImageFile, setOfficialImageFile] = useState<File | null>(null);
+  const [officialPosts, setOfficialPosts] = useState<OfficialPost[]>([]);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingPostCaption, setEditingPostCaption] = useState('');
 
   useEffect(() => {
     if (!roleLoading && !isAdminOrModerator) {
@@ -119,12 +131,17 @@ export default function AdminPage() {
       setReports(snapshot.docs.map(item => ({ id: item.id, ...item.data(), created_at: item.data().created_at?.toDate?.() || new Date() } as Report)).sort((a, b) => b.created_at.getTime() - a.created_at.getTime()));
     } catch (error) { console.error('Error fetching reports:', error); }
   };
+  const fetchOfficialPosts = async () => {
+    const snapshot = await getDocs(query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(100)));
+    setOfficialPosts(snapshot.docs.filter(item => item.data().profile_id === 'musicinsta-official').map(item => ({ id: item.id, caption: item.data().caption || '', image_url: item.data().image_url || '', created_at: item.data().created_at?.toDate?.() || new Date(0) })));
+  };
 
   useEffect(() => {
     if (isAdminOrModerator) {
       fetchRequests();
       fetchProfiles();
       fetchReports();
+      fetchOfficialPosts();
     }
   }, [isAdminOrModerator]);
 
@@ -210,6 +227,39 @@ export default function AdminPage() {
     }
   };
 
+  const createOfficialPost = async () => {
+    if (!user || !officialCaption.trim()) return;
+    setPostingOfficial(true);
+    try {
+      let imageUrl = officialImageUrl.trim();
+      if (officialImageFile) { const object = ref(storage, `official-posts/${Date.now()}-${officialImageFile.name}`); await uploadBytes(object, officialImageFile); imageUrl = await getDownloadURL(object); }
+      await setDoc(doc(db, 'profiles', 'musicinsta-official'), { user_id: 'musicinsta-official', name: 'MusicInsta', username: 'musicinsta', avatar_url: '/musicinsta-default-cover.webp', cover_url: '/musicinsta-default-cover.webp', is_verified: true, is_artist: false, is_system: true, updated_at: serverTimestamp() }, { merge: true });
+      await addDoc(collection(db, 'posts'), { profile_id: 'musicinsta-official', type: 'image', image_url: imageUrl || '/musicinsta-default-cover.webp', caption: officialCaption.trim(), likes: 0, comments: 0, shares: 0, is_story: false, is_new_post: true, created_by_admin: user.uid, created_at: serverTimestamp() });
+      setOfficialCaption(''); setOfficialImageUrl(''); setOfficialImageFile(null); await fetchOfficialPosts(); toast.success('Posted as MusicInsta.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Official post could not be created.'); }
+    finally { setPostingOfficial(false); }
+  };
+
+  const toggleAdmin = async (target: Profile) => {
+    if (!isSuperAdmin) return;
+    const next = !target.is_admin;
+    await Promise.all([
+      setDoc(doc(db, 'users', target.id), { is_admin: next, role: next ? 'admin' : 'user', updated_at: serverTimestamp() }, { merge: true }),
+      updateDoc(doc(db, 'profiles', target.id), { is_admin: next, role: next ? 'admin' : 'user', updated_at: serverTimestamp() }),
+    ]);
+    toast.success(next ? 'Admin privileges granted.' : 'Admin privileges removed.'); await fetchProfiles();
+  };
+
+  const saveOfficialPost = async (postId: string) => {
+    await updateDoc(doc(db, 'posts', postId), { caption: editingPostCaption.trim(), updated_at: serverTimestamp() });
+    setEditingPostId(null); await fetchOfficialPosts(); toast.success('Official post updated.');
+  };
+
+  const removeOfficialPost = async (postId: string) => {
+    if (!window.confirm('Delete this official post?')) return;
+    await deleteDoc(doc(db, 'posts', postId)); await fetchOfficialPosts(); toast.success('Official post deleted.');
+  };
+
   const pendingRequests = requests.filter(r => r.status === 'pending');
   const approvedRequests = requests.filter(r => r.status === 'verified');
   const rejectedRequests = requests.filter(r => r.status === 'rejected');
@@ -248,6 +298,7 @@ export default function AdminPage() {
       </header>
 
       <div className="p-4">
+        <section className="mb-5 rounded-2xl border border-border bg-card p-4"><div className="mb-3 flex items-center gap-3"><img src="/musicinsta-default-cover.webp" alt="MusicInsta" className="h-10 w-10 rounded-full object-cover" /><div><h2 className="font-bold">Post as MusicInsta</h2><p className="text-xs text-muted-foreground">Publishes with the official app logo and verified profile.</p></div></div><Textarea value={officialCaption} onChange={event => setOfficialCaption(event.target.value)} placeholder="Official announcement or community update..." className="min-h-24" /><Input value={officialImageUrl} onChange={event => setOfficialImageUrl(event.target.value)} placeholder="Optional image URL" className="mt-2" /><label className="mt-2 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm"><FileImage className="h-4 w-4" />{officialImageFile?.name || 'Upload a custom image'}<input type="file" accept="image/*" className="hidden" onChange={event => setOfficialImageFile(event.target.files?.[0] || null)} /></label><Button className="mt-3" disabled={postingOfficial || !officialCaption.trim()} onClick={() => void createOfficialPost()}>{postingOfficial ? 'Publishing...' : 'Publish official post'}</Button></section>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full bg-muted/50 mb-4">
             <TabsTrigger value="pending" className="flex-1 gap-1">
@@ -263,6 +314,7 @@ export default function AdminPage() {
               History
             </TabsTrigger>
             <TabsTrigger value="reports" className="flex-1 gap-1"><Flag className="w-4 h-4" />Reports ({reports.filter(report => report.status === 'open').length})</TabsTrigger>
+            <TabsTrigger value="posts" className="flex-1 gap-1"><FileImage className="w-4 h-4" />Manage posts</TabsTrigger>
           </TabsList>
 
           <TabsContent value="pending" className="space-y-4">
@@ -376,6 +428,7 @@ export default function AdminPage() {
                     >
                       Artist
                     </Button>
+                    {isSuperAdmin && <Button size="sm" variant={profile.is_admin ? 'default' : 'outline'} className="h-7 px-2 text-xs" onClick={() => void toggleAdmin(profile)}><Crown className="mr-1 h-3 w-3" />Admin</Button>}
                     <Button
                       size="sm"
                       variant={profile.is_verified ? 'default' : 'outline'}
@@ -432,6 +485,7 @@ export default function AdminPage() {
             {!reports.length && <p className="py-12 text-center text-muted-foreground">No reports have been submitted.</p>}
             {reports.map(report => <div key={report.id} className="rounded-xl border border-border bg-muted/30 p-4"><div className="flex items-center justify-between gap-3"><p className="font-semibold capitalize">{report.type} report</p><span className={`rounded-full px-2 py-1 text-xs ${report.status === 'open' ? 'bg-destructive/15 text-destructive' : 'bg-green-500/15 text-green-500'}`}>{report.status}</span></div><p className="mt-2 text-sm text-muted-foreground">{report.reason}</p><p className="mt-2 text-xs text-muted-foreground">Target: {report.target_id} · Reporter: {report.reporter_id} · {report.created_at.toLocaleString()}</p>{report.status === 'open' && <Button className="mt-3" size="sm" onClick={async () => { await updateDoc(doc(db, 'reports', report.id), { status: 'resolved', resolved_at: new Date(), resolved_by: user?.uid }); await fetchReports(); }}>Mark resolved</Button>}</div>)}
           </TabsContent>
+          <TabsContent value="posts" className="space-y-3"><div className="flex items-center justify-between"><h2 className="font-display font-bold">Manage MusicInsta posts</h2><Button size="sm" variant="ghost" onClick={() => void fetchOfficialPosts()}><RefreshCw className="h-4 w-4" /></Button></div>{officialPosts.map(post => <article key={post.id} className="flex gap-3 rounded-xl border border-border p-3"><img src={post.image_url || '/musicinsta-default-cover.webp'} alt="" className="h-20 w-20 rounded-lg object-cover" /><div className="min-w-0 flex-1">{editingPostId === post.id ? <Textarea value={editingPostCaption} onChange={event => setEditingPostCaption(event.target.value)} /> : <p className="text-sm">{post.caption}</p>}<p className="mt-1 text-xs text-muted-foreground">{post.created_at.toLocaleString()}</p><div className="mt-2 flex gap-2">{editingPostId === post.id ? <Button size="sm" onClick={() => void saveOfficialPost(post.id)}>Save</Button> : <Button size="sm" variant="outline" onClick={() => { setEditingPostId(post.id); setEditingPostCaption(post.caption); }}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button>}<Button size="sm" variant="destructive" onClick={() => void removeOfficialPost(post.id)}><Trash2 className="mr-1 h-3.5 w-3.5" />Delete</Button></div></div></article>)}{!officialPosts.length && <p className="py-10 text-center text-muted-foreground">No official posts yet.</p>}</TabsContent>
         </Tabs>
       </div>
     </div>

@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
-import FirebaseTest from '@/components/FirebaseTest';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -47,8 +46,8 @@ export default function AuthPage() {
         toast.success('Account created! Redirecting to onboarding...');
         navigate('/onboarding');
       }
-    } catch (error: any) {
-      toast.error(error.message || 'Authentication failed');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Authentication failed');
     } finally {
       setLoading(false);
     }
@@ -65,8 +64,8 @@ export default function AuthPage() {
       } else {
         navigate('/');
       }
-    } catch (error: any) {
-      toast.error(error.message || 'Google authentication failed');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Google authentication failed');
     } finally {
       setLoading(false);
     }
@@ -267,7 +266,6 @@ export default function AuthPage() {
         transition={{ delay: 0.2 }}
         className="w-full max-w-md mt-8"
       >
-        <FirebaseTest />
       </motion.div>
     </div>
   );

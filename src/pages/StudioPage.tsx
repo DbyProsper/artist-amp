@@ -54,7 +54,6 @@ interface GeneratedItem {
     language: string;
   };
 }
-
 export default function StudioPage() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
@@ -62,6 +61,7 @@ export default function StudioPage() {
 
   // ==================== FLOW STATE ====================
   const [showEntry, setShowEntry] = useState(() => {
+    if (new URLSearchParams(window.location.search).get('tools') === '1') return true;
     const saved = localStorage.getItem('studio_showEntry');
     return saved !== null ? JSON.parse(saved) : true;
   });
@@ -117,11 +117,11 @@ export default function StudioPage() {
       id: profile?.id || user?.uid || 'studio',
       name: profile?.name || user?.displayName || 'MusicInsta Studio',
       username: profile?.username || 'studio',
-      avatar: profile?.avatar_url || '/placeholder.svg',
-      coverImage: profile?.cover_url || '/placeholder.svg',
+      avatar: profile?.avatar_url || '/musicinsta-default-cover.webp',
+      coverImage: profile?.cover_url || '/musicinsta-default-cover.webp',
       bio: '', location: '', genres: [selectedGenre], isVerified: Boolean(profile?.is_verified), followers: 0, following: 0, tracks: 0,
     },
-    coverArt: imageUrl || '/placeholder.svg',
+    coverArt: imageUrl || '/musicinsta-default-cover.webp',
     duration: 0,
     plays: 0,
     likes: 0,
@@ -139,7 +139,7 @@ export default function StudioPage() {
       const saved = remote?.exists() ? remote.data() : localState;
       if (saved) {
       try {
-        const parsed = (saved.history || []).map((item: any) => ({
+        const parsed = (saved.history || []).map((item: Record<string, unknown> & { createdAt?: { toDate?: () => Date } | string | number }) => ({
           ...item,
           createdAt: item.createdAt?.toDate?.() || new Date(item.createdAt),
         }));
@@ -189,6 +189,10 @@ export default function StudioPage() {
   const handleFeatureSelect = (feature: StudioFeature) => {
     if (feature === 'daw') {
       navigate('/studio/daw');
+      return;
+    }
+    if (feature === 'separate') {
+      navigate('/studio/separate');
       return;
     }
     setCurrentFeature(feature);
@@ -559,7 +563,7 @@ export default function StudioPage() {
   const transferGeneratedContent = async (destination: 'post' | 'daw') => {
     try {
       if (destination === 'daw' && !resultModalData.audioUrl) throw new Error('Generate audio before sending content to the DAW.');
-      let sourceUrl = destination === 'daw' ? resultModalData.audioUrl : (resultModalData.audioUrl || resultModalData.imageUrl);
+      const sourceUrl = destination === 'daw' ? resultModalData.audioUrl : (resultModalData.audioUrl || resultModalData.imageUrl);
       let blob: Blob;
       let filename: string;
       if (sourceUrl) {
@@ -575,7 +579,7 @@ export default function StudioPage() {
       const key = await storeDawAudio(blob, filename);
       setShowResultModal(false);
       if (destination === 'daw') navigate(`/studio/daw?importEnhanced=${key}`);
-      else navigate(`/upload?fromDaw=${key}&title=${encodeURIComponent(generatedTitle || prompt || 'Generated content')}&caption=${encodeURIComponent(resultModalData.lyrics || prompt)}&lyrics=${encodeURIComponent(resultModalData.lyrics || '')}&genre=${encodeURIComponent(selectedGenre)}`);
+      else navigate(`/upload?fromDaw=${key}&studioGenerated=1&title=${encodeURIComponent(generatedTitle || prompt || 'Generated content')}&caption=${encodeURIComponent(resultModalData.lyrics || prompt)}&lyrics=${encodeURIComponent(resultModalData.lyrics || '')}&genre=${encodeURIComponent(selectedGenre)}&cover=${encodeURIComponent(resultModalData.imageUrl || generatedImageUrl || '')}`);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'The generated content could not be transferred.'); }
   };
 
@@ -610,7 +614,7 @@ export default function StudioPage() {
           <motion.div key="studio">
             <StudioLayout
               feature={currentFeature}
-              onFeatureChange={setCurrentFeature}
+              onFeatureChange={handleFeatureSelect}
               onBack={handleBackToEntry}
               onChatOpen={() => setChatOpen(true)}
               prompt={prompt}

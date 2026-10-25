@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { collection, query, orderBy, limit, getDocs, getDoc, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Post, Artist, Track } from '@/types';
-import { mockPosts } from '@/data/mockData';
+import { Post, Artist, Track, Album } from '@/types';
+import { DEFAULT_MEDIA_IMAGE, hydrateTrackDurations } from '@/lib/media';
 
 interface DatabasePost {
   id: string;
@@ -42,8 +42,8 @@ export function useFeedPosts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPosts = async () => {
-    setLoading(true);
+  const fetchPosts = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       // Fetch posts from database
       const postsQuery = query(
@@ -54,7 +54,7 @@ export function useFeedPosts() {
 
       const postsSnapshot = await getDocs(postsQuery);
 
-      if (postsSnapshot.empty) { setPosts(mockPosts); return; }
+      if (postsSnapshot.empty) { setPosts([]); return; }
 
       // Transform database posts to Post type
       const transformedPosts: Post[] = [];
@@ -83,22 +83,47 @@ export function useFeedPosts() {
           }
         }
 
+        let album: Album | undefined;
+        if (post.album_id) {
+          try {
+            const albumDoc = await getDoc(doc(db, 'albums', post.album_id));
+            if (albumDoc.exists()) {
+              const albumData = albumDoc.data();
+              const albumTracks = (await Promise.all(((albumData.track_ids || []) as string[]).map(async (trackId: string) => {
+                const snapshot = await getDoc(doc(db, 'tracks', trackId));
+                if (!snapshot.exists()) return null;
+                const value = snapshot.data();
+                return {
+                  id: snapshot.id, title: value.title || 'Untitled track', artist: undefined,
+                  coverArt: value.cover_url || albumData.cover_url || DEFAULT_MEDIA_IMAGE,
+                  duration: Number(value.duration) || 0, plays: Number(value.plays) || 0, likes: Number(value.likes) || 0,
+                  audioUrl: value.audio_url || undefined, lyrics: value.lyrics || undefined, genre: value.genre || albumData.genre || undefined,
+                  albumId: albumDoc.id, trackNumber: Number(value.track_number) || undefined,
+                };
+              }))).filter(Boolean) as Array<Omit<Track, 'artist'> & { artist?: Artist }>;
+              album = { id: albumDoc.id, title: albumData.title || 'Untitled release', type: albumData.release_type === 'ep' ? 'ep' : 'album', artist: undefined as unknown as Artist, coverArt: albumData.cover_url || DEFAULT_MEDIA_IMAGE, genre: albumData.genre || undefined, description: albumData.description || undefined, tracks: albumTracks as Track[], releaseDate: albumData.created_at?.toDate?.() };
+            }
+          } catch (error) { console.error('Error fetching album:', error); }
+        }
+
         if (!profileData) continue;
 
         const artist: Artist = {
           id: profileData.id || post.profile_id,
           name: profileData.name || 'Unknown',
           username: profileData.username || 'unknown',
-          avatar: profileData.avatar_url || '/placeholder.svg',
-          coverImage: profileData.cover_url || '/placeholder.svg',
+          avatar: profileData.avatar_url || DEFAULT_MEDIA_IMAGE,
+          coverImage: profileData.cover_url || DEFAULT_MEDIA_IMAGE,
           bio: '',
           location: profileData.location || '',
-          genres: [],
+          genres: Array.isArray(profileData.genres) ? profileData.genres : [],
           isVerified: profileData.is_verified || false,
           followers: 0,
           following: 0,
           tracks: 0,
         };
+
+        if (album) { album.artist = artist; album.tracks = album.tracks.map(track => ({ ...track, artist })); }
 
         let postTrack: Track | undefined;
         if (trackData) {
@@ -106,22 +131,33 @@ export function useFeedPosts() {
             id: post.track_id,
             title: trackData.title,
             artist: artist,
-            coverArt: trackData.cover_url || post.image_url || '/placeholder.svg',
+            coverArt: trackData.cover_url || post.image_url || DEFAULT_MEDIA_IMAGE,
             duration: trackData.duration || 0,
             plays: trackData.plays || 0,
             likes: trackData.likes || 0,
             audioUrl: trackData.audio_url || undefined,
             lyrics: trackData.lyrics || trackData.metadata?.lyrics || undefined,
             timestampedLyrics: trackData.timestamped_lyrics || trackData.metadata?.timestamped_lyrics || undefined,
+            lyricStartTime: Number(trackData.lyric_start_time || trackData.metadata?.lyric_start_time) || undefined,
             credits: trackData.credits || trackData.metadata?.credits || undefined,
+            genre: trackData.genre || trackData.metadata?.genre || undefined,
+            mood: trackData.mood || trackData.metadata?.mood || undefined,
+            bpm: Number(trackData.bpm || trackData.metadata?.bpm) || undefined,
+            energy: Number.isFinite(Number(trackData.energy || trackData.metadata?.energy)) ? Number(trackData.energy || trackData.metadata?.energy) : undefined,
+            loudness: Number.isFinite(Number(trackData.loudness || trackData.metadata?.loudness)) ? Number(trackData.loudness || trackData.metadata?.loudness) : undefined,
+            tags: Array.isArray(trackData.tags) ? trackData.tags : [],
+            source: trackData.metadata?.mode ? 'generated' : 'firestore',
+            isPublic: trackData.is_public !== false,
+            createdAt: trackData.created_at?.toDate?.() || (trackData.created_at ? new Date(trackData.created_at) : undefined),
           };
         }
 
         transformedPosts.push({
           id: postDoc.id,
           artist: artist,
-          type: post.type as 'audio' | 'video' | 'image',
+          type: post.type as 'audio' | 'video' | 'image' | 'album',
           track: postTrack,
+          album,
           imageUrl: post.image_url || undefined,
           videoUrl: post.video_url || undefined,
           caption: post.caption || '',
@@ -141,36 +177,24 @@ export function useFeedPosts() {
       }
 
       transformedPosts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      // Uploaded posts remain first, followed by the original demonstration
-      // feed so the home page keeps its complete populated layout.
-      const realIds = new Set(transformedPosts.map(post => post.id));
-      setPosts([...transformedPosts, ...mockPosts.filter(post => !realIds.has(post.id))]);
+      const hydratedTracks = await hydrateTrackDurations(transformedPosts.flatMap(item => item.track ? [item.track] : []));
+      const durationById = new Map(hydratedTracks.map(track => [track.id, track.duration]));
+      setPosts(transformedPosts.map(post => post.track ? { ...post, track: { ...post.track, duration: durationById.get(post.track.id) || post.track.duration } } : post));
     } catch (err) {
       console.error('Error:', err);
       setError('Failed to load posts');
-      setPosts(mockPosts);
+      setPosts([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchPosts();
-
-    const postsQuery = query(
-      collection(db, 'posts'),
-      orderBy('created_at', 'desc'),
-      limit(50)
-    );
-
-    const unsubscribe = onSnapshot(postsQuery, () => {
-      fetchPosts();
-    }, (snapshotError) => {
-      console.error('Feed subscription error:', snapshotError);
-      setError('Live feed updates are temporarily unavailable');
-    });
-
-    return () => unsubscribe();
+    const postsQuery = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(50));
+    const unsubscribe = onSnapshot(postsQuery, () => void fetchPosts(false), () => setError('Failed to listen for new posts'));
+    const refresh = () => void fetchPosts(false);
+    window.addEventListener('musicinsta:feed-refresh', refresh);
+    return () => { unsubscribe(); window.removeEventListener('musicinsta:feed-refresh', refresh); };
   }, []);
 
   return { posts, loading, error, refetch: fetchPosts };

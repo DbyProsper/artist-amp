@@ -3,6 +3,8 @@ import { Play, MoreHorizontal } from 'lucide-react';
 import { Track } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
 import { cn } from '@/lib/utils';
+import { useState } from 'react';
+import { PlayerSettingsModal } from '@/components/modals/PlayerSettingsModal';
 
 interface TrackRowProps {
   track: Track;
@@ -24,18 +26,21 @@ function formatCount(num: number): string {
 }
 
 export function TrackRow({ track, index, showIndex, queue }: TrackRowProps) {
+  const [showOptions, setShowOptions] = useState(false);
   const { currentTrack, isPlaying, playTrack, pauseTrack, resumeTrack } = usePlayer();
   const isCurrentTrack = currentTrack?.id === track.id;
 
   const handlePlay = () => {
     if (isCurrentTrack) {
-      isPlaying ? pauseTrack() : resumeTrack();
+      if (isPlaying) pauseTrack();
+      else resumeTrack();
     } else {
       playTrack(track, queue);
     }
   };
 
   return (
+    <>
     <motion.div
       whileTap={{ scale: 0.98 }}
       className={cn(
@@ -103,11 +108,14 @@ export function TrackRow({ track, index, showIndex, queue }: TrackRowProps) {
         <span className="text-xs">{formatDuration(track.duration)}</span>
         <button 
           className="p-1.5 rounded-full hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); setShowOptions(true); }}
+          aria-label={`Options for ${track.title}`}
         >
           <MoreHorizontal className="w-4 h-4" />
         </button>
       </div>
     </motion.div>
+    <PlayerSettingsModal track={track} isOpen={showOptions} onClose={() => setShowOptions(false)} />
+    </>
   );
 }

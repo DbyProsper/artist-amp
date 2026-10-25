@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Settings, Grid3X3, Music2, Bookmark, ListMusic,
-  MapPin, Link2, BadgeCheck, Play, Youtube, ExternalLink, BarChart3, Zap
+  MapPin, Link2, BadgeCheck, Play, Youtube, BarChart3, Zap, Share2, Repeat2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -19,13 +19,13 @@ import { db } from '@/lib/firebase';
 import { Post } from '@/types';
 import { toast } from 'sonner';
 import { VideoThumbnail } from '@/components/media/VideoThumbnail';
+import { useUserRole } from '@/hooks/useUserRole';
 
 function formatCount(num: number): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
   if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
   return num.toString();
 }
-
 interface SocialLinks {
   youtube?: string | null;
   apple_music?: string | null;
@@ -33,8 +33,9 @@ interface SocialLinks {
 }
 
 export default function ProfilePage() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, isOfficialIdentity, switchIdentity } = useAuth();
   const navigate = useNavigate();
+  const { isAdmin } = useUserRole();
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [socialLinks, setSocialLinks] = useState<SocialLinks>({});
@@ -129,8 +130,8 @@ export default function ProfilePage() {
   const displayProfile = {
     name: profile?.name || 'User',
     username: profile?.username || 'user',
-    avatar: profile?.avatar_url || '/placeholder.svg',
-    coverImage: profile?.cover_url || '/placeholder.svg',
+    avatar: profile?.avatar_url || '/musicinsta-default-cover.webp',
+    coverImage: profile?.cover_url || '/musicinsta-default-cover.webp',
     bio: profile?.bio || '',
     location: profile?.location || '',
     isVerified: profile?.is_verified || false,
@@ -211,7 +212,7 @@ export default function ProfilePage() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => navigate('/studio')}
+                onClick={() => { localStorage.setItem('studio_showEntry', 'true'); navigate('/studio?tools=1'); }}
               >
                 <Zap className="w-4 h-4 mr-2" />
                 Online Studio
@@ -226,7 +227,7 @@ export default function ProfilePage() {
               </Button>
             </>
           )}
-          {profile?.is_admin && (
+          {isAdmin && (
             <Button
               variant="outline"
               className="flex-1"
@@ -236,6 +237,7 @@ export default function ProfilePage() {
               Admin
             </Button>
           )}
+          {isAdmin && <Button variant="outline" className="flex-1" onClick={() => switchIdentity(isOfficialIdentity ? 'personal' : 'official')}><Repeat2 className="mr-2 h-4 w-4" />{isOfficialIdentity ? 'Use personal account' : 'Use MusicInsta account'}</Button>}
           <Button variant="outline" size="icon" onClick={() => navigate('/playlists')}>
             <ListMusic className="w-4 h-4" />
           </Button>
@@ -265,7 +267,7 @@ export default function ProfilePage() {
                   onClick={() => handlePostClick(index)}
                   className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer"
                 >
-                  {post.type === 'video' && post.videoUrl ? <VideoThumbnail src={post.videoUrl} poster={post.imageUrl} alt={post.caption || 'Video post'} className="h-full w-full" /> : <img src={post.imageUrl || post.track?.coverArt || '/placeholder.svg'} alt={post.caption || 'Post'} className="h-full w-full object-cover" />}
+                  {post.type === 'video' && post.videoUrl ? <VideoThumbnail src={post.videoUrl} poster={post.imageUrl} alt={post.caption || 'Video post'} className="h-full w-full" /> : <img src={post.imageUrl || post.track?.coverArt || '/musicinsta-default-cover.webp'} alt={post.caption || 'Post'} className="h-full w-full object-cover" />}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Play className="w-8 h-8 text-white" fill="currentColor" />
                   </div>
@@ -292,7 +294,7 @@ export default function ProfilePage() {
               </motion.button>
               <div className="space-y-1">
                 {tracks.map((track, index) => (
-                  <TrackRow key={track.id} track={track} index={index + 1} showIndex />
+                  <div key={track.id} className="flex items-center gap-1"><div className="min-w-0 flex-1"><TrackRow track={track} index={index + 1} showIndex /></div><Button size="icon" variant="ghost" title="Post this track to the feed" onClick={() => navigate(`/upload?existingTrack=${encodeURIComponent(track.id)}`)}><Share2 className="h-4 w-4" /></Button></div>
                 ))}
               </div>
             </>
@@ -319,7 +321,7 @@ export default function ProfilePage() {
         </TabsContent>
         
         <TabsContent value="saved" className="mt-4">
-          {savedPosts.length ? <div className="grid grid-cols-3 gap-1">{savedPosts.map((post, index) => <button key={post.id} onClick={() => { setSelectedSavedIndex(index); setSavedPostDetailOpen(true); }} className="aspect-square overflow-hidden rounded-lg"><img src={post.imageUrl || post.track?.coverArt || '/placeholder.svg'} alt={post.caption || 'Saved post'} className="h-full w-full object-cover" /></button>)}</div> : <div className="py-12 text-center"><Bookmark className="w-12 h-12 mx-auto text-muted-foreground mb-3" /><p className="text-muted-foreground">Posts you save will appear here.</p></div>}
+          {savedPosts.length ? <div className="grid grid-cols-3 gap-1">{savedPosts.map((post, index) => <button key={post.id} onClick={() => { setSelectedSavedIndex(index); setSavedPostDetailOpen(true); }} className="aspect-square overflow-hidden rounded-lg"><img src={post.imageUrl || post.track?.coverArt || '/musicinsta-default-cover.webp'} alt={post.caption || 'Saved post'} className="h-full w-full object-cover" /></button>)}</div> : <div className="py-12 text-center"><Bookmark className="w-12 h-12 mx-auto text-muted-foreground mb-3" /><p className="text-muted-foreground">Posts you save will appear here.</p></div>}
         </TabsContent>
       </Tabs>
 

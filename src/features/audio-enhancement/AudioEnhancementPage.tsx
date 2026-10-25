@@ -24,7 +24,6 @@ interface GeneratedTrack {
   audioUrl: string;
   createdAt: string | Date;
 }
-
 interface AudioEnhancementPageProps {
   onBack?: () => void;
   generatedAudioUrl?: string;
@@ -312,7 +311,7 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
                     <p className="text-sm text-muted-foreground">Select saved audio from your personal library.</p>
                   </button>
                 </div>
-                {sourceType === 'library' && <div className="rounded-2xl border border-border bg-background p-4"><div className="mb-3 flex items-center justify-between"><div><p className="font-semibold">Your library</p><p className="text-sm text-muted-foreground">Choose a saved track without leaving enhancement.</p></div><Button size="sm" variant="outline" onClick={() => void openLibrary()}>Refresh</Button></div>{libraryLoading ? <p className="py-6 text-center text-sm text-muted-foreground">Loading library…</p> : libraryTracks.length ? <div className="grid gap-2 sm:grid-cols-2">{libraryTracks.map(track => <button key={track.id} onClick={() => void loadFileFromUrl(track.audioUrl, track.title)} className="flex items-center gap-3 rounded-xl border border-border p-3 text-left transition hover:border-primary"><img src={track.coverUrl || '/placeholder.svg'} alt="" className="h-12 w-12 rounded-lg object-cover" /><span className="min-w-0 truncate text-sm font-medium">{track.title}</span></button>)}</div> : <p className="py-6 text-center text-sm text-muted-foreground">No saved audio tracks found.</p>}</div>}
+                {sourceType === 'library' && <div className="rounded-2xl border border-border bg-background p-4"><div className="mb-3 flex items-center justify-between"><div><p className="font-semibold">Your library</p><p className="text-sm text-muted-foreground">Choose a saved track without leaving enhancement.</p></div><Button size="sm" variant="outline" onClick={() => void openLibrary()}>Refresh</Button></div>{libraryLoading ? <p className="py-6 text-center text-sm text-muted-foreground">Loading library…</p> : libraryTracks.length ? <div className="grid gap-2 sm:grid-cols-2">{libraryTracks.map(track => <button key={track.id} onClick={() => void loadFileFromUrl(track.audioUrl, track.title)} className="flex items-center gap-3 rounded-xl border border-border p-3 text-left transition hover:border-primary"><img src={track.coverUrl || '/musicinsta-default-cover.webp'} alt="" className="h-12 w-12 rounded-lg object-cover" /><span className="min-w-0 truncate text-sm font-medium">{track.title}</span></button>)}</div> : <p className="py-6 text-center text-sm text-muted-foreground">No saved audio tracks found.</p>}</div>}
               </div>
 
               <FileDropZone onFile={handleFile} />

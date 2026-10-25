@@ -1,15 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Search, TrendingUp, Sparkles, Filter, Heart, Users, 
-  Music2, Radio, ChevronDown, ListMusic, ArrowRight
+  Music2, Radio, ChevronDown, ArrowRight
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { ArtistCard } from '@/components/artists/ArtistCard';
 import { TrackRow } from '@/components/tracks/TrackRow';
-import { mockArtists, mockTracks, genres, mockPlaylists } from '@/data/mockData';
 import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
@@ -18,28 +15,28 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useAuth } from '@/context/FirebaseAuthContext';
-import { fetchRecommendations, type Recommendation } from '@/services/recommendationService';
 import { useFeedPosts } from '@/hooks/useFeedPosts';
+import { usePlayer } from '@/context/PlayerContext';
+import { rankCatalog } from '@/services/recommendationEngine';
+import type { Track } from '@/types';
 
 type SortOption = 'trending' | 'newest' | 'popular';
 
 export default function DiscoverPage() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { catalog, listeningHistory, preferredGenres, currentTrack, catalogLoading } = usePlayer();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('for-you');
   const [sortBy, setSortBy] = useState<SortOption>('trending');
   const { posts } = useFeedPosts();
-  const liveTracks = posts.filter(post => post.track).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
+  const liveTracks = posts.filter(post => post.track?.audioUrl).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
   const liveArtists = posts.map(post => post.artist).filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
-  const catalogTracks = [...liveTracks, ...mockTracks.filter(mock => !liveTracks.some(track => track.id === mock.id))];
-  const catalogArtists = [...liveArtists, ...mockArtists.filter(mock => !liveArtists.some(artist => artist.id === mock.id))];
+  const catalogTracks = catalog.length ? catalog : liveTracks;
+  const catalogArtists = [...catalogTracks.map(track => track.artist), ...liveArtists].filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
+  const genres = [...new Set(catalogTracks.flatMap(track => [track.genre, ...track.artist.genres]).filter(Boolean) as string[])].sort();
   const liveTrackIds = new Set(liveTracks.map(track => track.id));
-
-  // Simulated personalization based on user preferences
-  const userGenres = profile?.is_artist ? ['Afrobeats', 'R&B'] : ['Hip-Hop', 'Electronic'];
+  const personalizedTracks = useMemo(() => rankCatalog(catalogTracks, listeningHistory, currentTrack, preferredGenres).map(item => item.track), [catalogTracks, listeningHistory, currentTrack, preferredGenres]);
 
   const filteredArtists = catalogArtists.filter((artist) => {
     const matchesSearch = artist.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -51,11 +48,11 @@ export default function DiscoverPage() {
   const filteredTracks = catalogTracks.filter((track) => {
     const matchesSearch = track.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          track.artist.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesGenre = !selectedGenre || track.artist.genres.includes(selectedGenre);
+    const matchesGenre = !selectedGenre || track.genre?.toLowerCase() === selectedGenre.toLowerCase() || track.artist.genres.some(genre => genre.toLowerCase() === selectedGenre.toLowerCase());
     return matchesSearch && matchesGenre;
   });
 
-  const sortTracks = (tracks: typeof mockTracks) => {
+  const sortTracks = (tracks: Track[]) => {
     switch (sortBy) {
       case 'trending':
         return [...tracks].sort((a, b) => (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.plays - a.plays);
@@ -74,36 +71,10 @@ export default function DiscoverPage() {
     navigate(`/user/${artistId}`);
   };
 
-  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [recommendLoading, setRecommendLoading] = useState(false);
-  const [recommendError, setRecommendError] = useState<string | null>(null);
-
   const sortLabel = {
     trending: 'Trending',
     newest: 'Newest',
     popular: 'Most Popular',
-  };
-
-  const loadRecommendations = async () => {
-    if (!searchQuery.trim()) {
-      setRecommendError('Enter a song name to get recommendations.');
-      setRecommendations([]);
-      return;
-    }
-
-    setRecommendLoading(true);
-    setRecommendError(null);
-
-    try {
-      const results = await fetchRecommendations(searchQuery.trim(), profile?.id);
-      setRecommendations(results);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not fetch recommendations.';
-      setRecommendError(message);
-      setRecommendations([]);
-    } finally {
-      setRecommendLoading(false);
-    }
   };
 
   return (
@@ -115,7 +86,7 @@ export default function DiscoverPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Search artists, songs, playlists..."
+              placeholder="Search real artists and songs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 bg-muted border-none h-12 rounded-xl"
@@ -182,7 +153,6 @@ export default function DiscoverPage() {
               <TabsTrigger value="all" className="flex-1">All</TabsTrigger>
               <TabsTrigger value="tracks" className="flex-1">Tracks</TabsTrigger>
               <TabsTrigger value="artists" className="flex-1">Artists</TabsTrigger>
-              <TabsTrigger value="playlists" className="flex-1">Playlists</TabsTrigger>
             </TabsList>
 
             <TabsContent value="all" className="space-y-6">
@@ -231,28 +201,6 @@ export default function DiscoverPage() {
               ))}
             </TabsContent>
 
-            <TabsContent value="playlists" className="space-y-2">
-              {mockPlaylists.map((playlist) => (
-                <motion.button
-                  key={playlist.id}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => navigate('/playlists')}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors text-left"
-                >
-                  <img
-                    src={playlist.coverImage}
-                    alt={playlist.name}
-                    className="w-14 h-14 rounded-lg object-cover"
-                  />
-                  <div>
-                    <p className="font-semibold">{playlist.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {playlist.tracks.length} tracks • By {playlist.creator.name}
-                    </p>
-                  </div>
-                </motion.button>
-              ))}
-            </TabsContent>
           </Tabs>
         </div>
       ) : (
@@ -264,73 +212,6 @@ export default function DiscoverPage() {
               <h1 className="font-display font-bold text-2xl">Discover</h1>
             </div>
             <p className="text-muted-foreground">Your personalized music feed</p>
-          </section>
-
-          <section className="px-4 py-5">
-            <div className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">MusicInsta recommendations</p>
-                  <h2 className="font-display font-semibold text-xl">Get a fresh playlist for the song you love</h2>
-                </div>
-                <Button onClick={loadRecommendations} disabled={recommendLoading}>
-                  {recommendLoading ? 'Finding recommendations...' : 'Get Recommendations'}
-                </Button>
-              </div>
-
-              <div className="mt-4">
-                {recommendError ? (
-                  <p className="text-sm text-destructive">{recommendError}</p>
-                ) : recommendations.length === 0 && !recommendLoading ? (
-                  <p className="text-sm text-muted-foreground">
-                    Enter a song name in the search bar above, then tap the button to see recommendations.
-                  </p>
-                ) : null}
-              </div>
-
-              {recommendations.length > 0 && (
-                <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {recommendations.map((item, index) => {
-                    const title = item.song || item.song_name || item.title || item.name || `Song ${index + 1}`;
-
-                    return (
-                      <Card
-                        key={`${title}-${index}`}
-                        className="group overflow-hidden border border-border bg-background p-5 transition hover:-translate-y-1 hover:shadow-xl"
-                      >
-                        <div className="space-y-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-base font-semibold leading-tight text-foreground group-hover:text-primary">
-                                {title}
-                              </p>
-                              {(item.artist || item.genre) && (
-                                <p className="mt-1 text-sm text-muted-foreground">
-                                  {item.artist ? `${item.artist}` : ''}
-                                  {item.artist && item.genre ? ' • ' : ''}
-                                  {item.genre ?? ''}
-                                </p>
-                              )}
-                            </div>
-                            <span className="rounded-full bg-muted px-2 py-1 text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
-                              Rec {index + 1}
-                            </span>
-                          </div>
-
-                          {(item.genre || item.mood) && (
-                            <div className="flex flex-wrap gap-2">
-                              {item.genre && <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{item.genre}</span>}
-                              {item.mood && <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">{item.mood}</span>}
-                            </div>
-                          )}
-                          {item.reason && <p className="text-xs text-muted-foreground">Because it has {item.reason}.</p>}
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           </section>
 
           {/* Tabs: For You / Trending */}
@@ -349,12 +230,14 @@ export default function DiscoverPage() {
                     <h2 className="font-display font-bold text-lg">Based on your taste</h2>
                   </div>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Songs we think you'll love
+                    Automatically ranked from MusicInsta's cloud music catalogue using your plays, likes, completed listens and skips.
                   </p>
                   <div className="space-y-1">
-                    {sortTracks(filteredTracks).slice(0, 4).map((track, index) => (
-                      <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={sortTracks(filteredTracks)} />
+                     {personalizedTracks.filter(track => filteredTracks.some(item => item.id === track.id)).slice(0, 8).map((track, index) => (
+                       <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={personalizedTracks} />
                     ))}
+                    {catalogLoading && <p className="py-4 text-sm text-muted-foreground">Loading your recommendations...</p>}
+                    {!catalogLoading && personalizedTracks.length === 0 && <p className="py-4 text-sm text-muted-foreground">No playable music has been added to the cloud catalogue yet.</p>}
                   </div>
                 </section>
 
@@ -414,41 +297,6 @@ export default function DiscoverPage() {
                   </div>
                 </section>
 
-                {/* Recommended Playlists */}
-                <section>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <ListMusic className="w-5 h-5 text-primary" />
-                      <h2 className="font-display font-bold text-lg">Recommended Playlists</h2>
-                    </div>
-                    <button 
-                      onClick={() => navigate('/playlists')}
-                      className="text-sm text-primary hover:underline flex items-center gap-1"
-                    >
-                      See all <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
-                    {mockPlaylists.slice(0, 4).map((playlist) => (
-                      <motion.div
-                        key={playlist.id}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => navigate('/playlists')}
-                        className="flex-shrink-0 w-36 cursor-pointer"
-                      >
-                        <div className="w-36 h-36 rounded-xl overflow-hidden mb-2">
-                          <img
-                            src={playlist.coverImage}
-                            alt={playlist.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <p className="font-medium text-sm truncate">{playlist.name}</p>
-                        <p className="text-xs text-muted-foreground">{playlist.tracks.length} tracks</p>
-                      </motion.div>
-                    ))}
-                  </div>
-                </section>
               </TabsContent>
 
               <TabsContent value="trending" className="space-y-6">
@@ -484,7 +332,7 @@ export default function DiscoverPage() {
                       See all <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                     {catalogArtists.slice(0, 4).map((artist) => (
                       <ArtistCard
                         key={artist.id}
@@ -496,43 +344,6 @@ export default function DiscoverPage() {
                   </div>
                 </section>
 
-                {/* Popular Playlists */}
-                <section>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <ListMusic className="w-5 h-5 text-secondary" />
-                      <h2 className="font-display font-bold text-lg">Popular Playlists</h2>
-                    </div>
-                    <button 
-                      onClick={() => navigate('/playlists')}
-                      className="text-sm text-primary hover:underline flex items-center gap-1"
-                    >
-                      See all <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    {mockPlaylists.map((playlist) => (
-                      <motion.button
-                        key={playlist.id}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => navigate('/playlists')}
-                        className="w-full flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors text-left"
-                      >
-                        <img
-                          src={playlist.coverImage}
-                          alt={playlist.name}
-                          className="w-14 h-14 rounded-lg object-cover"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold truncate">{playlist.name}</p>
-                          <p className="text-sm text-muted-foreground truncate">
-                            {playlist.tracks.length} tracks • By {playlist.creator.name}
-                          </p>
-                        </div>
-                      </motion.button>
-                    ))}
-                  </div>
-                </section>
               </TabsContent>
             </Tabs>
           </div>

@@ -6,12 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { collection, query, where, getDocs, doc, getDoc, addDoc, deleteDoc, limit, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, addDoc, deleteDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { usePlayer } from '@/context/PlayerContext';
 import type { Track as PlayerTrack } from '@/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DEFAULT_MEDIA_IMAGE, formatMediaDuration } from '@/lib/media';
 
 interface Playlist {
   id: string;
@@ -49,7 +50,7 @@ export default function PlaylistDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, profile } = useAuth();
-  const { openInMainPlayer } = usePlayer();
+  const { openInMainPlayer, catalog } = usePlayer();
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [tracks, setTracks] = useState<PlaylistTrack[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +64,7 @@ export default function PlaylistDetailPage() {
       fetchPlaylist();
       fetchTracks();
     }
-  }, [id]);
+  }, [id, catalog.length]);
 
   const fetchPlaylist = async () => {
     if (!id) return;
@@ -106,6 +107,7 @@ export default function PlaylistDetailPage() {
 
       const trackPromises = membershipDocs.map(async (trackDoc) => {
         const trackData = trackDoc.data();
+        const catalogTrack = catalog.find(item => item.id === trackData.track_id);
         const trackDocRef = await getDoc(doc(db, 'tracks', trackData.track_id));
 
         if (trackDocRef.exists()) {
@@ -117,14 +119,14 @@ export default function PlaylistDetailPage() {
             added_at: trackData.added_at?.toDate() || new Date(),
             track: {
               id: trackDocRef.id,
-              title: track.title,
-              artist: track.artist || 'Unknown Artist',
-              cover_url: track.cover_url,
-              audio_url: track.audio_url,
-              duration: track.duration,
+              title: track.title || catalogTrack?.title,
+              artist: catalogTrack?.artist.name || track.artist || 'Unknown Artist',
+              cover_url: track.cover_url || catalogTrack?.coverArt || DEFAULT_MEDIA_IMAGE,
+              audio_url: track.audio_url || catalogTrack?.audioUrl,
+              duration: Number(track.duration) || catalogTrack?.duration || 0,
               plays: track.plays,
               likes: track.likes,
-              user_id: track.user_id,
+              user_id: track.user_id || track.profile_id || catalogTrack?.artist.id,
               created_at: track.created_at?.toDate() || new Date(),
             } as Track,
           } as PlaylistTrack;
@@ -149,15 +151,8 @@ export default function PlaylistDetailPage() {
 
     setSearchLoading(true);
     try {
-      const tracksQuery = query(collection(db, 'tracks'), limit(200));
-
-      const tracksSnapshot = await getDocs(tracksQuery);
-      const tracksData = tracksSnapshot.docs
-        .map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          created_at: doc.data().created_at?.toDate() || new Date(),
-        } as Track))
+      const tracksData = catalog
+        .map(item => ({ id: item.id, title: item.title, artist: item.artist.name, cover_url: item.coverArt, audio_url: item.audioUrl || null, duration: item.duration, plays: item.plays, likes: item.likes, user_id: item.artist.id, created_at: item.createdAt || new Date() } as Track))
         .filter(track => `${track.title || ''} ${track.artist || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
         .filter(track => !tracks.some(pt => pt.track_id === track.id))
         .slice(0, 30);
@@ -210,7 +205,7 @@ export default function PlaylistDetailPage() {
       id: item.track.id,
       title: item.track.title,
       artist: { id: item.track.user_id, name: item.track.artist, username: item.track.artist, avatar: '', coverImage: '', bio: '', location: '', genres: [], isVerified: false, followers: 0, following: 0, tracks: 0 },
-      coverArt: item.track.cover_url || '/placeholder.svg',
+      coverArt: item.track.cover_url || DEFAULT_MEDIA_IMAGE,
       duration: item.track.duration || 0,
       plays: item.track.plays || 0,
       likes: item.track.likes || 0,
@@ -221,10 +216,7 @@ export default function PlaylistDetailPage() {
   };
 
   const formatDuration = (seconds: number | null) => {
-    if (!seconds) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return formatMediaDuration(seconds);
   };
 
   if (loading) {
@@ -257,7 +249,7 @@ export default function PlaylistDetailPage() {
           </Button>
           <div className="flex items-center gap-4 flex-1">
             <img
-              src={playlist.cover_url || '/placeholder.svg'}
+              src={playlist.cover_url || DEFAULT_MEDIA_IMAGE}
               alt={playlist.name}
               className="h-32 w-32 rounded-xl object-cover shadow-2xl sm:h-48 sm:w-48"
             />
@@ -315,7 +307,7 @@ export default function PlaylistDetailPage() {
                   {index + 1}
                 </div>
                 <img
-                  src={playlistTrack.track.cover_url || '/placeholder.svg'}
+                  src={playlistTrack.track.cover_url || DEFAULT_MEDIA_IMAGE}
                   alt={playlistTrack.track.title}
                   className="w-12 h-12 rounded object-cover"
                 />
@@ -372,7 +364,7 @@ export default function PlaylistDetailPage() {
                     <Card key={track.id} className="p-3">
                       <div className="flex items-center gap-3">
                         <img
-                          src={track.cover_url || '/placeholder.svg'}
+                          src={track.cover_url || DEFAULT_MEDIA_IMAGE}
                           alt={track.title}
                           className="w-12 h-12 rounded object-cover"
                         />

@@ -23,7 +23,6 @@ interface Comment {
     isVerified: boolean;
   };
 }
-
 interface TrackCommentsProps {
   track: Track;
   currentTime?: number;
@@ -80,7 +79,7 @@ export function TrackComments({ track, currentTime = 0 }: TrackCommentsProps) {
       user: {
         id: profile.id,
         name: profile.name || 'User',
-        avatar: profile.avatar_url || '/placeholder.svg',
+        avatar: profile.avatar_url || '/musicinsta-default-cover.webp',
         isVerified: profile.is_verified || false,
       },
     };

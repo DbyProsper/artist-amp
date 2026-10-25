@@ -10,7 +10,7 @@ interface Props {
 }
 
 export default function QuotaGuard({ quotaKey, onAllowed, children }: Props) {
-  const { checkQuota, blocked, clearBlocked, plan } = useQuotaGate();
+  const { checkQuota, blocked, clearBlocked } = useQuotaGate();
 
   const handleClick = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -27,7 +27,6 @@ export default function QuotaGuard({ quotaKey, onAllowed, children }: Props) {
         <UpgradeModal
           reason={blocked.reason}
           quotaKey={blocked.key}
-          currentPlan={plan}
           onClose={clearBlocked}
         />
       )}

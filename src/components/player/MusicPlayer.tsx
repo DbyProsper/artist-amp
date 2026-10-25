@@ -10,6 +10,7 @@ import { usePlayer } from '@/context/PlayerContext';
 import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
 import { PlayerSettingsModal } from '@/components/modals/PlayerSettingsModal';
+import { toast } from 'sonner';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -17,15 +18,27 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function buildTimedLyrics(lyrics: string, duration: number) {
+function buildTimedLyrics(lyrics: string, duration: number, authoredStart?: number) {
   const lines = lyrics.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   const parsed = lines.map(line => {
     const match = line.match(/^\[(\d{1,2}):(\d{2}(?:\.\d+)?)\]\s*(.*)$/);
     return match ? { text: match[3], startTime: Number(match[1]) * 60 + Number(match[2]), endTime: 0 } : null;
   });
   if (parsed.every(Boolean)) return parsed.map((line, index) => ({ ...line!, endTime: parsed[index + 1]?.startTime ?? duration }));
-  const slot = Math.max(2, (duration || lines.length * 4) / Math.max(lines.length, 1));
-  return lines.map((text, index) => ({ text, startTime: index * slot, endTime: (index + 1) * slot }));
+  const intro = authoredStart ?? (duration > 0 ? Math.min(18, Math.max(6, duration * .075)) : 0);
+  const singingEnd = duration > 0 ? Math.max(intro + 1, duration * .92) : intro + lines.length * 3;
+  const weights = lines.map(line => {
+    const isSection = /^\s*[[(](verse|chorus|hook|bridge|intro|outro|pre.?chorus|refrain|instrumental)[^\])]*[\])]\s*$/i.test(line);
+    return isSection ? .65 : Math.max(1.25, line.split(/\s+/).filter(Boolean).length * .42);
+  });
+  const totalWeight = weights.reduce((sum, value) => sum + value, 0) || 1;
+  const available = Math.max(1, singingEnd - intro);
+  let cursor = intro;
+  return lines.map((text, index) => {
+    const startTime = cursor;
+    cursor += (weights[index] / totalWeight) * available;
+    return { text, startTime, endTime: index === lines.length - 1 ? singingEnd : cursor };
+  });
 }
 
 // Extract dominant color from image (simplified - returns theme color)
@@ -149,10 +162,15 @@ export function FullPlayer() {
     showLyrics,
     currentTime,
     duration,
+    queue,
+    listeningHistory,
+    playbackError,
     pauseTrack,
     resumeTrack,
     nextTrack,
     previousTrack,
+    playTrack,
+    likeTrack,
     setExpanded,
     setProgress,
     setVolume,
@@ -162,20 +180,54 @@ export function FullPlayer() {
   } = usePlayer();
   const [showSettings, setShowSettings] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
   const lyricContainerRef = useRef<HTMLDivElement>(null);
 
   const timedLyrics = useMemo(() => currentTrack?.timestampedLyrics?.length
     ? currentTrack.timestampedLyrics
-    : buildTimedLyrics(currentTrack?.lyrics || '', duration || currentTrack?.duration || 0), [currentTrack, duration]);
-  // Lyrics advance a little ahead of raw playback to feel responsive during
-  // karaoke. Timestamp markers are parsed for timing but never rendered.
-  const lyricClock = currentTime * 1.06;
+    : buildTimedLyrics(currentTrack?.lyrics || '', duration || currentTrack?.duration || 0, currentTrack?.lyricStartTime), [currentTrack, duration]);
+  const hasTimestampedLyrics = Boolean(currentTrack?.timestampedLyrics?.length || currentTrack?.lyrics?.match(/^\[\d{1,2}:\d{2}/m));
+  // Authored timestamps remain exact. Untimed lyrics reserve the estimated intro
+  // and are compressed into the likely vocal window so they do not drift late.
+  const lyricClock = currentTime;
   const activeLyricIndex = timedLyrics.findIndex(line => lyricClock >= line.startTime && lyricClock < line.endTime);
 
   useEffect(() => {
     if (activeLyricIndex < 0) return;
-    lyricContainerRef.current?.querySelector(`[data-lyric-index="${activeLyricIndex}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const container = lyricContainerRef.current;
+    const line = container?.querySelector<HTMLElement>(`[data-lyric-index="${activeLyricIndex}"]`);
+    if (container && line) container.scrollTo({ top: Math.max(0, line.offsetTop - container.clientHeight * .38), behavior: 'smooth' });
   }, [activeLyricIndex]);
+
+  useEffect(() => {
+    lyricContainerRef.current?.scrollTo({ top: 0 });
+  }, [currentTrack?.id, showLyrics]);
+
+  useEffect(() => {
+    setIsLiked(Boolean(currentTrack && listeningHistory.find(entry => entry.trackId === currentTrack.id)?.liked));
+  }, [currentTrack, listeningHistory]);
+
+  const toggleLike = () => {
+    if (!currentTrack) return;
+    const next = !isLiked;
+    setIsLiked(next);
+    likeTrack(currentTrack, next);
+    toast.success(next ? 'Added to your liked music' : 'Removed from liked music');
+  };
+
+  const shareTrack = async () => {
+    if (!currentTrack) return;
+    const url = `${window.location.origin}/?track=${encodeURIComponent(currentTrack.id)}`;
+    try {
+      if (navigator.share) await navigator.share({ title: currentTrack.title, text: `Listen to ${currentTrack.title} by ${currentTrack.artist.name} on MusicInsta`, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        toast.success('Track link copied');
+      }
+    } catch (error) {
+      if ((error as DOMException)?.name !== 'AbortError') toast.error('The track could not be shared');
+    }
+  };
 
   if (!currentTrack) return null;
 
@@ -239,9 +291,9 @@ export function FullPlayer() {
                 ref={lyricContainerRef}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="w-full max-w-sm aspect-square bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl flex items-center justify-center p-6 overflow-y-auto"
+                className="w-full max-w-sm aspect-square bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl p-6 overflow-y-auto"
               >
-                <div className="w-full space-y-4 py-24 text-center" aria-label="Synchronized lyrics">
+                <div className="w-full space-y-4 pb-40 pt-4 text-center" aria-label="Synchronized lyrics">
                   {timedLyrics.map((line, index) => (
                     <p key={`${line.startTime}-${index}`} data-lyric-index={index} className={cn('transition-all duration-300', index === activeLyricIndex ? 'scale-105 text-lg font-bold text-foreground' : 'text-sm text-muted-foreground/60')}>
                       {line.text}
@@ -282,7 +334,8 @@ export function FullPlayer() {
               <div className="flex items-center gap-2">
                 <motion.button 
                   whileTap={{ scale: 0.9 }}
-                  onClick={() => setIsLiked(!isLiked)}
+                  onClick={toggleLike}
+                  aria-label={isLiked ? 'Unlike track' : 'Like track'}
                   className="p-3 rounded-full hover:bg-muted/50 transition-colors"
                 >
                   <Heart 
@@ -290,12 +343,14 @@ export function FullPlayer() {
                     fill={isLiked ? "currentColor" : "none"}
                   />
                 </motion.button>
-                <button className="p-3 rounded-full hover:bg-muted/50 transition-colors">
+                <button onClick={() => void shareTrack()} aria-label="Share track" className="p-3 rounded-full hover:bg-muted/50 transition-colors">
                   <Share2 className="w-6 h-6" />
                 </button>
               </div>
             </div>
           </div>
+
+          {playbackError && <p role="alert" className="px-8 text-sm text-destructive">{playbackError}</p>}
 
           {/* Progress Bar */}
           <div className="px-8 py-2">
@@ -316,6 +371,7 @@ export function FullPlayer() {
           <div className="flex items-center justify-center gap-6 py-6">
             <button
               onClick={toggleShuffle}
+              aria-label={isShuffled ? 'Turn shuffle off' : 'Shuffle upcoming tracks'}
               className={cn(
                 "p-3 rounded-full transition-colors",
                 isShuffled ? "text-primary" : "text-muted-foreground hover:text-foreground"
@@ -326,6 +382,7 @@ export function FullPlayer() {
             
             <button
               onClick={previousTrack}
+              aria-label="Previous track"
               className="p-3 rounded-full hover:bg-muted/50 transition-colors"
             >
               <SkipBack className="w-7 h-7" fill="currentColor" />
@@ -334,6 +391,7 @@ export function FullPlayer() {
             <motion.button
               whileTap={{ scale: 0.9 }}
               onClick={() => isPlaying ? pauseTrack() : resumeTrack()}
+              aria-label={isPlaying ? 'Pause' : 'Play'}
               className="w-16 h-16 rounded-full bg-primary flex items-center justify-center glow-primary"
             >
               <AnimatePresence mode="wait">
@@ -361,6 +419,7 @@ export function FullPlayer() {
             
             <button
               onClick={nextTrack}
+              aria-label="Next recommended track"
               className="p-3 rounded-full hover:bg-muted/50 transition-colors"
             >
               <SkipForward className="w-7 h-7" fill="currentColor" />
@@ -368,6 +427,7 @@ export function FullPlayer() {
             
             <button
               onClick={toggleRepeat}
+              aria-label={`Repeat mode: ${repeatMode}`}
               className={cn(
                 "p-3 rounded-full transition-colors",
                 repeatMode !== 'off' ? "text-primary" : "text-muted-foreground hover:text-foreground"
@@ -393,10 +453,31 @@ export function FullPlayer() {
                 className="flex-1"
               />
             </div>
-            <button className="p-3 rounded-full hover:bg-muted/50 transition-colors">
+            <button onClick={() => setShowQueue(current => !current)} aria-label="Show play queue" className="p-3 rounded-full hover:bg-muted/50 transition-colors">
               <ListMusic className="w-5 h-5" />
             </button>
           </div>
+
+          {showQueue && (
+            <div className="absolute inset-x-0 bottom-0 z-20 max-h-[55vh] overflow-y-auto rounded-t-3xl border-t border-border bg-card p-4 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold">Up next</h3>
+                  <p className="text-xs text-muted-foreground">Played and liked music first, then similar discoveries.</p>
+                </div>
+                <button onClick={() => setShowQueue(false)} aria-label="Close queue" className="rounded-full p-2 hover:bg-muted"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="space-y-1">
+                {queue.map((track, index) => (
+                  <button key={track.id} onClick={() => { playTrack(track, queue); setShowQueue(false); }} className={cn('flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-muted', track.id === currentTrack.id && 'bg-primary/10')}>
+                    <span className="w-6 text-center text-xs text-muted-foreground">{index + 1}</span>
+                    <img src={track.coverArt} alt="" className="h-10 w-10 rounded-md object-cover" />
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{track.title}</span><span className="block truncate text-xs text-muted-foreground">{track.artist.name}</span></span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Settings Modal */}
           <PlayerSettingsModal

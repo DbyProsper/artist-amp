@@ -211,6 +211,7 @@ export default function OnboardingPage() {
         cover_url: coverUrl,
         is_artist: formData.isArtist,
         onboarding_completed: true,
+        genres: genres.filter(genre => formData.selectedGenres.includes(genre.id)).map(genre => genre.name),
         updated_at: new Date(),
       });
 
@@ -225,6 +226,10 @@ export default function OnboardingPage() {
       };
 
       await setDoc(doc(db, 'social_links', profile.id), socialLinks, { merge: true });
+      await setDoc(doc(db, 'user_preferences', profile.id), {
+        favorite_genres: genres.filter(genre => formData.selectedGenres.includes(genre.id)).map(genre => genre.name),
+        updated_at: new Date(),
+      }, { merge: true });
 
       setOnboardingComplete(true);
       await refreshProfile();
@@ -234,9 +239,9 @@ export default function OnboardingPage() {
       setTimeout(() => {
         navigate('/');
       }, 1000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Onboarding error:', error);
-      toast.error(error.message || 'Failed to complete setup');
+      toast.error(error instanceof Error ? error.message : 'Failed to complete setup');
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
-import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, History, ArrowLeft, Megaphone, Zap } from 'lucide-react';
+import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, History, ArrowLeft, Megaphone, Zap, Scissors } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BPMSlider } from './BPMSlider';
@@ -8,12 +8,12 @@ import { PromptBox } from './PromptBox';
 import { PresetButtons } from './PresetButtons';
 import { MoodPresets } from './MoodPresets';
 import { LanguagePresets } from './LanguagePresets';
-import { GenerationHistory } from './GenerationHistory';
+import { GenerationHistory, type GeneratedItem } from './GenerationHistory';
 import PlanBadge from '@/components/PlanBadge';
-import QuotaBar from '@/components/QuotaBar';
 import type { QuotaKey } from '@/lib/planLimits';
 import { StudioFeature } from './StudioEntryScreen';
 import { useNavigate } from 'react-router-dom';
+import { StudioCredits } from './StudioCredits';
 
 interface StudioLayoutProps {
   feature: StudioFeature;
@@ -54,8 +54,8 @@ interface StudioLayoutProps {
   isSaving?: boolean;
 
   // History
-  history?: Array<{ id: string; prompt: string; audioUrl?: string; imageUrl?: string; lyrics?: string; feature: string; createdAt: Date; metadata?: any }>;
-  onHistorySelect?: (item: any) => void;
+  history?: GeneratedItem[];
+  onHistorySelect?: (item: GeneratedItem) => void;
   onHistoryDelete?: (id: string) => void;
 }
 
@@ -68,6 +68,7 @@ const featureIcons: Record<StudioFeature, ReactNode> = {
   merch: <Shirt className="w-4 h-4" />,
   chat: <MessageCircle className="w-4 h-4" />,
   enhance: <Zap className="w-4 h-4" />,
+  separate: <Scissors className="w-4 h-4" />,
   daw: <AudioWaveform className="w-4 h-4" />,
 };
 
@@ -80,18 +81,15 @@ const featureLabels: Record<StudioFeature, string> = {
   merch: 'Merch',
   chat: 'Chat',
   enhance: 'Audio Enhancement',
+  separate: 'Stem Separator',
   daw: 'Music Studio DAW',
 };
 
 const FEATURE_QUOTA_MAP: Partial<Record<StudioFeature, QuotaKey>> = {
-  beat: 'beats',
-  lyrics: 'lyrics',
+  beat: 'clips30s',
   cover: 'images',
   poster: 'images',
   merch: 'images',
-  chat: 'lyrics',
-  enhance: 'audioEnhanceStandard',
-  daw: 'audioEnhanceStandard',
 };
 
 export function StudioLayout({
@@ -129,9 +127,12 @@ export function StudioLayout({
   onHistoryDelete,
 }: StudioLayoutProps) {
   const navigate = useNavigate();
-  const features: StudioFeature[] = ['beat', 'lyrics', 'song', 'cover', 'poster', 'merch'];
+  const features: StudioFeature[] = ['daw', 'enhance', 'separate', 'beat', 'song', 'lyrics', 'cover', 'poster', 'merch', 'chat'];
 
   const isAudioFeature = feature === 'beat' || feature === 'song';
+  const activeQuotaKey: QuotaKey | undefined = feature === 'song'
+    ? (generationMode === 'full' ? 'fullSongs' : 'clips30s')
+    : FEATURE_QUOTA_MAP[feature];
   const shouldShowBPM = feature !== 'lyrics' && (feature === 'beat' || feature === 'song' || feature === 'cover' || feature === 'poster' || feature === 'merch');
 
   return (
@@ -177,17 +178,17 @@ export function StudioLayout({
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Tools
             </p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
               {features.map((f) => (
                 <Button
                   key={f}
                   size="sm"
                   variant={feature === f ? 'default' : 'outline'}
                   onClick={() => onFeatureChange(f)}
-                  className="gap-2 h-auto py-2 px-2"
+                  className="h-auto min-h-10 min-w-0 justify-start gap-2 px-3 py-2"
                 >
-                  {featureIcons[f]}
-                  <span className="text-xs">{featureLabels[f]}</span>
+                  <span className="shrink-0">{featureIcons[f]}</span>
+                  <span className="min-w-0 whitespace-normal break-words text-left text-xs leading-tight">{featureLabels[f]}</span>
                 </Button>
               ))}
             </div>
@@ -349,7 +350,7 @@ export function StudioLayout({
                 disabled={isGenerating}
                 buttonText={buttonText}
                 placeholder={promptPlaceholder}
-                quotaKey={FEATURE_QUOTA_MAP[feature]}
+                quotaKey={activeQuotaKey}
               />
             </div>
 
@@ -449,18 +450,7 @@ export function StudioLayout({
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
               Plan usage
             </p>
-            {feature === 'song' ? (
-              <p className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
-                Full-song generation is currently open without plan limits.
-              </p>
-            ) : FEATURE_QUOTA_MAP[feature] ? (
-              <>
-                <QuotaBar quotaKey={FEATURE_QUOTA_MAP[feature]!} label={`${featureLabels[feature]} remaining`} type="monthly" />
-                <QuotaBar quotaKey={FEATURE_QUOTA_MAP[feature]!} label={`${featureLabels[feature]} today`} type="daily" />
-              </>
-            ) : (
-              <p className="text-xs text-muted-foreground">This studio tool has no usage limit.</p>
-            )}
+            <StudioCredits compact />
           </div>
 
           <div className="h-px bg-border/40" />

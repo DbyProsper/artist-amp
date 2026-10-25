@@ -15,6 +15,7 @@ export interface UserQuota {
 }
 
 export interface UserQuotaDaily {
+  fullSongs: number;
   beats: number;
   clips30s: number;
   images: number;
@@ -45,6 +46,7 @@ const EMPTY_QUOTA: UserQuota = {
 };
 
 const EMPTY_DAILY: UserQuotaDaily = {
+  fullSongs: 0,
   beats: 0,
   clips30s: 0,
   images: 0,
@@ -52,32 +54,37 @@ const EMPTY_DAILY: UserQuotaDaily = {
   audioEnhanceStandard: 0,
 };
 
+const INITIAL_STATE: PlanState = {
+  plan: 'free',
+  quota: EMPTY_QUOTA,
+  quotaDaily: EMPTY_DAILY,
+  quotaMonth: '',
+  quotaDay: '',
+  payfastToken: null,
+  payfastEmail: null,
+  stripeCustomerId: null,
+  loading: true,
+};
+
 export function usePlan(): PlanState {
-  const [state, setState] = useState<PlanState>({
-    plan: 'free',
-    quota: EMPTY_QUOTA,
-    quotaDaily: EMPTY_DAILY,
-    quotaMonth: '',
-    quotaDay: '',
-    payfastToken: null,
-    payfastEmail: null,
-    stripeCustomerId: null,
-    loading: true,
-  });
+  const [state, setState] = useState<PlanState>(INITIAL_STATE);
 
   useEffect(() => {
     const auth = getAuth();
+    let unsubDoc = () => {};
     const unsubAuth = onAuthStateChanged(auth, (user) => {
+      unsubDoc();
       if (!user) {
-        setState((s) => ({ ...s, loading: false }));
+        setState({ ...INITIAL_STATE, loading: false });
         return;
       }
 
+      setState(current => ({ ...current, loading: true }));
       user.getIdToken(true).catch(() => {});
 
-      const unsubDoc = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+      unsubDoc = onSnapshot(doc(db, 'users', user.uid), (snap) => {
         if (!snap.exists()) {
-          setState((s) => ({ ...s, loading: false }));
+          setState({ ...INITIAL_STATE, loading: false });
           return;
         }
 
@@ -93,12 +100,13 @@ export function usePlan(): PlanState {
           stripeCustomerId: d.stripeCustomerId ?? null,
           loading: false,
         });
-      });
-
-      return () => unsubDoc();
+      }, () => setState(current => ({ ...current, loading: false })));
     });
 
-    return () => unsubAuth();
+    return () => {
+      unsubDoc();
+      unsubAuth();
+    };
   }, []);
 
   return state;

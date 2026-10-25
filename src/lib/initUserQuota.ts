@@ -24,6 +24,7 @@ export async function initUserQuota(uid: string): Promise<void> {
     },
     quotaDay: day,
     quotaDaily: {
+      fullSongs: 0,
       beats: 0,
       clips30s: 0,
       images: 0,

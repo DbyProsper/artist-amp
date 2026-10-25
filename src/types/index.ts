@@ -36,9 +36,34 @@ export interface Track {
     startTime: number;
     endTime: number;
   }>;
+  lyricStartTime?: number;
   credits?: MusicCredits;
   visualFilter?: string;
   attachedMusic?: string;
+  genre?: string;
+  mood?: string;
+  bpm?: number;
+  energy?: number;
+  loudness?: number;
+  tags?: string[];
+  storagePath?: string;
+  source?: 'firestore' | 'gcs' | 'generated' | 'demo';
+  isPublic?: boolean;
+  createdAt?: Date;
+  albumId?: string;
+  trackNumber?: number;
+}
+
+export interface Album {
+  id: string;
+  title: string;
+  type: 'album' | 'ep';
+  artist: Artist;
+  coverArt: string;
+  genre?: string;
+  description?: string;
+  tracks: Track[];
+  releaseDate?: Date;
 }
 
 export interface MusicCredits {
@@ -49,14 +74,18 @@ export interface MusicCredits {
   producers?: string[];
   engineers?: string[];
   label?: string;
+  promptBy?: string;
+  generatedBy?: string;
+  locked?: boolean;
   releaseType?: 'single' | 'ep' | 'album' | 'mixtape' | 'demo';
 }
 
 export interface Post {
   id: string;
   artist: Artist;
-  type: 'audio' | 'video' | 'image';
+  type: 'audio' | 'video' | 'image' | 'album';
   track?: Track;
+  album?: Album;
   imageUrl?: string;
   videoUrl?: string;
   caption: string;
@@ -70,6 +99,8 @@ export interface Post {
   isNewRelease?: boolean;
   isNewPost?: boolean;
   credits?: MusicCredits;
+  visualFilter?: string;
+  attachedMusic?: string;
 }
 
 export interface Story {

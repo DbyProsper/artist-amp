@@ -1,0 +1,121 @@
+MUSICINSTA CONTENT-BASED RECOMMENDATION ALGORITHM
+================================================
+
+Status
+------
+Implemented and connected to the Home feed, Discover recommendations, and the
+global music-player queue.
+
+Production source files
+-----------------------
+Frontend algorithm: src/services/recommendationEngine.ts
+Frontend catalogue/history: src/services/musicCatalogService.ts
+Player integration: src/context/PlayerContext.tsx
+Backend algorithm: ../musicinsta-ai/app/services/recommendation_service.py
+Backend catalogue endpoint: ../musicinsta-ai/app/routes/recommendation.py
+
+Purpose
+-------
+Recommend music from MusicInsta's live Firestore-indexed Google Storage
+catalogue according to an individual listener's own taste. The ranking does
+not use global play counts, global likes, chart rank, or artist popularity, so
+an independent artist can be discovered because the music matches a listener,
+not because the artist is already famous.
+
+Inputs
+------
+1. Every playable public track registered in Firestore tracks or songs, plus
+   the signed-in user's own private tracks. Each record must have an audio URL.
+2. Track content: genre, mood, artist genres, tags, title, lyrics, BPM, energy,
+   and loudness when those values are available.
+3. Private per-user behaviour: play count, completed plays, skips, likes, last
+   position, and recency.
+4. The track currently selected by the listener (the seed track).
+
+Content representation
+----------------------
+Text tokens are normalized to lowercase and common filler words are removed.
+The weighted content vector uses these relative weights:
+
+  genre         5.00
+  mood          4.00
+  artist genres 4.00
+  tags          3.00
+  title         1.50
+  lyrics        0.35
+
+Text similarity is cosine similarity. BPM, energy, and loudness provide an
+additional normalized numeric similarity when present. Matching artist genres
+receive a small content bonus.
+
+Listener preference profile
+---------------------------
+Each previously heard track contributes to the listener's taste profile. Its
+weight is calculated from repeated plays, completed listens, and likes. Skips
+reduce the weight. Negative or zero-weight tracks do not define the positive
+taste profile.
+
+Ranking
+-------
+For each playable candidate other than the current seed:
+
+  score = seed similarity       * 0.48
+        + taste-profile match   * 0.34
+        + personal familiarity  * 0.18
+        + new-artist boost
+
+The familiarity term belongs only to the current listener. It is not a global
+popularity score. A small new-artist boost is applied when the artist is not
+already represented in the listener's positive profile.
+
+Queue construction
+------------------
+1. Put the selected song first.
+2. Rank and play the listener's liked or previously played matching music.
+3. Follow it with content-matched discovery tracks.
+4. Diversify discovery so the same artist is not selected repeatedly when an
+   alternative is available.
+5. Exclude missing, duplicate, inaccessible, and non-playable audio records.
+6. Rebuild recommendations when the listener selects another track or when
+   their history changes.
+
+Feed ranking
+------------
+Audio posts are scored with the same listener profile. Higher-matching audio
+posts appear first; creation time breaks ties. Non-audio posts remain in the
+feed and retain chronological tie-breaking.
+
+Reference pseudocode
+--------------------
+
+catalog = unique_playable(live_public_tracks + listener_own_tracks)
+profile = weighted_positive_history(catalog, listener_history)
+
+for candidate in catalog excluding seed:
+    seed_match = content_similarity(seed, candidate)
+    taste_match = weighted_mean(
+        content_similarity(candidate, heard_track),
+        history_weight(heard_track)
+    )
+    familiar = listener_played_or_liked(candidate)
+    personal_affinity = plays + completions + like - skips
+    discovery_bonus = 0.08 if candidate.artist not in profile.artists else 0
+    candidate.score = (
+        0.48 * seed_match
+        + 0.34 * taste_match
+        + 0.18 * personal_affinity
+        + discovery_bonus
+    )
+
+queue = [seed]
+queue += sort_by_score(candidates where familiar)
+queue += diversify_artists(sort_by_score(candidates where not familiar))
+
+Privacy and artist-benefit rules
+--------------------------------
+- Listening history is readable and writable only by its owner.
+- Private tracks are recommended only to their owner.
+- Global popularity is deliberately excluded from ranking.
+- New artists receive a controlled discovery opportunity after familiar music,
+  which balances listener comfort with fair exposure for independent artists.
+

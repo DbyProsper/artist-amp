@@ -30,7 +30,6 @@ interface Profile {
   is_artist: boolean | null;
   is_verified: boolean | null;
 }
-
 interface SocialLinks {
   youtube?: string | null;
   apple_music?: string | null;
@@ -211,7 +210,7 @@ export default function UserProfilePage() {
       {/* Cover Image */}
       <div className="relative h-40">
         <img
-          src={profile.cover_url || '/placeholder.svg'}
+          src={profile.cover_url || '/musicinsta-default-cover.webp'}
           alt="Cover"
           className="w-full h-full object-cover"
         />
@@ -223,7 +222,7 @@ export default function UserProfilePage() {
         <div className="flex items-end gap-4 mb-4">
           <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-background gradient-border">
             <img
-              src={profile.avatar_url || '/placeholder.svg'}
+              src={profile.avatar_url || '/musicinsta-default-cover.webp'}
               alt={profile.name || 'User'}
               className="w-full h-full object-cover"
             />
@@ -338,7 +337,7 @@ export default function UserProfilePage() {
             <div className="grid grid-cols-3 gap-1">
               {posts.map((post) => (
                 <div key={post.id} className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer">
-                  {post.type === 'video' && post.videoUrl ? <VideoThumbnail src={post.videoUrl} poster={post.imageUrl} alt={post.caption || 'Video post'} className="h-full w-full" /> : <img src={post.imageUrl || post.track?.coverArt || '/placeholder.svg'} alt={post.caption || 'Post'} className="h-full w-full object-cover" />}
+                  {post.type === 'video' && post.videoUrl ? <VideoThumbnail src={post.videoUrl} poster={post.imageUrl} alt={post.caption || 'Video post'} className="h-full w-full" /> : <img src={post.imageUrl || post.track?.coverArt || '/musicinsta-default-cover.webp'} alt={post.caption || 'Post'} className="h-full w-full object-cover" />}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Play className="w-8 h-8 text-white" fill="currentColor" />
                   </div>

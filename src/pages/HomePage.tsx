@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc, Sparkles, Wand2, Zap, BarChart3, ArrowRight, X } from 'lucide-react';
 import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FeedPost } from '@/components/feed/FeedPost';
@@ -7,7 +7,7 @@ import { StoryViewer } from '@/components/stories/StoryViewer';
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel';
 import { Button } from '@/components/ui/button';
-import { mockArtists, mockTracks } from '@/data/mockData';
+import { mockArtists } from '@/data/mockData';
 import { useFeedPosts } from '@/hooks/useFeedPosts';
 import { Story } from '@/types';
 import { useNavigate } from 'react-router-dom';
@@ -16,13 +16,17 @@ import { toast } from 'sonner';
 import { clearUploadProgress, readUploadProgress, UPLOAD_PROGRESS_EVENT, type UploadProgressState } from '@/lib/uploadProgress';
 import { useStories } from '@/hooks/useStories';
 import { useRealTimeNotifications } from '@/hooks/useRealTimeNotifications';
+import { usePlayer } from '@/context/PlayerContext';
+import { rankCatalog, rankFeedPosts } from '@/services/recommendationEngine';
 
 export default function HomePage() {
+  const reduceMotion = useReducedMotion();
   const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const navigate = useNavigate();
   const { posts, loading: postsLoading } = useFeedPosts();
   const { user } = useAuth();
+  const { catalog, listeningHistory, preferredGenres, catalogLoading } = usePlayer();
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(() => readUploadProgress());
   const stories = useStories();
   const { notifications, unreadCount, markAsRead } = useRealTimeNotifications();
@@ -59,10 +63,12 @@ export default function HomePage() {
     navigate('/upload');
   };
 
-  const realArtists = posts.map(post => post.artist).filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
+  const personalizedPosts = useMemo(() => rankFeedPosts(posts, listeningHistory, preferredGenres), [posts, listeningHistory, preferredGenres]);
+  const personalizedTracks = useMemo(() => rankCatalog(catalog, listeningHistory, null, preferredGenres).map(item => item.track), [catalog, listeningHistory, preferredGenres]);
+  const realArtists = [...catalog.map(track => track.artist), ...posts.map(post => post.artist)].filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
   const trendingArtists = [...realArtists, ...mockArtists.filter(mock => !realArtists.some(real => real.id === mock.id))].slice(0, 8);
   const realReleases = posts.filter(post => post.track && (post.isNewRelease || post.type === 'audio')).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
-  const newReleases = realReleases.length ? realReleases : mockTracks.slice(0, 3);
+  const newReleases = (personalizedTracks.length ? personalizedTracks : realReleases.filter(track => track.audioUrl)).slice(0, 6);
 
   return (
     <div className="min-h-screen pb-36">
@@ -196,6 +202,7 @@ export default function HomePage() {
           {newReleases.map((track, index) => (
             <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={newReleases} />
           ))}
+          {!catalogLoading && newReleases.length === 0 && <p className="py-4 text-sm text-muted-foreground">No playable releases are available yet.</p>}
         </div>
       </section>
 
@@ -306,12 +313,13 @@ export default function HomePage() {
             <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
           </div>
         ) : (
-          posts.map((post, index) => (
+          personalizedPosts.map((post, index) => (
             <motion.div
               key={post.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: Math.min(index * 0.05, 0.3) }}
+              initial={reduceMotion ? { opacity: 1 } : { opacity: 0, y: 24, scale: 0.992, filter: 'blur(3px)' }}
+              whileInView={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+              viewport={{ once: true, amount: 0.08, margin: '0px 0px -6% 0px' }}
+              transition={{ duration: 0.48, delay: reduceMotion ? 0 : Math.min((index % 5) * 0.035, 0.14), ease: [0.22, 1, 0.36, 1] }}
             >
               <FeedPost post={post} />
             </motion.div>

@@ -1,4 +1,4 @@
-export type Plan = 'free' | 'pro' | 'studio';
+export type Plan = 'free' | 'pro' | 'premium' | 'studio';
 export type QuotaKey =
   | 'fullSongs'
   | 'beats'
@@ -12,16 +12,25 @@ export const UNLIMITED = 999999;
 
 export const MONTHLY_LIMITS: Record<Plan, Record<QuotaKey, number>> = {
   free: {
-    fullSongs:            2,
-    beats:                30,
-    clips30s:             20,
-    images:               30,
+    fullSongs:            6,
+    beats:                10,
+    clips30s:             10,
+    images:               15,
     lyrics:               UNLIMITED,
-    audioEnhance:         0,
-    audioEnhanceStandard: 15,
+    audioEnhance:         UNLIMITED,
+    audioEnhanceStandard: UNLIMITED,
   },
   pro: {
     fullSongs:            30,
+    beats:                UNLIMITED,
+    clips30s:             UNLIMITED,
+    images:               UNLIMITED,
+    lyrics:               UNLIMITED,
+    audioEnhance:         UNLIMITED,
+    audioEnhanceStandard: UNLIMITED,
+  },
+  premium: {
+    fullSongs:            UNLIMITED,
     beats:                UNLIMITED,
     clips30s:             UNLIMITED,
     images:               UNLIMITED,
@@ -42,20 +51,23 @@ export const MONTHLY_LIMITS: Record<Plan, Record<QuotaKey, number>> = {
 
 export const DAILY_LIMITS: Record<Plan, Partial<Record<QuotaKey, number>>> = {
   free: {
-    beats:                5,
-    clips30s:             3,
+    fullSongs:            2,
+    beats:                4,
+    clips30s:             4,
     images:               5,
-    lyrics:               10,
-    audioEnhanceStandard: 3,
+    lyrics:               UNLIMITED,
+    audioEnhanceStandard: UNLIMITED,
   },
   pro: {},
+  premium: {},
   studio: {},
 };
 
 export const PLAN_PRICES = {
   free:   { monthly: 0,   annual: 0,   label: 'Free'   },
-  pro:    { monthly: 19,  annual: 190, label: 'Pro'    },
-  studio: { monthly: 49,  annual: 490, label: 'Studio' },
+  pro:    { monthly: 199, annual: 1990, label: 'Pro'    },
+  premium:{ monthly: 399, annual: 3990, label: 'Premium' },
+  studio: { monthly: 399, annual: 3990, label: 'Premium' },
 } as const;
 
 export const ONCE_OFF_PRICES = {

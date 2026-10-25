@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowUp, Download, FolderOpen, Loader2, Mic, Pause, Play, Plus, Redo2, Save, Scissors, Send, SlidersHorizontal, Sparkles, Square, Trash2, Undo2, Upload, ZoomIn } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Download, FolderOpen, Loader2, Mic, Pause, Play, Plus, Redo2, Save, Scissors, Send, SlidersHorizontal, Sparkles, Square, Trash2, Undo2, Upload, X, ZoomIn } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -16,6 +16,8 @@ import { toast } from 'sonner';
 import { generateBeats } from '@/lib/api';
 import { DawMixerPopup } from '@/components/studio/DawMixerPopup';
 import { DawEffects, defaultDawEffects, estimatePitch, nearestScaleCorrectionCents, normalizeDawEffects } from '@/lib/dawEffects';
+import { StemSeparatorPanel } from '@/features/stem-separation/StemSeparatorPanel';
+import type { StemSeparationResult } from '@/features/stem-separation/api';
 
 interface DawTrack {
   id: string; name: string; buffer: AudioBuffer; sourceBlob: Blob; audioUrl?: string;
@@ -45,6 +47,12 @@ function withoutUndefined<T>(value: T): T {
   if (Array.isArray(value)) return value.map(item => withoutUndefined(item)) as T;
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([, item]) => item !== undefined).map(([key, item]) => [key, withoutUndefined(item)])) as T;
   return value;
+}
+
+function projectTimestamp(value: unknown): string {
+  if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') return value.toDate().toISOString();
+  if (typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Date(value).toISOString();
+  return new Date(0).toISOString();
 }
 
 function Waveform({ buffer, color }: { buffer: AudioBuffer; color: string }) {
@@ -137,6 +145,8 @@ export default function StudioDawPage() {
   const [recordingLevels, setRecordingLevels] = useState<number[]>([]);
   const [mixerOpen, setMixerOpen] = useState(false);
   const [mixerMinimized, setMixerMinimized] = useState(false);
+  const [separatorOpen, setSeparatorOpen] = useState(false);
+  const [separatorTrackId, setSeparatorTrackId] = useState('');
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
   const [microphoneId, setMicrophoneId] = useState('');
   const [canUndo, setCanUndo] = useState(false);
@@ -157,6 +167,7 @@ export default function StudioDawPage() {
   const redoRef = useRef<DawTrack[][]>([]);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(zoom);
+  const cloudSaveWarningRef = useRef(false);
 
   const getContext = () => contextRef.current ||= new AudioContext();
   const timelineDuration = useMemo(() => Math.max(30, ...tracks.map(track => track.offset + track.length)), [tracks]);
@@ -176,15 +187,15 @@ export default function StudioDawPage() {
   const decodeBlob = useCallback(async (blob: Blob) => getContext().decodeAudioData(await blob.arrayBuffer()), []);
   const projectToTracks = useCallback(async (saved: StoredDawProject | Record<string, unknown>) => {
     const savedTracks = (saved.tracks || []) as Array<Record<string, unknown>>;
-    return (await Promise.all(savedTracks.map(async (item, index) => {
+    const restored = await Promise.all(savedTracks.map(async (item, index) => {
       try {
         let blob = item.blob as Blob | undefined;
         if (!blob && item.audioUrl) {
           const response = await fetch(item.audioUrl as string);
-          if (!response.ok) return null;
+          if (!response.ok) throw new Error(`Cloud audio returned ${response.status}`);
           blob = await response.blob();
         }
-        if (!blob) return null;
+        if (!blob) throw new Error('Track has neither a local blob nor a cloud audio URL');
         const buffer = await decodeBlob(blob);
         const legacy = item as Record<string, unknown>;
         return {
@@ -197,8 +208,13 @@ export default function StudioDawPage() {
           pitchEnabled: item.pitchEnabled !== false, pitchKey: String(item.pitchKey || 'C'), pitchScale: String(item.pitchScale || 'Major'), pitchAmount: Number(item.pitchAmount || 0),
           effects: normalizeDawEffects(item.effects as Partial<DawEffects> | undefined, legacy),
         } as DawTrack;
-      } catch { return null; }
-    }))).filter(Boolean) as DawTrack[];
+      } catch (error) {
+        console.error('DAW track restore failed', item.name, error);
+        return null;
+      }
+    }));
+    if (restored.some(track => !track)) throw new Error('One or more project tracks could not be restored. The saved project was left unchanged.');
+    return restored as DawTrack[];
   }, [decodeBlob]);
 
   const refreshProjects = useCallback(async () => {
@@ -209,7 +225,7 @@ export default function StudioDawPage() {
         const remote = await getDocs(query(collection(db, 'studio_projects'), where('owner_id', '==', user.uid)));
         remote.docs.forEach(item => {
           const value = item.data();
-          const updatedAt = value.updated_at?.toDate?.()?.toISOString?.() || value.updatedAt || new Date(0).toISOString();
+          const updatedAt = projectTimestamp(value.updated_at || value.updatedAt);
           const current = summaries.get(item.id);
           if (!current || updatedAt > current.updatedAt) summaries.set(item.id, { id: item.id, name: value.name || 'Untitled project', updatedAt, trackCount: value.tracks?.length || 0 });
         });
@@ -220,12 +236,24 @@ export default function StudioDawPage() {
 
   const applyProject = useCallback(async (saved: StoredDawProject | Record<string, unknown>) => {
     const restored = await projectToTracks(saved);
-    setProjectId(String(saved.id)); setProjectName(String(saved.name || 'Untitled MusicInsta Session'));
-    setMasterGain(Number(saved.masterGain ?? 90)); setCompression(Number(saved.compression ?? 18));
-    setMasterDelay(Number(saved.masterDelay ?? saved.delay ?? 0)); setZoom(Number(saved.zoom ?? 75));
+    const id = String(saved.id);
+    const name = String(saved.name || 'Untitled MusicInsta Session');
+    const updatedAt = projectTimestamp(saved.updatedAt || saved.updated_at) === new Date(0).toISOString() ? new Date().toISOString() : projectTimestamp(saved.updatedAt || saved.updated_at);
+    const localCopy: StoredDawProject = {
+      id, ownerId, name,
+      masterGain: Number(saved.masterGain ?? 90), compression: Number(saved.compression ?? 18),
+      masterDelay: Number(saved.masterDelay ?? saved.delay ?? 0), zoom: Number(saved.zoom ?? 75),
+      tracks: restored.map(({ buffer: _buffer, sourceBlob, ...track }) => ({ ...track, blob: sourceBlob })),
+      createdAt: projectTimestamp(saved.createdAt || saved.created_at) === new Date(0).toISOString() ? updatedAt : projectTimestamp(saved.createdAt || saved.created_at),
+      updatedAt,
+    };
+    await saveDawProject(localCopy);
+    setProjectId(id); setProjectName(name);
+    setMasterGain(localCopy.masterGain); setCompression(localCopy.compression);
+    setMasterDelay(localCopy.masterDelay); setZoom(localCopy.zoom);
     setTracks(restored); setSelectedTrackIds(new Set()); setPlayhead(0); playbackAnchorRef.current = 0; undoRef.current = []; redoRef.current = []; setCanUndo(false); setCanRedo(false);
-    localStorage.setItem('musicinsta_active_daw_project', String(saved.id));
-  }, [projectToTracks]);
+    localStorage.setItem('musicinsta_active_daw_project', id);
+  }, [ownerId, projectToTracks]);
 
   function stopSources() {
     cancelAnimationFrame(animationRef.current || 0);
@@ -236,12 +264,16 @@ export default function StudioDawPage() {
   const loadProject = useCallback(async (id: string) => {
     stopSources(); setLoaded(false);
     try {
-      let saved: StoredDawProject | Record<string, unknown> | null = await getDawProject(id);
-      if (!saved && user) {
-        const remote = await getDoc(doc(db, 'studio_projects', id));
-        if (remote.exists()) saved = { id: remote.id, ...remote.data() };
-      }
+      const [local, remoteSnapshot] = await Promise.all([
+        getDawProject(id),
+        user ? getDoc(doc(db, 'studio_projects', id)) : Promise.resolve(null),
+      ]);
+      const remote = remoteSnapshot?.exists() ? { id: remoteSnapshot.id, ...remoteSnapshot.data(), updatedAt: projectTimestamp(remoteSnapshot.data().updated_at || remoteSnapshot.data().updatedAt) } : null;
+      const saved = remote && (!local || projectTimestamp(remote.updatedAt) > projectTimestamp(local.updatedAt)) ? remote : local;
       if (saved) await applyProject(saved);
+      else toast.error('This project could not be found locally or in the cloud.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The project could not be restored.');
     } finally { setLoaded(true); setProjectsOpen(false); }
   }, [applyProject, user]);
 
@@ -249,8 +281,13 @@ export default function StudioDawPage() {
     let cancelled = false;
     (async () => {
       try {
-        const existing = await getDawProject(projectId);
-        if (existing) await applyProject(existing);
+        const [existing, remoteSnapshot] = await Promise.all([
+          getDawProject(projectId),
+          user ? getDoc(doc(db, 'studio_projects', projectId)) : Promise.resolve(null),
+        ]);
+        const remote = remoteSnapshot?.exists() ? { id: remoteSnapshot.id, ...remoteSnapshot.data(), updatedAt: projectTimestamp(remoteSnapshot.data().updated_at || remoteSnapshot.data().updatedAt) } : null;
+        const newest = remote && (!existing || projectTimestamp(remote.updatedAt) > projectTimestamp(existing.updatedAt)) ? remote : existing;
+        if (newest) await applyProject(newest);
         else {
           const legacyRemote = user ? await getDoc(doc(db, 'studio_sessions', user.uid)) : null;
           const legacyLocal = JSON.parse(localStorage.getItem('musicinsta_daw_state') || 'null');
@@ -258,7 +295,7 @@ export default function StudioDawPage() {
           if (legacy) await applyProject(legacy);
         }
         if (!cancelled) await refreshProjects();
-      } catch (error) { console.warn('DAW project restore failed', error); }
+      } catch (error) { console.warn('DAW project restore failed', error); toast.error('The saved DAW project could not be completely restored, so it was not overwritten.'); }
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -278,11 +315,27 @@ export default function StudioDawPage() {
         await saveDawProject(project);
         localStorage.setItem('musicinsta_active_daw_project', projectId);
         if (user) {
-          const cloudTracks = withoutUndefined(tracks.map(({ buffer: _buffer, sourceBlob: _blob, ...track }) => track));
-          await setDoc(doc(db, 'studio_projects', projectId), { owner_id: user.uid, name: projectName, masterGain, compression, masterDelay, zoom, tracks: cloudTracks, updated_at: serverTimestamp() }, { merge: true });
+          const cloudReadyTracks = await Promise.all(tracks.map(async track => {
+            if (track.audioUrl) return track;
+            const object = ref(storage, `studio-sessions/${user.uid}/${projectId}/${track.id}`);
+            await uploadBytes(object, track.sourceBlob);
+            return { ...track, audioUrl: await getDownloadURL(object) };
+          }));
+          const addedCloudUrls = cloudReadyTracks.some((track, index) => track.audioUrl !== tracks[index]?.audioUrl);
+          if (addedCloudUrls) setTracks(current => current.map(track => cloudReadyTracks.find(item => item.id === track.id) || track));
+          const cloudTracks = withoutUndefined(cloudReadyTracks.map(({ buffer: _buffer, sourceBlob: _blob, ...track }) => track));
+          await setDoc(doc(db, 'studio_projects', projectId), {
+            owner_id: user.uid, name: projectName, masterGain, compression, masterDelay, zoom,
+            tracks: cloudTracks, track_count: cloudTracks.length, version: 2,
+            created_at: projects.find(item => item.id === projectId)?.updatedAt || serverTimestamp(), updated_at: serverTimestamp(),
+          }, { merge: true });
+          cloudSaveWarningRef.current = false;
         }
         await refreshProjects();
-      } catch (error) { console.warn('DAW project save failed', error); }
+      } catch (error) {
+        console.warn('DAW project cloud save failed; local copy is intact', error);
+        if (!cloudSaveWarningRef.current) { toast.error('The project is safe locally, but cloud sync needs to retry.'); cloudSaveWarningRef.current = true; }
+      }
       setSaving(false);
     }, 700);
     return () => window.clearTimeout(timer);
@@ -319,6 +372,20 @@ export default function StudioDawPage() {
     if (!key || !loaded) return;
     takeDawAudio(key).then(result => result && addAudioBlob(result.blob, result.name, playheadRef.current));
   }, [addAudioBlob, loaded, searchParams]);
+
+  useEffect(() => {
+    const vocalsKey = searchParams.get('importStemVocals');
+    const instrumentalKey = searchParams.get('importStemInstrumental');
+    if ((!vocalsKey && !instrumentalKey) || !loaded) return;
+    void (async () => {
+      const vocals = vocalsKey ? await takeDawAudio(vocalsKey) : null;
+      const instrumental = instrumentalKey ? await takeDawAudio(instrumentalKey) : null;
+      if (vocals) await addAudioBlob(vocals.blob, vocals.name, playheadRef.current);
+      if (instrumental) await addAudioBlob(instrumental.blob, instrumental.name, playheadRef.current);
+      if (vocals || instrumental) toast.success('Separated stems added to the DAW playlist.');
+      navigate('/studio/daw', { replace: true });
+    })();
+  }, [addAudioBlob, loaded, navigate, searchParams]);
 
   useEffect(() => {
     const refreshMicrophones = async () => {
@@ -663,6 +730,22 @@ export default function StudioDawPage() {
       setBeatOpen(false); toast.success('AI beat added to the playlist.');
     } catch (error) { toast.error(error instanceof Error ? error.message : 'The AI beat could not be added.'); }
   };
+  const openSeparator = (trackId?: string) => {
+    const selected = trackId || [...selectedTrackIds][0] || tracks.find(track => playheadRef.current >= track.offset && playheadRef.current <= track.offset + track.length)?.id || tracks[0]?.id;
+    if (!selected) { toast.error('Add or select a track to separate first.'); return; }
+    setSeparatorTrackId(selected); setSeparatorOpen(true);
+  };
+  const separatedSource = tracks.find(track => track.id === separatorTrackId);
+  const separatorFile = useMemo(() => separatedSource ? new File([separatedSource.sourceBlob], `${separatedSource.name || 'track'}.wav`, { type: separatedSource.sourceBlob.type || 'audio/wav' }) : null, [separatedSource]);
+  const addSeparatedStems = async (result: StemSeparationResult) => {
+    if (!separatedSource) return;
+    const [vocalsResponse, instrumentalResponse] = await Promise.all([fetch(result.vocals.url), fetch(result.instrumental.url)]);
+    if (!vocalsResponse.ok || !instrumentalResponse.ok) throw new Error('The separated stems could not be downloaded.');
+    await addAudioBlob(await vocalsResponse.blob(), result.vocals.filename, separatedSource.offset);
+    await addAudioBlob(await instrumentalResponse.blob(), result.instrumental.filename, separatedSource.offset);
+    setTracks(current => current.map(track => track.id === separatedSource.id ? { ...track, muted: true } : track));
+    setSeparatorOpen(false); toast.success('Vocals and instrumental added to the playlist. The source track was muted.');
+  };
   const newProject = () => { stopSources(); const id = crypto.randomUUID(); setProjectId(id); setProjectName('Untitled MusicInsta Session'); setTracks([]); setSelectedTrackIds(new Set()); setPlayhead(0); setMasterGain(90); setCompression(18); setMasterDelay(0); localStorage.setItem('musicinsta_active_daw_project', id); setProjectsOpen(false); toast.success('New project created.'); };
   const removeProject = async (id: string) => { await deleteDawProject(id); if (user) await deleteDoc(doc(db, 'studio_projects', id)).catch(() => undefined); await refreshProjects(); if (id === projectId) newProject(); };
 
@@ -703,6 +786,7 @@ export default function StudioDawPage() {
             <Button variant="ghost" size="icon" aria-label="Undo" disabled={!canUndo} onClick={undo}><Undo2 className="h-4 w-4" /></Button>
             <Button variant="ghost" size="icon" aria-label="Redo" disabled={!canRedo} onClick={redo}><Redo2 className="h-4 w-4" /></Button>
             <Button variant="outline" disabled={!tracks.length} onClick={splitSelected}><Scissors className="mr-2 h-4 w-4" />Split selected</Button>
+            <Button variant="outline" disabled={!tracks.length} onClick={() => openSeparator()}><Mic className="mr-2 h-4 w-4" />Extract stems</Button>
             <Button variant={mixerOpen ? 'secondary' : 'outline'} onClick={() => { setMixerOpen(true); setMixerMinimized(false); }}><SlidersHorizontal className="mr-2 h-4 w-4" />Mixer</Button>
             <span className="text-xs text-muted-foreground">Spacebar plays/pauses · Ctrl-click selects multiple clips</span>
             <span className="ml-auto tabular-nums text-sm text-muted-foreground">{playhead.toFixed(2)}s</span>
@@ -716,7 +800,7 @@ export default function StudioDawPage() {
               {tracks.map((track, index) => <div key={track.id} className="grid grid-cols-[240px_1fr] border-b border-border">
                 <div className="space-y-3 border-r border-border p-3">
                   <div className="flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded text-xs text-white" style={{ backgroundColor: track.color }}>{index + 1}</span><input value={track.name} onChange={event => updateTrack(track.id, { name: event.target.value })} className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none" /><input aria-label="Track color" type="color" value={track.color} onChange={event => updateTrack(track.id, { color: event.target.value })} className="h-6 w-6 rounded border-0 bg-transparent p-0" /><button onClick={() => { rememberTracks(); setTracks(current => current.filter(item => item.id !== track.id)); }}><Trash2 className="h-4 w-4 text-muted-foreground" /></button></div>
-                  <div className="flex gap-1"><button title="Mute" onClick={() => updateAudibility(track.id, 'muted')} className={`rounded px-2 py-1 text-xs ${track.muted ? 'bg-destructive text-destructive-foreground' : 'bg-muted'}`}>M</button><button title="Solo this track and mute all others" onClick={() => updateAudibility(track.id, 'solo')} className={`rounded px-2 py-1 text-xs ${track.solo ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>S</button><button title="Move track up" onClick={() => moveTrack(index, -1)}><ArrowUp className="h-3.5 w-3.5" /></button><button title="Move track down" onClick={() => moveTrack(index, 1)}><ArrowDown className="h-3.5 w-3.5" /></button><button title="Enhance track" onClick={() => void enhance(track)}><Sparkles className="h-3.5 w-3.5 text-primary" /></button></div>
+                  <div className="flex gap-1"><button title="Mute" onClick={() => updateAudibility(track.id, 'muted')} className={`rounded px-2 py-1 text-xs ${track.muted ? 'bg-destructive text-destructive-foreground' : 'bg-muted'}`}>M</button><button title="Solo this track and mute all others" onClick={() => updateAudibility(track.id, 'solo')} className={`rounded px-2 py-1 text-xs ${track.solo ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>S</button><button title="Move track up" onClick={() => moveTrack(index, -1)}><ArrowUp className="h-3.5 w-3.5" /></button><button title="Move track down" onClick={() => moveTrack(index, 1)}><ArrowDown className="h-3.5 w-3.5" /></button><button title="Enhance track" onClick={() => void enhance(track)}><Sparkles className="h-3.5 w-3.5 text-primary" /></button><button title="Extract vocals and instrumental" onClick={() => openSeparator(track.id)}><Mic className="h-3.5 w-3.5 text-accent" /></button></div>
                 </div>
                 <div className="relative h-24 overflow-hidden" style={{ backgroundImage: 'linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px)', backgroundSize: `${zoom}px 100%` }}><div data-testid="daw-playhead" className="absolute inset-y-0 z-20 w-0.5 bg-primary" style={{ left: playhead * zoom }} /><div onPointerDown={event => dragClip(track, event)} className={`absolute top-3 h-16 cursor-grab overflow-hidden rounded-lg border-2 shadow-sm ${selectedTrackIds.has(track.id) ? 'border-white ring-2 ring-primary' : 'border-white/20'} ${track.muted ? 'opacity-35' : ''}`} style={{ left: track.offset * zoom, width: Math.max(18, track.length * zoom), background: `linear-gradient(90deg, ${track.color}, ${track.color}bb)` }}><button data-resize="true" aria-label="Trim clip start" onPointerDown={event => resizeClip(track, 'left', event)} className="absolute inset-y-0 left-0 z-10 w-3 cursor-ew-resize bg-white/25" /><Waveform buffer={track.buffer} color={track.color} /><span className="absolute left-4 top-1 text-[10px] font-medium text-white drop-shadow">{track.name}</span><button data-resize="true" aria-label="Trim clip end" onPointerDown={event => resizeClip(track, 'right', event)} className="absolute inset-y-0 right-0 z-10 w-3 cursor-ew-resize bg-white/25" /></div></div>
               </div>)}
@@ -724,6 +808,8 @@ export default function StudioDawPage() {
           </div>
         </section>
       </main>
+
+      {separatorOpen && <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto bg-black/75 p-4" onClick={() => setSeparatorOpen(false)}><div className="my-8 w-full max-w-3xl rounded-3xl border border-border bg-card p-5 shadow-2xl" onClick={event => event.stopPropagation()}><div className="mb-4 flex items-start justify-between gap-4"><div><h2 className="text-xl font-bold">Extract vocals and instrumental</h2><p className="text-sm text-muted-foreground">The stems will be aligned at the source clip's position in this playlist.</p></div><Button variant="ghost" size="icon" onClick={() => setSeparatorOpen(false)}><X className="h-4 w-4" /></Button></div><label className="mb-4 block text-xs text-muted-foreground">Source track<select value={separatorTrackId} onChange={event => setSeparatorTrackId(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground">{tracks.map(track => <option key={track.id} value={track.id}>{track.name}</option>)}</select></label><StemSeparatorPanel compact initialFile={separatorFile} onSendToDaw={addSeparatedStems} /></div></div>}
 
       {mixerOpen && <DawMixerPopup
         tracks={tracks}

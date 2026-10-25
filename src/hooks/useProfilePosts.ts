@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track } from '@/types';
+import { DEFAULT_MEDIA_IMAGE, hydrateTrackDurations } from '@/lib/media';
 
 interface DatabasePost {
   id: string;
@@ -54,8 +55,8 @@ export function useProfilePosts(profileId: string | undefined) {
           id: profileData.id || profileId,
           name: profileData.name || 'Unknown',
           username: profileData.username || 'unknown',
-          avatar: profileData.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-          coverImage: profileData.cover_url || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800',
+          avatar: profileData.avatar_url || DEFAULT_MEDIA_IMAGE,
+          coverImage: profileData.cover_url || DEFAULT_MEDIA_IMAGE,
           bio: profileData.bio || '',
           location: profileData.location || '',
           genres: [],
@@ -91,19 +92,17 @@ export function useProfilePosts(profileId: string | undefined) {
         }));
 
         // Transform tracks
-        if (tracksData) {
-          const transformedTracks: Track[] = tracksData.map((track) => ({
+        const transformedTracks: Track[] = await hydrateTrackDurations(tracksData.map((track) => ({
             id: track.id,
             title: track.title,
             artist: artist,
-            coverArt: track.cover_url || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400',
+            coverArt: track.cover_url || DEFAULT_MEDIA_IMAGE,
             duration: track.duration || 0,
             plays: track.plays || 0,
             likes: track.likes || 0,
             audioUrl: track.audio_url || undefined,
-          }));
-          setTracks(transformedTracks);
-        }
+          })));
+        setTracks(transformedTracks);
 
         // Transform posts
         if (postsData) {
@@ -117,8 +116,8 @@ export function useProfilePosts(profileId: string | undefined) {
                   id: track.id,
                   title: track.title,
                   artist: artist,
-                  coverArt: track.cover_url || 'https://images.unsplash.com/photo-1614149162883-504ce4d13909?w=400',
-                  duration: track.duration || 0,
+                  coverArt: track.cover_url || DEFAULT_MEDIA_IMAGE,
+                  duration: transformedTracks.find(item => item.id === track.id)?.duration || track.duration || 0,
                   plays: track.plays || 0,
                   likes: track.likes || 0,
                   audioUrl: track.audio_url || undefined,
@@ -129,7 +128,7 @@ export function useProfilePosts(profileId: string | undefined) {
             return {
               id: post.id,
               artist: artist,
-              type: post.type as 'audio' | 'video' | 'image',
+              type: post.type as 'audio' | 'video' | 'image' | 'album',
               track: postTrack,
               imageUrl: post.image_url || undefined,
               videoUrl: post.video_url || undefined,

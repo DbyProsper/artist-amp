@@ -1,53 +1,30 @@
 import { usePlan } from '@/hooks/usePlan';
+import { DAILY_LIMITS, MONTHLY_LIMITS, type QuotaKey } from '@/lib/planLimits';
+import { useUserRole } from '@/hooks/useUserRole';
 
 interface Props {
-  quotaKey: string;
+  quotaKey: QuotaKey;
   label: string;
   type?: 'monthly' | 'daily';
 }
 
 export default function QuotaBar({ quotaKey, label, type = 'monthly' }: Props) {
-  const { plan, quota, quotaDaily } = usePlan();
+  const { plan, quota, quotaDaily, quotaMonth, quotaDay } = usePlan();
+  const { isAdmin } = useUserRole();
+  if (isAdmin) {
+    return <div className="rounded-3xl border border-primary/20 bg-primary/5 p-3 text-xs text-primary">{label}: unlimited for admins</div>;
+  }
 
-  const LIMITS: any = {
-    monthly: {
-      free: {
-        fullSongs: 2,
-        beats: 30,
-        clips30s: 20,
-        images: 30,
-        lyrics: null,
-        audioEnhance: 0,
-        audioEnhanceStandard: 15,
-      },
-      pro: {
-        fullSongs: 30,
-        beats: null,
-        clips30s: null,
-        images: null,
-        lyrics: null,
-        audioEnhance: null,
-        audioEnhanceStandard: null,
-      },
-      studio: {},
-    },
-    daily: {
-      free: {
-        beats: 5,
-        clips30s: 3,
-        images: 5,
-        lyrics: 10,
-        audioEnhanceStandard: 3,
-      },
-      pro: {},
-      studio: {},
-    },
-  };
+  const limit = type === 'monthly' ? MONTHLY_LIMITS[plan][quotaKey] : DAILY_LIMITS[plan]?.[quotaKey];
+  const now = new Date();
+  const periodMatches = type === 'monthly'
+    ? quotaMonth === `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+    : quotaDay === now.toISOString().slice(0, 10);
+  const used = periodMatches
+    ? (type === 'monthly' ? (quota as any)[quotaKey] ?? 0 : (quotaDaily as any)[quotaKey] ?? 0)
+    : 0;
 
-  const limit = LIMITS[type]?.[plan]?.[quotaKey];
-  const used = type === 'monthly' ? (quota as any)[quotaKey] ?? 0 : (quotaDaily as any)[quotaKey] ?? 0;
-
-  if (limit === null || limit === undefined) return null;
+  if (limit === undefined || limit >= 999999) return null;
   if (limit === 0) {
     return (
       <div className="rounded-3xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive">

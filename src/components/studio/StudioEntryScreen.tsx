@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
-import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, Megaphone, ArrowLeft, Zap, SlidersHorizontal } from 'lucide-react';
+import { Music, Mic2, AudioWaveform, Image, Shirt, MessageCircle, Megaphone, ArrowLeft, Zap, SlidersHorizontal, Scissors } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { StudioCredits } from './StudioCredits';
 
-export type StudioFeature = 'beat' | 'lyrics' | 'song' | 'cover' | 'poster' | 'merch' | 'chat' | 'enhance' | 'daw';
+export type StudioFeature = 'beat' | 'lyrics' | 'song' | 'cover' | 'poster' | 'merch' | 'chat' | 'enhance' | 'separate' | 'daw';
 
 interface StudioEntryScreenProps {
   onFeatureSelect: (feature: StudioFeature) => void;
@@ -24,22 +25,29 @@ const features: Array<{
     badge: 'New',
   },
   {
+    id: 'enhance',
+    icon: <Zap className="w-8 h-8" />,
+    label: 'Audio Enhancement',
+    description: 'Enhance existing audio',
+  },
+  {
+    id: 'separate',
+    icon: <Scissors className="w-8 h-8" />,
+    label: 'Stem Separator',
+    description: 'Extract vocals and instrumental stems',
+    badge: 'New',
+  },
+  {
     id: 'beat',
     icon: <Music className="w-8 h-8" />,
     label: 'Beat',
     description: 'Generate instrumental beats',
   },
   {
-    id: 'lyrics',
-    icon: <Mic2 className="w-8 h-8" />,
-    label: 'Lyrics',
-    description: 'Write and generate lyrics',
+    id: 'song', icon: <AudioWaveform className="w-8 h-8" />, label: 'Full Song', description: 'Create complete tracks',
   },
   {
-    id: 'song',
-    icon: <AudioWaveform className="w-8 h-8" />,
-    label: 'Full Song',
-    description: 'Create complete tracks',
+    id: 'lyrics', icon: <Mic2 className="w-8 h-8" />, label: 'Lyrics', description: 'Write and generate lyrics',
   },
   {
     id: 'cover',
@@ -64,12 +72,6 @@ const features: Array<{
     icon: <MessageCircle className="w-8 h-8" />,
     label: 'Chat with AI',
     description: 'Get creative suggestions',
-  },
-  {
-    id: 'enhance',
-    icon: <Zap className="w-8 h-8" />,
-    label: 'Audio Enhancement',
-    description: 'Enhance existing audio',
   },
 ];
 
@@ -113,6 +115,10 @@ export function StudioEntryScreen({ onFeatureSelect }: StudioEntryScreenProps) {
           Choose a creative tool and bring your musical vision to life with AI
         </p>
       </motion.div>
+
+      <div className="mb-8 w-full max-w-5xl">
+        <StudioCredits />
+      </div>
 
       {/* Feature Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-5xl">

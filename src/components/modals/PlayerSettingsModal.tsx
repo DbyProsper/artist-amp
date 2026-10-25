@@ -1,16 +1,14 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, Share2, Plus, Flag, UserMinus, ExternalLink, 
-  Radio, ListMusic, Download, Heart, BadgeCheck,
-  Clock, MessageSquare
-} from 'lucide-react';
+import { X, Share2, Plus, Flag, ExternalLink, Radio, ListMusic, Heart, BadgeCheck, Clock } from 'lucide-react';
 import { Track } from '@/types';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, doc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { usePlayer } from '@/context/PlayerContext';
+import { storeDawAudio } from '@/lib/dawTransfer';
 
 interface PlayerSettingsModalProps {
   track: Track;
@@ -20,7 +18,45 @@ interface PlayerSettingsModalProps {
 
 export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsModalProps) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const { addToQueue, startRadio, likeTrack, setSleepTimer } = usePlayer();
+  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string }>>([]);
+  const [showPlaylists, setShowPlaylists] = useState(false);
+  const [isTransferring, setIsTransferring] = useState(false);
+
+  const openPlaylistPicker = async () => {
+    if (!user) { toast.error('Sign in to add to a playlist'); navigate('/auth'); return; }
+    const ownerId = profile?.id || user.uid;
+    const snapshot = await getDocs(query(collection(db, 'playlists'), where('creator_id', '==', ownerId)));
+    setPlaylists(snapshot.docs.map(item => ({ id: item.id, name: String(item.data().name || 'Untitled playlist') })));
+    setShowPlaylists(true);
+  };
+
+  const addToPlaylist = async (playlistId?: string) => {
+    if (!user) return;
+    if (playlistId) await updateDoc(doc(db, 'playlists', playlistId), { tracks: arrayUnion(track.id), updated_at: serverTimestamp() });
+    else await addDoc(collection(db, 'playlists'), { creator_id: profile?.id || user.uid, name: 'My Music', description: 'Tracks saved from the MusicInsta player', tracks: [track.id], is_public: false, created_at: serverTimestamp(), updated_at: serverTimestamp() });
+    toast.success('Added to playlist');
+    setShowPlaylists(false);
+    onClose();
+  };
+
+  const openInDaw = async () => {
+    if (!track.audioUrl) { toast.error('This track has no audio to send to the DAW'); return; }
+    setIsTransferring(true);
+    try {
+      const response = await fetch(track.audioUrl);
+      if (!response.ok) throw new Error('The audio file could not be downloaded');
+      const blob = await response.blob();
+      const key = await storeDawAudio(blob, `${track.title.replace(/[\\/:*?"<>|]/g, '-')}.${blob.type.includes('mpeg') ? 'mp3' : 'wav'}`);
+      onClose();
+      navigate(`/studio/daw?importEnhanced=${encodeURIComponent(key)}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The track could not be sent to the DAW');
+    } finally {
+      setIsTransferring(false);
+    }
+  };
 
   const options = [
     {
@@ -32,27 +68,22 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
           navigate('/auth');
           return;
         }
-        toast.success('Added to liked songs');
+        likeTrack(track, true);
+        void setDoc(doc(db, 'track_likes', `${user.uid}_${track.id}`.replaceAll('/', '_')), { user_id: user.uid, track_id: track.id, created_at: serverTimestamp() }, { merge: true });
+        toast.success('Added to liked music');
         onClose();
       }
     },
     {
       icon: Plus,
       label: 'Add to playlist',
-      action: () => {
-        if (!user) {
-          toast.error('Sign in to add to playlist');
-          navigate('/auth');
-          return;
-        }
-        toast.success('Added to playlist');
-        onClose();
-      }
+      action: () => void openPlaylistPicker()
     },
     {
       icon: ListMusic,
       label: 'Add to queue',
       action: () => {
+        addToQueue(track);
         toast.success('Added to queue');
         onClose();
       }
@@ -61,6 +92,7 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
       icon: Radio,
       label: 'Go to radio',
       action: () => {
+        startRadio(track);
         toast.success('Starting radio based on this track');
         onClose();
       }
@@ -69,7 +101,8 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
       icon: Clock,
       label: 'Sleep timer',
       action: () => {
-        toast.info('Sleep timer feature coming soon');
+        setSleepTimer(30);
+        toast.success('Playback will pause in 30 minutes');
         onClose();
       }
     },
@@ -81,9 +114,10 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
           await navigator.share({
             title: track.title,
             text: `Listen to ${track.title} by ${track.artist.name} on MusicInsta`,
+            url: `${window.location.origin}/?track=${encodeURIComponent(track.id)}`,
           });
         } catch {
-          navigator.clipboard.writeText(`${track.title} - ${track.artist.name}`);
+          await navigator.clipboard.writeText(`${window.location.origin}/?track=${encodeURIComponent(track.id)}`);
           toast.success('Copied to clipboard');
         }
         onClose();
@@ -98,12 +132,9 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
       }
     },
     {
-      icon: MessageSquare,
-      label: 'View comments',
-      action: () => {
-        toast.info('Comments feature coming soon');
-        onClose();
-      }
+      icon: ExternalLink,
+      label: isTransferring ? 'Sending to DAW...' : 'Open in DAW',
+      action: () => void openInDaw()
     },
     {
       icon: Flag,
@@ -154,7 +185,14 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
             </div>
 
             <div className="p-2 max-h-[60vh] overflow-y-auto">
-              {options.map((option, index) => (
+              {showPlaylists ? (
+                <div className="space-y-1 p-2">
+                  <p className="px-2 pb-2 text-sm font-semibold">Choose a playlist</p>
+                  {playlists.map(item => <button key={item.id} onClick={() => void addToPlaylist(item.id)} className="w-full rounded-xl p-3 text-left hover:bg-muted">{item.name}</button>)}
+                  <button onClick={() => void addToPlaylist()} className="w-full rounded-xl p-3 text-left text-primary hover:bg-muted">Create “My Music” playlist</button>
+                  <button onClick={() => setShowPlaylists(false)} className="w-full rounded-xl p-3 text-left text-muted-foreground hover:bg-muted">Back</button>
+                </div>
+              ) : options.map((option, index) => (
                 <motion.button
                   key={option.label}
                   initial={{ opacity: 0, x: -20 }}
