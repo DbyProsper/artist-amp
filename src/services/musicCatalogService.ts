@@ -141,8 +141,8 @@ async function loadBackendCatalog(userId?: string): Promise<Track[]> {
 export async function loadMusicCatalog(userId?: string): Promise<Track[]> {
   const [backend, firestore] = await Promise.allSettled([loadBackendCatalog(userId), loadFirestoreCatalog(userId)]);
   return hydrateTrackDurations(mergeTracks([
-    backend.status === 'fulfilled' ? backend.value : [],
     firestore.status === 'fulfilled' ? firestore.value : [],
+    backend.status === 'fulfilled' ? backend.value : [],
   ]));
 }
 

@@ -1,7 +1,9 @@
 import { Infinity as InfinityIcon, Sparkles } from 'lucide-react';
+import { useState } from 'react';
 import { usePlan } from '@/hooks/usePlan';
 import { useUserRole } from '@/hooks/useUserRole';
 import { DAILY_LIMITS, MONTHLY_LIMITS, UNLIMITED, type QuotaKey } from '@/lib/planLimits';
+import UpgradeModal from '@/components/UpgradeModal';
 
 const CREDIT_TYPES: Array<{ key: QuotaKey; label: string }> = [
   { key: 'fullSongs', label: 'Full songs' },
@@ -27,6 +29,7 @@ interface StudioCreditsProps {
 }
 
 export function StudioCredits({ compact = false }: StudioCreditsProps) {
+  const [showPlans, setShowPlans] = useState(false);
   const { plan, quota, quotaDaily, quotaMonth, quotaDay, loading: planLoading } = usePlan();
   const { isAdmin, loading: roleLoading } = useUserRole();
   const periods = currentPeriods();
@@ -62,6 +65,7 @@ export function StudioCredits({ compact = false }: StudioCreditsProps) {
           <p className="text-sm font-semibold">Generation credits</p>
           {compact ? null : <p className="text-xs text-muted-foreground">Balances reset daily and monthly. The first limit reached applies.</p>}
         </div>
+        <button type="button" onClick={() => setShowPlans(true)} className="ml-auto shrink-0 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">Upgrade</button>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
         {CREDIT_TYPES.map(({ key, label }) => {
@@ -80,6 +84,7 @@ export function StudioCredits({ compact = false }: StudioCreditsProps) {
           );
         })}
       </div>
+      {showPlans && <UpgradeModal reason="upgrade_options" quotaKey="fullSongs" onClose={() => setShowPlans(false)} />}
     </section>
   );
 }

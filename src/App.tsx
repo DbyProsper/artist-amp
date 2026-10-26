@@ -13,7 +13,6 @@ import { useScrollToTop } from "@/hooks/useScrollToTop";
 import LandingPage from "./pages/LandingPage";
 import HomePage from "./pages/HomePage";
 import DiscoverPage from "./pages/DiscoverPage";
-import SearchPage from "./pages/SearchPage";
 import UploadPage from "./pages/UploadPage";
 import MessagesPage from "./pages/MessagesPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -107,6 +106,13 @@ function AdminRoute() {
   return isAdminOrModerator ? <AdminPage /> : <Navigate to="/" replace />;
 }
 
+function StudioReadOnly({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (user) return <>{children}</>;
+  return <div className="relative min-h-screen"><div className="pointer-events-none select-none opacity-55" aria-hidden="true">{children}</div><div className="fixed inset-x-4 top-20 z-[100] mx-auto max-w-md rounded-2xl border border-primary/30 bg-background/95 p-5 text-center shadow-2xl backdrop-blur"><h2 className="font-bold">Sign in to use this Studio tool</h2><p className="mt-1 text-sm text-muted-foreground">You can preview MusicInsta Studio, but uploading, editing and generating require an account.</p><a href="/auth" className="mt-4 inline-flex rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground">Sign in or create an account</a></div></div>;
+}
+
 const AppRoutes = () => {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -125,35 +131,34 @@ const AppRoutes = () => {
         {/* Landing page for new users */}
         <Route path="/landing" element={<LandingRedirect />} />
         
-        {/* Search page - accessible without login */}
-        <Route path="/search" element={<SearchPage />} />
+        <Route path="/search" element={<Navigate to="/discover" replace />} />
         
         {/* Main app routes */}
-        <Route path="/" element={authenticatedPage(<HomePage />)} />
-        <Route path="/discover" element={authenticatedPage(<DiscoverPage />)} />
-        <Route path="/upload" element={<UploadPage />} />
-        <Route path="/messages" element={<MessagesPage />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/user/:userId" element={<UserProfilePage />} />
+        <Route path="/" element={<HomePage />} />
+        <Route path="/discover" element={<DiscoverPage />} />
+        <Route path="/upload" element={authenticatedPage(<UploadPage />)} />
+        <Route path="/messages" element={authenticatedPage(<MessagesPage />)} />
+        <Route path="/profile" element={authenticatedPage(<ProfilePage />)} />
+        <Route path="/user/:userId" element={authenticatedPage(<UserProfilePage />)} />
         <Route path="/playlists" element={<Navigate to="/library" replace />} />
-        <Route path="/playlists/:id" element={<PlaylistDetailPage />} />
-        <Route path="/library" element={<PlaylistsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/settings/edit-profile" element={<EditProfilePage />} />
-        <Route path="/settings/preferences" element={<PreferencesPage />} />
+        <Route path="/playlists/:id" element={authenticatedPage(<PlaylistDetailPage />)} />
+        <Route path="/library" element={authenticatedPage(<PlaylistsPage />)} />
+        <Route path="/settings" element={authenticatedPage(<SettingsPage />)} />
+        <Route path="/settings/edit-profile" element={authenticatedPage(<EditProfilePage />)} />
+        <Route path="/settings/preferences" element={authenticatedPage(<PreferencesPage />)} />
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/admin" element={<AdminRoute />} />
-        <Route path="/albums/:id" element={<AlbumDetailPage />} />
-        <Route path="/upload/album" element={<AlbumUploadPage />} />
-        <Route path="/analytics" element={<AnalyticsDashboardPage />} />
-        <Route path="/billing" element={<BillingPage />} />
-        <Route path="/billing/success" element={<BillingSuccessPage />} />
+        <Route path="/albums/:id" element={authenticatedPage(<AlbumDetailPage />)} />
+        <Route path="/upload/album" element={authenticatedPage(<AlbumUploadPage />)} />
+        <Route path="/analytics" element={authenticatedPage(<AnalyticsDashboardPage />)} />
+        <Route path="/billing" element={authenticatedPage(<BillingPage />)} />
+        <Route path="/billing/success" element={authenticatedPage(<BillingSuccessPage />)} />
         <Route path="/studio" element={<StudioPage />} />
-        <Route path="/studio/daw" element={<StudioDawPage />} />
-        <Route path="/studio/enhance" element={<AudioEnhancementPage />} />
-        <Route path="/studio/separate" element={<StemSeparationPage />} />
-        <Route path="/studio-legacy" element={<OnlineStudioPage />} />
+        <Route path="/studio/daw" element={<StudioReadOnly><StudioDawPage /></StudioReadOnly>} />
+        <Route path="/studio/enhance" element={<StudioReadOnly><AudioEnhancementPage /></StudioReadOnly>} />
+        <Route path="/studio/separate" element={<StudioReadOnly><StemSeparationPage /></StudioReadOnly>} />
+        <Route path="/studio-legacy" element={<StudioReadOnly><OnlineStudioPage /></StudioReadOnly>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
       <PlayerComponents />

@@ -101,6 +101,10 @@ export interface Post {
   credits?: MusicCredits;
   visualFilter?: string;
   attachedMusic?: string;
+  ctaLabel?: string;
+  ctaTarget?: string;
+  hideLikes?: boolean;
+  hidePlayCount?: boolean;
 }
 
 export interface Story {

@@ -49,7 +49,7 @@ service cloud.firestore {
 
     // Users can read all profiles but only write their own
     match /profiles/{userId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null && (request.auth.uid == userId || isAdmin());
       allow update: if request.auth != null && (
         (request.auth.uid == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['is_admin', 'role', 'roles'])) ||
@@ -75,7 +75,7 @@ service cloud.firestore {
     }
 
     match /albums/{albumId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null && (request.resource.data.profile_id == request.auth.uid || (isAdmin() && request.resource.data.profile_id == 'musicinsta-official'));
       allow update: if request.auth != null && (
         resource.data.profile_id == request.auth.uid || isAdmin() ||
@@ -99,7 +99,7 @@ service cloud.firestore {
 
     // Songs - users can read all songs, but only authenticated users can create
     match /songs/{songId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null;
       allow update, delete: if request.auth != null && request.auth.uid == resource.data.user_id;
     }
@@ -112,26 +112,28 @@ service cloud.firestore {
     }
 
     match /tracks/{trackId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null && (request.resource.data.profile_id == request.auth.uid || (isAdmin() && request.resource.data.profile_id == 'musicinsta-official'));
-      allow update: if request.auth != null && (
+      allow update: if (request.auth != null && (
         resource.data.profile_id == request.auth.uid || isAdmin() ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plays', 'likes', 'comments', 'shares'])
-      );
+      )) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plays'])
+        && request.resource.data.plays == resource.data.plays + 1);
       allow delete: if request.auth != null && (resource.data.profile_id == request.auth.uid || isAdmin());
     }
 
     match /posts/{postId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null && (request.resource.data.profile_id == request.auth.uid || isAdmin());
-      allow update: if request.auth != null && (
+      allow update: if (request.auth != null && (
         resource.data.profile_id == request.auth.uid || isAdmin() ||
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'comments', 'shares', 'plays'])
-      );
+      )) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plays'])
+        && request.resource.data.plays == resource.data.plays + 1);
       allow delete: if request.auth != null && (resource.data.profile_id == request.auth.uid || isAdmin());
 
       match /comments/{commentId} {
-        allow read: if request.auth != null;
+        allow read: if true;
         allow create: if request.auth != null && (request.resource.data.author_id == request.auth.uid || (isAdmin() && request.resource.data.author_id == 'musicinsta-official'));
         allow update, delete: if request.auth != null && (resource.data.author_id == request.auth.uid || isAdmin());
       }
@@ -139,8 +141,14 @@ service cloud.firestore {
 
     match /post_likes/{likeId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.user_id == request.auth.uid;
-      allow delete: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null && (
+        request.resource.data.user_id == request.auth.uid ||
+        (isAdmin() && request.resource.data.user_id == 'musicinsta-official')
+      );
+      allow delete: if request.auth != null && (
+        resource.data.user_id == request.auth.uid ||
+        (isAdmin() && resource.data.user_id == 'musicinsta-official')
+      );
     }
 
     match /saved_posts/{saveId} {
@@ -155,9 +163,15 @@ service cloud.firestore {
     }
 
     match /follows/{followId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.follower_id == request.auth.uid;
-      allow delete: if request.auth != null && resource.data.follower_id == request.auth.uid;
+      allow read: if true;
+      allow create: if request.auth != null && (
+        request.resource.data.follower_id == request.auth.uid ||
+        (isAdmin() && request.resource.data.follower_id == 'musicinsta-official')
+      );
+      allow delete: if request.auth != null && (
+        resource.data.follower_id == request.auth.uid ||
+        (isAdmin() && resource.data.follower_id == 'musicinsta-official')
+      );
     }
 
     match /notifications/{notificationId} {
@@ -177,7 +191,7 @@ service cloud.firestore {
     }
 
     match /genres/{genreId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow create: if request.auth != null;
       allow update, delete: if isAdmin();
     }
@@ -215,7 +229,7 @@ service cloud.firestore {
 
     // Social links
     match /social_links/{userId} {
-      allow read: if request.auth != null;
+      allow read: if true;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
 

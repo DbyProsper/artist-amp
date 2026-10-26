@@ -129,11 +129,11 @@ export function useFeedPosts() {
         if (trackData) {
           postTrack = {
             id: post.track_id,
-            title: trackData.title,
+            title: trackData.title || 'Untitled track',
             artist: artist,
             coverArt: trackData.cover_url || post.image_url || DEFAULT_MEDIA_IMAGE,
             duration: trackData.duration || 0,
-            plays: trackData.plays || 0,
+            plays: Number(trackData.plays) || 0,
             likes: trackData.likes || 0,
             audioUrl: trackData.audio_url || undefined,
             lyrics: trackData.lyrics || trackData.metadata?.lyrics || undefined,
@@ -173,6 +173,10 @@ export function useFeedPosts() {
           credits: post.credits || trackData?.credits || trackData?.metadata?.credits || undefined,
           visualFilter: post.visual_filter || undefined,
           attachedMusic: post.attached_music || undefined,
+          ctaLabel: post.cta_label || undefined,
+          ctaTarget: post.cta_target || undefined,
+          hideLikes: post.hide_likes === true,
+          hidePlayCount: post.hide_play_count === true,
         });
       }
 

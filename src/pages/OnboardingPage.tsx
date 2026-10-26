@@ -16,6 +16,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { ImageCropper } from '@/components/ui/ImageCropper';
+import { MUSIC_GENRES } from '@/lib/genres';
 
 interface Genre {
   id: string;
@@ -59,20 +60,7 @@ export default function OnboardingPage() {
       return;
     }
 
-    const mockGenres = [
-      { id: '1', name: 'Pop' },
-      { id: '2', name: 'Hip Hop' },
-      { id: '3', name: 'Rock' },
-      { id: '4', name: 'R&B' },
-      { id: '5', name: 'Jazz' },
-      { id: '6', name: 'Classical' },
-      { id: '7', name: 'Reggae' },
-      { id: '8', name: 'Trap' },
-      { id: '9', name: 'Amapiano' },
-      { id: '10', name: 'Lekompo' },
-      { id: '11', name: 'House' },
-      { id: '12', name: 'Disco' },
-    ];
+    const mockGenres = MUSIC_GENRES.map((name, index) => ({ id: String(index + 1), name }));
 
     setGenres(mockGenres);
 

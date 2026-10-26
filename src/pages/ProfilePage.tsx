@@ -136,6 +136,7 @@ export default function ProfilePage() {
     location: profile?.location || '',
     isVerified: profile?.is_verified || false,
     isArtist: profile?.is_artist || false,
+    genres: profile?.genres || [],
   };
 
   const handlePostClick = (index: number) => {
@@ -144,13 +145,13 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen pb-36">
+    <div className="min-h-screen overflow-x-hidden pb-36">
       {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-border">
         <div className="flex items-center justify-between px-4 h-14">
           <h1 className="font-display font-bold text-lg">@{displayProfile.username}</h1>
           <div className="flex items-center gap-2">
-            <button onClick={() => signOut()} className="p-2 rounded-full hover:bg-muted transition-colors text-sm text-muted-foreground">Sign Out</button>
+            <button onClick={async () => { await signOut(); navigate('/landing', { replace: true }); }} className="p-2 rounded-full hover:bg-muted transition-colors text-sm text-muted-foreground">Sign Out</button>
             <button onClick={() => navigate('/settings')} className="p-2 rounded-full hover:bg-muted transition-colors">
               <Settings className="w-5 h-5" />
             </button>
@@ -172,7 +173,7 @@ export default function ProfilePage() {
 
       {/* Profile Info */}
       <div className="px-4 -mt-16 relative z-10">
-        <div className="flex items-end gap-4 mb-4">
+        <div className="flex min-w-0 items-end gap-3 sm:gap-4 mb-4">
           <div 
             className="w-24 h-24 rounded-full overflow-hidden border-4 border-background gradient-border cursor-pointer hover:opacity-90 transition-opacity group"
             onClick={() => setFullScreenAvatarOpen(true)}
@@ -182,9 +183,9 @@ export default function ProfilePage() {
               <span className="text-xs text-white">Click to expand</span>
             </div>
           </div>
-          <div className="flex-1 mb-2">
+          <div className="min-w-0 flex-1 mb-2">
             <div className="flex items-center gap-2">
-              <h2 className="font-display font-bold text-xl">{displayProfile.name}</h2>
+              <h2 className="truncate font-display font-bold text-xl">{displayProfile.name}</h2>
               {displayProfile.isVerified && <BadgeCheck className="w-5 h-5 text-primary" fill="currentColor" />}
             </div>
             {displayProfile.location && (
@@ -203,15 +204,16 @@ export default function ProfilePage() {
         </div>
 
         {displayProfile.bio && <p className="text-sm mb-4">{displayProfile.bio}</p>}
+        {displayProfile.isArtist && displayProfile.genres.length > 0 && <div className="mb-4 flex flex-wrap gap-2">{displayProfile.genres.map(genre => <span key={genre} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">{genre}</span>)}</div>}
 
         {/* Action Buttons */}
-        <div className="flex gap-3 mb-6">
-          <Button onClick={() => navigate('/settings/edit-profile')} variant="outline" className="flex-1">Edit Profile</Button>
+        <div className="grid grid-cols-2 gap-2 mb-6 sm:flex sm:flex-wrap sm:gap-3">
+          <Button onClick={() => navigate('/settings/edit-profile')} variant="outline" className="min-w-0 sm:flex-1">Edit Profile</Button>
           {displayProfile.isArtist && (
             <>
               <Button
                 variant="outline"
-                className="flex-1"
+                className="min-w-0 px-2 sm:flex-1 sm:px-4"
                 onClick={() => { localStorage.setItem('studio_showEntry', 'true'); navigate('/studio?tools=1'); }}
               >
                 <Zap className="w-4 h-4 mr-2" />
@@ -219,7 +221,7 @@ export default function ProfilePage() {
               </Button>
               <Button
                 variant="outline"
-                className="flex-1"
+                className="min-w-0 px-2 sm:flex-1 sm:px-4"
                 onClick={() => navigate('/analytics')}
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
@@ -230,14 +232,14 @@ export default function ProfilePage() {
           {isAdmin && (
             <Button
               variant="outline"
-              className="flex-1"
+              className="min-w-0 sm:flex-1"
               onClick={() => navigate('/admin')}
             >
               <BadgeCheck className="w-4 h-4 mr-2" />
               Admin
             </Button>
           )}
-          {isAdmin && <Button variant="outline" className="flex-1" onClick={() => switchIdentity(isOfficialIdentity ? 'personal' : 'official')}><Repeat2 className="mr-2 h-4 w-4" />{isOfficialIdentity ? 'Use personal account' : 'Use MusicInsta account'}</Button>}
+          {isAdmin && <Button variant="outline" className="col-span-2 min-w-0 px-2 text-xs sm:flex-1 sm:px-4 sm:text-sm" onClick={() => switchIdentity(isOfficialIdentity ? 'personal' : 'official')}><Repeat2 className="mr-2 h-4 w-4 shrink-0" /><span className="truncate">{isOfficialIdentity ? 'Use personal account' : 'Use MusicInsta account'}</span></Button>}
           <Button variant="outline" size="icon" onClick={() => navigate('/playlists')}>
             <ListMusic className="w-4 h-4" />
           </Button>

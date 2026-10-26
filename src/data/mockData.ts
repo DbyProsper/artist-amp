@@ -356,12 +356,7 @@ export const mockPlaylists: Playlist[] = [
   },
 ];
 
-export const genres = [
-  'Pop', 'Hip-Hop', 'R&B', 'Electronic', 'Rock', 'Indie',
-  'Jazz', 'Classical', 'Country', 'Reggae', 'Latin', 'K-Pop',
-  'Ambient', 'House', 'Techno', 'Metal', 'Folk', 'Soul',
-  'Afrobeats', 'Gospel', 'Blues', 'Dancehall', 'Trap', 'Lo-Fi',
-];
+export { MUSIC_GENRES as genres } from '@/lib/genres';
 
 // Export Sam Keys for profile page
 export const currentUserArtist = samKeys;

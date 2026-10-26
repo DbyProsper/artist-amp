@@ -90,14 +90,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshCatalog = useCallback(async () => {
-    if (!user?.uid) return;
     setCatalogLoading(true);
     try {
+      const userId = user?.uid;
       const [nextCatalog, nextHistory, preferences, profileSnapshot] = await Promise.all([
-        loadMusicCatalog(user.uid),
-        loadListeningHistory(user.uid),
-        getDoc(doc(db, 'user_preferences', user.uid)).catch(() => null),
-        getDoc(doc(db, 'profiles', user.uid)).catch(() => null),
+        loadMusicCatalog(userId),
+        userId ? loadListeningHistory(userId) : Promise.resolve([]),
+        userId ? getDoc(doc(db, 'user_preferences', userId)).catch(() => null) : Promise.resolve(null),
+        userId ? getDoc(doc(db, 'profiles', userId)).catch(() => null) : Promise.resolve(null),
       ]);
       const preferred = preferences?.exists() && Array.isArray(preferences.data().favorite_genres)
         ? preferences.data().favorite_genres.map(String)
@@ -113,20 +113,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [user?.uid]);
 
   useEffect(() => {
-    if (!user?.uid) {
-      audioRef.current?.pause();
-      if (audioRef.current) audioRef.current.src = '';
-      setCurrentTrack(null);
-      setIsPlaying(false);
-      setQueue([]);
-      setCatalog([]);
-      setListeningHistory([]);
-      setPreferredGenres([]);
-      setProgress(0);
-      setCurrentTime(0);
-      setDuration(0);
-      return;
-    }
     void refreshCatalog();
   }, [refreshCatalog, setQueue, user?.uid]);
 

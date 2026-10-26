@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Search, TrendingUp, Sparkles, Filter, Heart, Users, 
-  Music2, Radio, ChevronDown, ArrowRight
+  Radio, ArrowRight
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ArtistCard } from '@/components/artists/ArtistCard';
@@ -19,38 +19,84 @@ import { useFeedPosts } from '@/hooks/useFeedPosts';
 import { usePlayer } from '@/context/PlayerContext';
 import { rankCatalog } from '@/services/recommendationEngine';
 import type { Track } from '@/types';
+import { DISCOVER_GENRES, canonicalGenre, genreMatches } from '@/lib/genres';
+import { useAuth } from '@/context/FirebaseAuthContext';
+import { addDoc, collection, deleteDoc, getDocs, query, serverTimestamp, where } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { toast } from 'sonner';
 
 type SortOption = 'trending' | 'newest' | 'popular';
 
 export default function DiscoverPage() {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
   const { catalog, listeningHistory, preferredGenres, currentTrack, catalogLoading } = usePlayer();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('for-you');
   const [sortBy, setSortBy] = useState<SortOption>('trending');
   const { posts } = useFeedPosts();
+  const [followerCounts, setFollowerCounts] = useState<Record<string, number>>({});
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const liveTracks = posts.filter(post => post.track?.audioUrl).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
   const liveArtists = posts.map(post => post.artist).filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
   const catalogTracks = catalog.length ? catalog : liveTracks;
-  const catalogArtists = [...catalogTracks.map(track => track.artist), ...liveArtists].filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
-  const genres = [...new Set(catalogTracks.flatMap(track => [track.genre, ...track.artist.genres]).filter(Boolean) as string[])].sort();
+  const isOfficialAccount = (artist: { id: string; username: string }) => artist.id === 'musicinsta-official' || artist.id === 'musicinsta' || artist.username.toLowerCase() === 'musicinsta';
+  const catalogArtists = [...catalogTracks.map(track => track.artist), ...liveArtists]
+    .filter((artist, index, list) => !isOfficialAccount(artist) && list.findIndex(item => item.id === artist.id) === index)
+    .map(artist => ({ ...artist, followers: followerCounts[artist.id] ?? artist.followers }));
+  const genres = [...new Set([...DISCOVER_GENRES, ...catalogTracks.flatMap(track => [track.genre, ...track.artist.genres]).filter(Boolean).map(value => canonicalGenre(String(value)))])];
   const liveTrackIds = new Set(liveTracks.map(track => track.id));
   const personalizedTracks = useMemo(() => rankCatalog(catalogTracks, listeningHistory, currentTrack, preferredGenres).map(item => item.track), [catalogTracks, listeningHistory, currentTrack, preferredGenres]);
+
+  useEffect(() => {
+    getDocs(collection(db, 'follows')).then(snapshot => {
+      const counts: Record<string, number> = {};
+      const own = new Set<string>();
+      snapshot.docs.forEach(item => {
+        const data = item.data();
+        const target = String(data.following_id || '');
+        counts[target] = (counts[target] || 0) + 1;
+        if (profile && data.follower_id === profile.id) own.add(target);
+      });
+      setFollowerCounts(counts); setFollowingIds(own);
+    }).catch(() => undefined);
+  }, [profile]);
+
+  const toggleFollow = async (artistId: string) => {
+    if (!user || !profile) { toast.info('Sign in to follow artists.'); navigate('/auth'); return; }
+    try {
+      const existing = await getDocs(query(collection(db, 'follows'), where('follower_id', '==', profile.id), where('following_id', '==', artistId)));
+      if (!existing.empty) {
+        await Promise.all(existing.docs.map(item => deleteDoc(item.ref)));
+        setFollowingIds(current => { const next = new Set(current); next.delete(artistId); return next; });
+        setFollowerCounts(current => ({ ...current, [artistId]: Math.max(0, (current[artistId] || 1) - 1) }));
+      } else {
+        await addDoc(collection(db, 'follows'), { follower_id: profile.id, auth_user_id: user.uid, following_id: artistId, created_at: serverTimestamp() });
+        setFollowingIds(current => new Set(current).add(artistId));
+        setFollowerCounts(current => ({ ...current, [artistId]: (current[artistId] || 0) + 1 }));
+      }
+    } catch { toast.error('Could not update this follow.'); }
+  };
 
   const filteredArtists = catalogArtists.filter((artist) => {
     const matchesSearch = artist.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          artist.username.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesGenre = !selectedGenre || artist.genres.includes(selectedGenre);
+    const matchesGenre = !selectedGenre || artist.genres.some(genre => genreMatches(genre, selectedGenre));
     return matchesSearch && matchesGenre;
   });
 
   const filteredTracks = catalogTracks.filter((track) => {
     const matchesSearch = track.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          track.artist.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesGenre = !selectedGenre || track.genre?.toLowerCase() === selectedGenre.toLowerCase() || track.artist.genres.some(genre => genre.toLowerCase() === selectedGenre.toLowerCase());
+    const matchesGenre = !selectedGenre || genreMatches(track.genre, selectedGenre) || track.artist.genres.some(genre => genreMatches(genre, selectedGenre));
     return matchesSearch && matchesGenre;
   });
+  const personalizedGenreTracks = personalizedTracks.filter(track => filteredTracks.some(item => item.id === track.id));
+  const fallbackTracks = selectedGenre ? personalizedTracks.filter(track => !genreMatches(track.genre, selectedGenre) && !track.artist.genres.some(genre => genreMatches(genre, selectedGenre))).slice(0, 6) : [];
+  const visibleArtists = selectedGenre ? filteredArtists : catalogArtists;
+  const followedArtists = visibleArtists.filter(artist => followingIds.has(artist.id));
+  const suggestedArtists = visibleArtists.filter(artist => artist.id !== profile?.id && !followingIds.has(artist.id));
 
   const sortTracks = (tracks: Track[]) => {
     switch (sortBy) {
@@ -233,11 +279,12 @@ export default function DiscoverPage() {
                     Automatically ranked from MusicInsta's cloud music catalogue using your plays, likes, completed listens and skips.
                   </p>
                   <div className="space-y-1">
-                     {personalizedTracks.filter(track => filteredTracks.some(item => item.id === track.id)).slice(0, 8).map((track, index) => (
-                       <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={personalizedTracks} />
+                     {personalizedGenreTracks.slice(0, 8).map((track, index) => (
+                       <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={personalizedGenreTracks} />
                     ))}
                     {catalogLoading && <p className="py-4 text-sm text-muted-foreground">Loading your recommendations...</p>}
-                    {!catalogLoading && personalizedTracks.length === 0 && <p className="py-4 text-sm text-muted-foreground">No playable music has been added to the cloud catalogue yet.</p>}
+                    {!catalogLoading && personalizedGenreTracks.length === 0 && !selectedGenre && <p className="py-4 text-sm text-muted-foreground">No playable music has been added to the cloud catalogue yet.</p>}
+                    {!catalogLoading && selectedGenre && personalizedGenreTracks.length === 0 && <div className="rounded-xl border border-border bg-muted/30 p-4"><p className="font-medium">No {selectedGenre} music is available yet.</p><p className="mt-1 text-sm text-muted-foreground">Here are other recommendations based on your listening and preferred genres.</p><div className="mt-3 space-y-1">{fallbackTracks.map((track, index) => <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={fallbackTracks} />)}</div></div>}
                   </div>
                 </section>
 
@@ -248,12 +295,9 @@ export default function DiscoverPage() {
                       <Users className="w-5 h-5 text-accent" />
                       <h2 className="font-display font-bold text-lg">From artists you follow</h2>
                     </div>
-                    <button className="text-sm text-primary hover:underline flex items-center gap-1">
-                      See all <ArrowRight className="w-4 h-4" />
-                    </button>
                   </div>
                   <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
-                    {catalogArtists.slice(0, 4).map((artist) => (
+                    {followedArtists.slice(0, 4).map((artist) => (
                       <motion.div
                         key={artist.id}
                         whileTap={{ scale: 0.95 }}
@@ -271,6 +315,7 @@ export default function DiscoverPage() {
                         <p className="text-xs text-muted-foreground">{artist.genres[0]}</p>
                       </motion.div>
                     ))}
+                    {followedArtists.length === 0 && <p className="py-4 text-sm text-muted-foreground">Music from artists you follow will appear here.</p>}
                   </div>
                 </section>
 
@@ -281,17 +326,17 @@ export default function DiscoverPage() {
                       <Sparkles className="w-5 h-5 text-secondary" />
                       <h2 className="font-display font-bold text-lg">Artists you might like</h2>
                     </div>
-                    <button className="text-sm text-primary hover:underline flex items-center gap-1">
-                      See all <ArrowRight className="w-4 h-4" />
-                    </button>
                   </div>
                   <div className="space-y-2">
-                    {catalogArtists.slice(2, 5).map((artist) => (
+                    {suggestedArtists.slice(0, 3).map((artist) => (
                       <ArtistCard
                         key={artist.id}
                         artist={artist}
                         variant="compact"
                         onClick={() => handleArtistClick(artist.id)}
+                        showFollow={Boolean(user)}
+                        isFollowing={followingIds.has(artist.id)}
+                        onFollow={() => void toggleFollow(artist.id)}
                       />
                     ))}
                   </div>
@@ -318,6 +363,7 @@ export default function DiscoverPage() {
                     {sortTracks(filteredTracks).slice(0, 5).map((track, index) => (
                       <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={sortTracks(filteredTracks)} />
                     ))}
+                    {selectedGenre && filteredTracks.length === 0 && <div className="rounded-xl border border-border bg-muted/30 p-4"><p className="font-medium">Nothing is trending in {selectedGenre} yet.</p><p className="mt-1 text-sm text-muted-foreground">Try these personalized recommendations instead.</p><div className="mt-3 space-y-1">{fallbackTracks.map((track, index) => <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={fallbackTracks} />)}</div></div>}
                   </div>
                 </section>
 
@@ -333,12 +379,15 @@ export default function DiscoverPage() {
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                    {catalogArtists.slice(0, 4).map((artist) => (
+                    {visibleArtists.slice(0, 4).map((artist) => (
                       <ArtistCard
                         key={artist.id}
                         artist={artist}
                         variant="featured"
                         onClick={() => handleArtistClick(artist.id)}
+                        showFollow={Boolean(user)}
+                        isFollowing={followingIds.has(artist.id)}
+                        onFollow={() => void toggleFollow(artist.id)}
                       />
                     ))}
                   </div>
@@ -363,7 +412,7 @@ export default function DiscoverPage() {
               >
                 All
               </motion.button>
-              {genres.slice(0, 12).map((genre) => (
+              {DISCOVER_GENRES.map((genre) => (
                 <motion.button
                   key={genre}
                   whileTap={{ scale: 0.95 }}

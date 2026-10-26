@@ -3,7 +3,7 @@ import { X, Lock, RefreshCw } from 'lucide-react';
 import type { QuotaKey } from '@/lib/planLimits';
 
 interface Props {
-  reason: 'monthly_limit' | 'daily_limit' | 'plan_blocked' | null;
+  reason: 'monthly_limit' | 'daily_limit' | 'plan_blocked' | 'upgrade_options' | null;
   quotaKey: QuotaKey;
   onClose: () => void;
 }
@@ -33,6 +33,11 @@ const REASON_COPY = {
     title: 'Premium feature',
     icon: Lock,
     sub: 'This feature is not available on your current plan.',
+  },
+  upgrade_options: {
+    title: 'Upgrade options',
+    icon: Lock,
+    sub: 'Choose the plan that fits how often you create. Payments are not enabled yet.',
   },
 };
 
@@ -70,7 +75,7 @@ export default function UpgradeModal({ reason, quotaKey, onClose }: Props) {
         <div className="mt-6 space-y-4">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">{title}</p>
-            <h2 className="mt-2 text-2xl font-bold">{tool}</h2>
+            <h2 className="mt-2 text-2xl font-bold">{reason === 'upgrade_options' ? 'Create more with MusicInsta' : tool}</h2>
             <p className="mt-3 text-sm text-muted-foreground">{sub}</p>
           </div>
 

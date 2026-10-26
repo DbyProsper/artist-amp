@@ -29,6 +29,7 @@ interface Profile {
   location: string | null;
   is_artist: boolean | null;
   is_verified: boolean | null;
+  genres?: string[];
 }
 interface SocialLinks {
   youtube?: string | null;
@@ -261,6 +262,7 @@ export default function UserProfilePage() {
 
         {/* Bio */}
         {profile.bio && <p className="text-sm mb-4">{profile.bio}</p>}
+        {profile.is_artist && profile.genres?.length ? <div className="mb-4 flex flex-wrap gap-2">{profile.genres.map(genre => <span key={genre} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">{genre}</span>)}</div> : null}
 
         {/* Social Links */}
         {(socialLinks.youtube || socialLinks.apple_music) && (

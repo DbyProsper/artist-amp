@@ -116,10 +116,6 @@ export function StudioEntryScreen({ onFeatureSelect }: StudioEntryScreenProps) {
         </p>
       </motion.div>
 
-      <div className="mb-8 w-full max-w-5xl">
-        <StudioCredits />
-      </div>
-
       {/* Feature Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-5xl">
         {features.map((feature, index) => (
@@ -167,6 +163,10 @@ export function StudioEntryScreen({ onFeatureSelect }: StudioEntryScreenProps) {
             </div>
           </motion.button>
         ))}
+      </div>
+
+      <div className="mt-8 w-full max-w-5xl">
+        <StudioCredits />
       </div>
 
       {/* Footer hint */}

@@ -59,7 +59,7 @@ export function useProfilePosts(profileId: string | undefined) {
           coverImage: profileData.cover_url || DEFAULT_MEDIA_IMAGE,
           bio: profileData.bio || '',
           location: profileData.location || '',
-          genres: [],
+          genres: Array.isArray(profileData.genres) ? profileData.genres.map(String) : [],
           isVerified: profileData.is_verified || false,
           followers: 0,
           following: 0,

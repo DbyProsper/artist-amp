@@ -104,7 +104,7 @@ export function TrackRow({ track, index, showIndex, queue }: TrackRowProps) {
       </div>
       
       <div className="flex items-center gap-3 text-muted-foreground">
-        <span className="text-xs hidden sm:block">{formatCount(track.plays)}</span>
+        <span className="text-xs" title={`${track.plays} plays`}>{formatCount(track.plays)} plays</span>
         <span className="text-xs">{formatDuration(track.duration)}</span>
         <button 
           className="p-1.5 rounded-full hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"

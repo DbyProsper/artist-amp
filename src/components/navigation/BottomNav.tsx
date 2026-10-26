@@ -12,13 +12,17 @@ const navItems = [
   { path: '/library', icon: Library, label: 'Library' },
   { path: '/profile', icon: User, label: 'Profile' },
 ];
+const guestNavItems = [
+  { path: '/', icon: Home, label: 'Home' },
+  { path: '/discover', icon: Compass, label: 'Discover' },
+];
 
 // Routes where bottom nav should be hidden
 const hiddenRoutes = ['/landing', '/auth', '/onboarding'];
 
 export function BottomNav() {
   const location = useLocation();
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const { isExpanded } = usePlayer();
 
   // Hide on landing, auth, and onboarding pages
@@ -30,7 +34,7 @@ export function BottomNav() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 glass border-t border-border safe-bottom">
       <div className="flex items-center justify-around h-16">
-        {navItems.map((item) => {
+        {(user ? navItems : guestNavItems).map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <NavLink

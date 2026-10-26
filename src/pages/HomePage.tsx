@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc, Sparkles, Wand2, Zap, BarChart3, ArrowRight, X } from 'lucide-react';
+import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc, Sparkles, Wand2, Zap, SlidersHorizontal, ArrowRight, X } from 'lucide-react';
 import { StoriesRow } from '@/components/feed/StoriesRow';
 import { FeedPost } from '@/components/feed/FeedPost';
 import { StoryViewer } from '@/components/stories/StoryViewer';
@@ -63,6 +63,17 @@ export default function HomePage() {
     navigate('/upload');
   };
 
+  const openStudioTool = (feature: 'beat' | 'song') => {
+    if (!user) {
+      toast.info('Sign in to use MusicInsta AI Studio');
+      navigate('/auth');
+      return;
+    }
+    localStorage.setItem('studio_currentFeature', feature);
+    localStorage.setItem('studio_showEntry', 'false');
+    navigate('/studio');
+  };
+
   const personalizedPosts = useMemo(() => rankFeedPosts(posts, listeningHistory, preferredGenres), [posts, listeningHistory, preferredGenres]);
   const personalizedTracks = useMemo(() => rankCatalog(catalog, listeningHistory, null, preferredGenres).map(item => item.track), [catalog, listeningHistory, preferredGenres]);
   const realArtists = [...catalog.map(track => track.artist), ...posts.map(post => post.artist)].filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
@@ -94,7 +105,7 @@ export default function HomePage() {
             />
             <h1 className="text-xl font-display font-bold text-gradient">MusicInsta</h1>
           </button>
-          <div className="flex items-center gap-3">
+          {user ? <div className="flex items-center gap-3">
             <motion.div 
               className="w-2 h-2 rounded-full bg-primary"
               animate={{ scale: [1, 1.2, 1] }}
@@ -119,7 +130,7 @@ export default function HomePage() {
               <MessageCircle className="w-5 h-5" />
               {unreadMessages.length > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />}
             </button>
-          </div>
+          </div> : <Button size="sm" onClick={() => navigate('/auth')}>Sign in</Button>}
         </div>
       </header>
 
@@ -224,36 +235,36 @@ export default function HomePage() {
           Unlock professional music production tools powered by AI. Available for artists.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Lyrics Generator */}
+          {/* Beat generation */}
           <motion.div
             whileHover={{ scale: 1.02 }}
             className="p-4 rounded-xl bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20 hover:border-primary/50 transition-colors cursor-pointer"
-            onClick={() => navigate('/studio')}
+            onClick={() => openStudioTool('beat')}
           >
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-                <Wand2 className="w-5 h-5 text-primary" />
+                <Music2 className="w-5 h-5 text-primary" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-sm mb-1">Lyrics Generation</h3>
-                <p className="text-xs text-muted-foreground">AI-generated lyrics in any style</p>
+                <h3 className="font-semibold text-sm mb-1">Beat Generation</h3>
+                <p className="text-xs text-muted-foreground">Create original royalty-free instrumentals</p>
               </div>
             </div>
           </motion.div>
 
-          {/* Beat Production */}
+          {/* Full song generation */}
           <motion.div
             whileHover={{ scale: 1.02 }}
             className="p-4 rounded-xl bg-gradient-to-br from-accent/10 to-secondary/10 border border-accent/20 hover:border-accent/50 transition-colors cursor-pointer"
-            onClick={() => navigate('/studio')}
+            onClick={() => openStudioTool('song')}
           >
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center flex-shrink-0">
-                <Music2 className="w-5 h-5 text-accent" />
+                <Wand2 className="w-5 h-5 text-accent" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-sm mb-1">Beat Production</h3>
-                <p className="text-xs text-muted-foreground">Create original royalty-free beats</p>
+                <h3 className="font-semibold text-sm mb-1">Full Song Generation</h3>
+                <p className="text-xs text-muted-foreground">Generate a complete song from your creative brief</p>
               </div>
             </div>
           </motion.div>
@@ -262,7 +273,7 @@ export default function HomePage() {
           <motion.div
             whileHover={{ scale: 1.02 }}
             className="p-4 rounded-xl bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20 hover:border-green-500/50 transition-colors cursor-pointer"
-            onClick={() => navigate('/studio')}
+            onClick={() => user ? navigate('/studio/daw') : navigate('/auth')}
           >
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
@@ -275,19 +286,19 @@ export default function HomePage() {
             </div>
           </motion.div>
 
-          {/* AI Analytics */}
+          {/* Audio enhancement */}
           <motion.div
             whileHover={{ scale: 1.02 }}
             className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/20 hover:border-blue-500/50 transition-colors cursor-pointer"
-            onClick={() => navigate('/studio')}
+            onClick={() => user ? navigate('/studio/enhance') : navigate('/auth')}
           >
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-                <BarChart3 className="w-5 h-5 text-blue-500" />
+                <SlidersHorizontal className="w-5 h-5 text-blue-500" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-sm mb-1">AI Analytics</h3>
-                <p className="text-xs text-muted-foreground">Listener insights & performance analytics</p>
+                <h3 className="font-semibold text-sm mb-1">Audio Enhancement</h3>
+                <p className="text-xs text-muted-foreground">Clean, balance and master uploaded audio</p>
               </div>
             </div>
           </motion.div>

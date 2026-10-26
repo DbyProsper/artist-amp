@@ -62,10 +62,13 @@ export default function StudioPage() {
   // ==================== FLOW STATE ====================
   const [showEntry, setShowEntry] = useState(() => {
     if (new URLSearchParams(window.location.search).get('tools') === '1') return true;
+    if (new URLSearchParams(window.location.search).get('tool')) return false;
     const saved = localStorage.getItem('studio_showEntry');
     return saved !== null ? JSON.parse(saved) : true;
   });
   const [currentFeature, setCurrentFeature] = useState<StudioFeature>(() => {
+    const requested = new URLSearchParams(window.location.search).get('tool') as StudioFeature | null;
+    if (requested && ['beat', 'song', 'lyrics', 'cover', 'poster', 'merch', 'chat', 'enhance', 'separate', 'daw'].includes(requested)) return requested;
     const saved = localStorage.getItem('studio_currentFeature');
     return (saved as StudioFeature) || 'beat';
   });
@@ -155,6 +158,11 @@ export default function StudioPage() {
       } catch (e) {
         console.error('Failed to load history:', e);
       }
+      }
+      const requestedTool = new URLSearchParams(window.location.search).get('tool') as StudioFeature | null;
+      if (requestedTool && ['beat', 'song', 'lyrics', 'cover', 'poster', 'merch', 'chat', 'enhance'].includes(requestedTool)) {
+        setCurrentFeature(requestedTool);
+        setShowEntry(false);
       }
       setStudioStateLoaded(true);
     };
@@ -587,6 +595,7 @@ export default function StudioPage() {
 
   return (
     <div className="min-h-screen bg-background overflow-hidden">
+      {!user && !showEntry && <div className="fixed inset-0 z-[200] grid place-items-center bg-background/75 p-4 backdrop-blur-sm"><div className="w-full max-w-md rounded-2xl border border-primary/30 bg-card p-6 text-center shadow-2xl"><h2 className="text-xl font-bold">Sign in to use {currentFeature === 'song' ? 'Full Song' : currentFeature.charAt(0).toUpperCase() + currentFeature.slice(1)}</h2><p className="mt-2 text-sm text-muted-foreground">Studio tools can be previewed without an account, but generating, uploading, editing and chatting require sign-in.</p><div className="mt-5 grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => setShowEntry(true)}>Back to tools</Button><Button onClick={() => navigate('/auth')}>Sign in</Button></div></div></div>}
       <AnimatePresence mode="wait">
         {showEntry ? (
           // Entry Screen

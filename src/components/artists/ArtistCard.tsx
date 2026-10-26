@@ -7,6 +7,9 @@ interface ArtistCardProps {
   artist: Artist;
   variant?: 'default' | 'compact' | 'featured';
   onClick?: () => void;
+  isFollowing?: boolean;
+  onFollow?: () => void;
+  showFollow?: boolean;
 }
 
 function formatCount(num: number): string {
@@ -15,13 +18,15 @@ function formatCount(num: number): string {
   return num.toString();
 }
 
-export function ArtistCard({ artist, variant = 'default', onClick }: ArtistCardProps) {
+export function ArtistCard({ artist, variant = 'default', onClick, isFollowing = false, onFollow, showFollow = false }: ArtistCardProps) {
   if (variant === 'compact') {
     return (
-      <motion.button
+      <motion.div
         whileTap={{ scale: 0.98 }}
         onClick={onClick}
-        className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 transition-colors w-full"
+        role="button"
+        tabIndex={0}
+        className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/50 transition-colors w-full cursor-pointer"
       >
         <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0">
           <img
@@ -37,14 +42,13 @@ export function ArtistCard({ artist, variant = 'default', onClick }: ArtistCardP
               <BadgeCheck className="w-4 h-4 text-primary flex-shrink-0" fill="currentColor" />
             )}
           </div>
-          <span className="text-xs text-muted-foreground">
-            {formatCount(artist.followers)} followers
-          </span>
+          <span className="block truncate text-xs text-muted-foreground">{artist.genres.length ? artist.genres.join(' • ') : 'Artist'}</span>
+          <span className="text-xs text-muted-foreground">{formatCount(artist.followers)} followers</span>
         </div>
-        <button className="px-4 py-1.5 rounded-full bg-primary text-primary-foreground text-sm font-medium">
-          Follow
-        </button>
-      </motion.button>
+        {showFollow && <button onClick={(event) => { event.stopPropagation(); onFollow?.(); }} className={cn('px-4 py-1.5 rounded-full text-sm font-medium', isFollowing ? 'bg-muted text-foreground' : 'bg-primary text-primary-foreground')}>
+          {isFollowing ? 'Following' : 'Follow'}
+        </button>}
+      </motion.div>
     );
   }
 

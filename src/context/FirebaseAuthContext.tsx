@@ -23,6 +23,7 @@ interface Profile {
   location: string | null;
   is_artist: boolean;
   is_verified: boolean;
+  genres: string[];
   onboarding_completed: boolean | null;
   is_admin?: boolean;
   email: string;
@@ -69,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           location: data?.location || null,
           is_artist: data?.is_artist || false,
           is_verified: data?.is_verified || false,
+          genres: Array.isArray(data?.genres) ? data.genres.map(String) : [],
           is_admin: Boolean(data?.is_admin || data?.role === 'admin' || (Array.isArray(data?.roles) && data.roles.includes('admin'))),
           onboarding_completed: data?.onboarding_completed || false,
           email: data?.email || '',
@@ -97,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         location: null,
         is_artist: false,
         is_verified: false,
+        genres: [],
         onboarding_completed: false,
         is_admin: false,
         email: user.email || '',
@@ -121,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         location: null,
         is_artist: false,
         is_verified: false,
+        genres: [],
         onboarding_completed: false,
         email: user.email || '',
         created_at: new Date(),
@@ -236,6 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               location: null,
               is_artist: false,
               is_verified: false,
+              genres: [],
               onboarding_completed: false,
               email: user.email || '',
               created_at: new Date(),
@@ -261,6 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 location: data?.location || null,
                 is_artist: data?.is_artist || false,
                 is_verified: data?.is_verified || false,
+                genres: Array.isArray(data?.genres) ? data.genres.map(String) : [],
                 is_admin: Boolean(data?.is_admin || data?.role === 'admin' || (Array.isArray(data?.roles) && data.roles.includes('admin'))),
                 onboarding_completed: data?.onboarding_completed || false,
                 email: data?.email || user.email || '',

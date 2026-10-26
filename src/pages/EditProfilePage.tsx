@@ -10,6 +10,7 @@ import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
+import { MUSIC_GENRES } from '@/lib/genres';
 
 interface SocialLinksData {
   youtube: string;
@@ -37,6 +38,7 @@ export default function EditProfilePage() {
     avatarPreview: '',
     coverFile: null as File | null,
     coverPreview: '',
+    genres: [] as string[],
   });
   const [socialLinks, setSocialLinks] = useState<SocialLinksData>({
     youtube: '',
@@ -59,6 +61,7 @@ export default function EditProfilePage() {
       avatarPreview: profile.avatar_url || '',
       coverFile: null,
       coverPreview: profile.cover_url || '',
+      genres: profile.genres || [],
     });
 
     // Fetch social links
@@ -195,6 +198,7 @@ export default function EditProfilePage() {
         location: formData.location,
         avatar_url: avatarUrl,
         cover_url: coverUrl,
+        genres: formData.genres,
         updated_at: new Date(),
       });
 
@@ -210,9 +214,9 @@ export default function EditProfilePage() {
       await refreshProfile();
       toast.success('Profile updated successfully!');
       navigate('/profile');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Update error:', error);
-      toast.error(error.message || 'Failed to update profile');
+      toast.error(error instanceof Error ? error.message : 'Failed to update profile');
     } finally {
       setLoading(false);
     }
@@ -410,6 +414,15 @@ export default function EditProfilePage() {
               <Input id="location" placeholder="City, Country" className="pl-10 h-12 bg-muted/50" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
             </div>
           </div>
+          {profile.is_artist && <div className="space-y-2">
+            <Label>Genres you create</Label>
+            <p className="text-xs text-muted-foreground">These genres appear beside your artist profile in the feed and discovery.</p>
+            <div className="flex flex-wrap gap-2">{MUSIC_GENRES.map(genre => {
+              const selected = formData.genres.includes(genre);
+              return <button key={genre} type="button" aria-pressed={selected} onClick={() => setFormData(current => ({ ...current, genres: selected ? current.genres.filter(item => item !== genre) : [...current.genres, genre].slice(0, 5) }))} className={`rounded-full border px-3 py-1.5 text-sm transition ${selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-muted/40 hover:border-primary/50'}`}>{genre}</button>;
+            })}</div>
+            <p className="text-xs text-muted-foreground">Choose up to five.</p>
+          </div>}
         </div>
 
         {/* Social Links Section */}
