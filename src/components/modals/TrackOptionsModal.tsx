@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
+import { usePlayer } from '@/context/PlayerContext';
 
 interface TrackOptionsModalProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ interface TrackOptionsModalProps {
 export function TrackOptionsModal({ isOpen, onClose, track }: TrackOptionsModalProps) {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
+  const { likeTrack } = usePlayer();
 
   if (!track) return null;
 
@@ -46,7 +48,9 @@ export function TrackOptionsModal({ isOpen, onClose, track }: TrackOptionsModalP
   };
 
   const handleLike = () => {
-    toast.success(`Liked "${track.title}"!`);
+    if (!user) { toast.info('Sign in to like music.'); navigate('/auth'); return; }
+    likeTrack(track, true);
+    toast.success(`Added "${track.title}" to Liked Music`);
     onClose();
   };
 

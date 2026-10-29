@@ -1,11 +1,14 @@
-import { collection, doc, getDocs, increment, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import type { Artist, Track } from '@/types';
 import type { ListeningHistoryEntry } from '@/services/recommendationEngine';
-import { DEFAULT_MEDIA_IMAGE, hydrateTrackDurations } from '@/lib/media';
+import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
 
 const HISTORY_VERSION = 1;
 const HISTORY_EVENT = 'musicinsta:listening-history';
+const CATALOG_CACHE_MS = 5 * 60 * 1000;
+const catalogCache = new Map<string, { tracks: Track[]; loadedAt: number }>();
+const catalogRequests = new Map<string, Promise<Track[]>>();
 
 function historyKey(userId: string) {
   return `musicinsta_listening_history_v${HISTORY_VERSION}_${userId}`;
@@ -139,11 +142,25 @@ async function loadBackendCatalog(userId?: string): Promise<Track[]> {
 }
 
 export async function loadMusicCatalog(userId?: string): Promise<Track[]> {
-  const [backend, firestore] = await Promise.allSettled([loadBackendCatalog(userId), loadFirestoreCatalog(userId)]);
-  return hydrateTrackDurations(mergeTracks([
-    firestore.status === 'fulfilled' ? firestore.value : [],
-    backend.status === 'fulfilled' ? backend.value : [],
-  ]));
+  const cacheKey = userId || 'guest';
+  const cached = catalogCache.get(cacheKey);
+  if (cached && Date.now() - cached.loadedAt < CATALOG_CACHE_MS) return cached.tracks;
+  const pending = catalogRequests.get(cacheKey);
+  if (pending) return pending;
+
+  const request = (async () => {
+    // Firestore is the canonical catalogue and now has persistent IndexedDB
+    // caching. Only call the backend catalogue as a fallback, avoiding the old
+    // behaviour that downloaded the complete catalogue twice on every visit.
+    const firestore = await loadFirestoreCatalog(userId).catch(() => []);
+    const tracks = firestore.length ? firestore : await loadBackendCatalog(userId).catch(() => []);
+    const merged = mergeTracks([tracks]);
+    catalogCache.set(cacheKey, { tracks: merged, loadedAt: Date.now() });
+    return merged;
+  })().finally(() => catalogRequests.delete(cacheKey));
+
+  catalogRequests.set(cacheKey, request);
+  return request;
 }
 
 export function getLocalListeningHistory(userId: string): ListeningHistoryEntry[] {
@@ -195,6 +212,49 @@ export async function loadListeningHistory(userId: string): Promise<ListeningHis
 
 export type ListeningEvent = 'play' | 'complete' | 'skip' | 'like' | 'unlike';
 
+export async function syncLikedTrack(userId: string, creatorId: string, track: Track, liked: boolean) {
+  const likeId = `${userId}_${track.id}`.replaceAll('/', '_').slice(0, 1400);
+  const likeRef = doc(db, 'track_likes', likeId);
+  const wasLiked = (await getDoc(likeRef)).exists();
+  if (liked) await setDoc(likeRef, { user_id: userId, track_id: track.id, created_at: serverTimestamp() }, { merge: true });
+  else await deleteDoc(likeRef).catch(() => undefined);
+
+  const playlists = await getDocs(query(collection(db, 'playlists'), where('creator_id', '==', creatorId)));
+  const likedPlaylist = playlists.docs.find(item => item.data().system_kind === 'liked_music' || String(item.data().name || '').toLowerCase() === 'liked music');
+  if (likedPlaylist) {
+    await updateDoc(likedPlaylist.ref, {
+      tracks: liked ? arrayUnion(track.id) : arrayRemove(track.id),
+      updated_at: serverTimestamp(),
+    });
+  } else if (liked) {
+    await addDoc(collection(db, 'playlists'), {
+      creator_id: creatorId,
+      auth_user_id: userId,
+      name: 'Liked Music',
+      description: 'Songs you like on MusicInsta',
+      system_kind: 'liked_music',
+      tracks: [track.id],
+      is_public: false,
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    });
+  }
+
+  if (wasLiked !== liked) {
+    const isSong = track.id.startsWith('song-');
+    const trackRef = doc(db, isSong ? 'songs' : 'tracks', isSong ? track.id.slice(5) : track.id);
+    await updateDoc(trackRef, { likes: increment(liked ? 1 : -1) }).catch(() => undefined);
+    await addDoc(collection(db, 'analytics_events'), {
+      artist_id: track.artist.id,
+      track_id: track.id,
+      event: liked ? 'like' : 'unlike',
+      genre: track.genre || null,
+      actor_id: userId,
+      created_at: serverTimestamp(),
+    }).catch(() => undefined);
+  }
+}
+
 export function recordListeningInteraction(userId: string, track: Track, event: ListeningEvent, lastPosition = 0): ListeningHistoryEntry[] {
   const current = getLocalListeningHistory(userId);
   const previous = current.find(item => item.trackId === track.id) ?? {
@@ -220,6 +280,12 @@ export function recordListeningInteraction(userId: string, track: Track, event: 
   if (event === 'complete') increments.completed_count = increment(1);
   if (event === 'skip') increments.skip_count = increment(1);
   void setDoc(doc(db, 'listening_history', safeId), increments, { merge: true }).catch(() => undefined);
+  if (event === 'play' || event === 'complete' || event === 'skip') {
+    void addDoc(collection(db, 'analytics_events'), {
+      artist_id: track.artist.id, track_id: track.id, event, genre: track.genre || null,
+      actor_id: userId, created_at: serverTimestamp(),
+    }).catch(() => undefined);
+  }
   return next;
 }
 

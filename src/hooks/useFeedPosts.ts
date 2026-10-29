@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, orderBy, limit, getDocs, getDoc, doc, onSnapshot, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track, Album } from '@/types';
-import { DEFAULT_MEDIA_IMAGE, hydrateTrackDurations } from '@/lib/media';
+import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
 
 interface DatabasePost {
   id: string;
@@ -40,18 +40,30 @@ interface DatabasePost {
 const profileCache = new Map<string, DocumentData | null>();
 const trackCache = new Map<string, DocumentData | null>();
 const albumCache = new Map<string, DocumentData | null>();
+const documentRequests = new Map<string, Promise<DocumentData | null>>();
+let feedPostsCache: Post[] = [];
+let feedCacheReady = false;
+let sharedFeedUnsubscribe: (() => void) | null = null;
+
+const FEED_STATE_EVENT = 'musicinsta:feed-state';
 
 async function cachedDocument(collectionName: string, id: string, cache: Map<string, DocumentData | null>) {
   if (cache.has(id)) return cache.get(id) ?? null;
-  const snapshot = await getDoc(doc(db, collectionName, id));
-  const value = snapshot.exists() ? snapshot.data() : null;
-  cache.set(id, value);
-  return value;
+  const requestKey = `${collectionName}/${id}`;
+  const existing = documentRequests.get(requestKey);
+  if (existing) return existing;
+  const request = getDoc(doc(db, collectionName, id)).then(snapshot => {
+    const value = snapshot.exists() ? snapshot.data() : null;
+    cache.set(id, value);
+    return value;
+  }).finally(() => documentRequests.delete(requestKey));
+  documentRequests.set(requestKey, request);
+  return request;
 }
 
 export function useFeedPosts() {
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [posts, setPosts] = useState<Post[]>(() => feedPostsCache);
+  const [loading, setLoading] = useState(() => !feedCacheReady);
   const [error, setError] = useState<string | null>(null);
 
   const fetchPosts = async (showLoading = true, suppliedDocs?: QueryDocumentSnapshot<DocumentData>[]) => {
@@ -66,7 +78,30 @@ export function useFeedPosts() {
 
       const postDocs = suppliedDocs ?? (await getDocs(postsQuery)).docs;
 
-      if (!postDocs.length) { setPosts([]); return; }
+      if (!postDocs.length) {
+        feedPostsCache = [];
+        feedCacheReady = true;
+        setPosts([]);
+        window.dispatchEvent(new CustomEvent(FEED_STATE_EVENT, { detail: [] }));
+        return;
+      }
+
+      // Resolve independent references in parallel. This avoids the previous
+      // profile -> track -> album request waterfall for every post.
+      const rawPosts = postDocs.map(item => item.data());
+      await Promise.all([
+        ...new Set(rawPosts.map(post => String(post.profile_id || '')).filter(Boolean))
+      ].map(id => cachedDocument('profiles', id, profileCache)));
+      await Promise.all([
+        ...new Set(rawPosts.map(post => String(post.track_id || '')).filter(Boolean))
+      ].map(id => cachedDocument('tracks', id, trackCache)));
+      const albumIds = [...new Set(rawPosts.map(post => String(post.album_id || '')).filter(Boolean))];
+      await Promise.all(albumIds.map(id => cachedDocument('albums', id, albumCache)));
+      const albumTrackIds = albumIds.flatMap(id => {
+        const data = albumCache.get(id);
+        return Array.isArray(data?.track_ids) ? data.track_ids.map(String) : [];
+      });
+      await Promise.all([...new Set(albumTrackIds)].map(id => cachedDocument('tracks', id, trackCache)));
 
       // Transform database posts to Post type
       const transformedPosts: Post[] = [];
@@ -106,7 +141,7 @@ export function useFeedPosts() {
                   coverArt: value.cover_url || albumData.cover_url || DEFAULT_MEDIA_IMAGE,
                   duration: Number(value.duration) || 0, plays: Number(value.plays) || 0, likes: Number(value.likes) || 0,
                   audioUrl: value.audio_url || undefined, lyrics: value.lyrics || undefined, genre: value.genre || albumData.genre || undefined,
-                  albumId: albumDoc.id, trackNumber: Number(value.track_number) || undefined,
+                  albumId: post.album_id, trackNumber: Number(value.track_number) || undefined,
                 };
               }))).filter(Boolean) as Array<Omit<Track, 'artist'> & { artist?: Artist }>;
               album = { id: post.album_id, title: albumData.title || 'Untitled release', type: albumData.release_type === 'ep' ? 'ep' : 'album', artist: undefined as unknown as Artist, coverArt: albumData.cover_url || DEFAULT_MEDIA_IMAGE, genre: albumData.genre || undefined, description: albumData.description || undefined, tracks: albumTracks as Track[], releaseDate: albumData.created_at?.toDate?.() };
@@ -189,24 +224,39 @@ export function useFeedPosts() {
       }
 
       transformedPosts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      const hydratedTracks = await hydrateTrackDurations(transformedPosts.flatMap(item => item.track ? [item.track] : []));
-      const durationById = new Map(hydratedTracks.map(track => [track.id, track.duration]));
-      setPosts(transformedPosts.map(post => post.track ? { ...post, track: { ...post.track, duration: durationById.get(post.track.id) || post.track.duration } } : post));
+      feedPostsCache = transformedPosts;
+      feedCacheReady = true;
+      setPosts(transformedPosts);
+      window.dispatchEvent(new CustomEvent(FEED_STATE_EVENT, { detail: transformedPosts }));
     } catch (err) {
       console.error('Error:', err);
       setError('Failed to load posts');
-      setPosts([]);
+      if (!feedCacheReady) setPosts([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    const postsQuery = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(50));
-    const unsubscribe = onSnapshot(postsQuery, snapshot => void fetchPosts(false, snapshot.docs), () => setError('Failed to listen for new posts'));
+    const syncCachedPosts = (event: Event) => {
+      setPosts((event as CustomEvent<Post[]>).detail);
+      setLoading(false);
+    };
+    window.addEventListener(FEED_STATE_EVENT, syncCachedPosts);
+    if (feedCacheReady) { setPosts(feedPostsCache); setLoading(false); }
+    if (!sharedFeedUnsubscribe) {
+      const postsQuery = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(50));
+      sharedFeedUnsubscribe = onSnapshot(postsQuery, snapshot => void fetchPosts(false, snapshot.docs), () => {
+        setError('Failed to listen for new posts');
+        setLoading(false);
+      });
+    }
     const refresh = () => void fetchPosts(false);
     window.addEventListener('musicinsta:feed-refresh', refresh);
-    return () => { unsubscribe(); window.removeEventListener('musicinsta:feed-refresh', refresh); };
+    return () => {
+      window.removeEventListener(FEED_STATE_EVENT, syncCachedPosts);
+      window.removeEventListener('musicinsta:feed-refresh', refresh);
+    };
   }, []);
 
   return { posts, loading, error, refetch: fetchPosts };

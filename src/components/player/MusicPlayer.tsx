@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { Slider } from '@/components/ui/slider';
 import { PlayerSettingsModal } from '@/components/modals/PlayerSettingsModal';
 import { toast } from 'sonner';
+import { useAuth } from '@/context/FirebaseAuthContext';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -151,6 +152,7 @@ export function MiniPlayer() {
 }
 
 export function FullPlayer() {
+  const { user } = useAuth();
   const {
     currentTrack,
     isPlaying,
@@ -209,6 +211,7 @@ export function FullPlayer() {
 
   const toggleLike = () => {
     if (!currentTrack) return;
+    if (!user) { toast.info('Sign in to like music and save it to your Liked Music playlist.'); return; }
     const next = !isLiked;
     setIsLiked(next);
     likeTrack(currentTrack, next);

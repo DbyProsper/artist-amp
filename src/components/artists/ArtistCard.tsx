@@ -32,6 +32,8 @@ export function ArtistCard({ artist, variant = 'default', onClick, isFollowing =
           <img
             src={artist.avatar}
             alt={artist.name}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
           />
         </div>
@@ -62,6 +64,8 @@ export function ArtistCard({ artist, variant = 'default', onClick, isFollowing =
         <img
           src={artist.coverImage}
           alt={artist.name}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
@@ -72,6 +76,8 @@ export function ArtistCard({ artist, variant = 'default', onClick, isFollowing =
               <img
                 src={artist.avatar}
                 alt={artist.name}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover"
               />
             </div>
@@ -113,6 +119,8 @@ export function ArtistCard({ artist, variant = 'default', onClick, isFollowing =
           <img
             src={artist.avatar}
             alt={artist.name}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover"
           />
         </div>

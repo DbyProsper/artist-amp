@@ -1,321 +1,141 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import {
-  ArrowLeft, Play, Heart, Users, TrendingUp,
-  Calendar, MapPin, Clock, Music2, BarChart3
-} from 'lucide-react';
+import { ArrowLeft, BarChart3, Heart, MessageCircle, Music2, Play, Share2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { usePlayer } from '@/context/PlayerContext';
+
+interface TrackStats {
+  id: string;
+  title: string;
+  cover_url?: string;
+  plays?: number;
+  likes?: number;
+}
+
+interface AnalyticsEvent {
+  event: 'play' | 'complete' | 'skip' | 'like' | 'unlike';
+  createdAt: Date;
+}
+
 interface DailyStats {
   date: string;
   plays: number;
   likes: number;
+  completions: number;
 }
+
+const tooltipStyle = {
+  backgroundColor: 'hsl(var(--card))',
+  border: '1px solid hsl(var(--border))',
+  borderRadius: '8px',
+};
 
 export default function AnalyticsDashboardPage() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
+  const { catalog } = usePlayer();
   const [tracks, setTracks] = useState<TrackStats[]>([]);
+  const [events, setEvents] = useState<AnalyticsEvent[]>([]);
+  const [followers, setFollowers] = useState(0);
+  const [postStats, setPostStats] = useState({ posts: 0, comments: 0, shares: 0 });
   const [loading, setLoading] = useState(true);
-  const [totalPlays, setTotalPlays] = useState(0);
-  const [totalLikes, setTotalLikes] = useState(0);
-  const [followerCount, setFollowerCount] = useState(0);
 
   useEffect(() => {
-    if (!user || !profile) {
-      navigate('/auth');
-      return;
-    }
-
-    if (!profile.is_artist) {
-      navigate('/profile');
-      return;
-    }
-
-    fetchAnalytics();
-  }, [user, profile, navigate]);
-
-  const fetchAnalytics = async () => {
-    if (!profile) return;
-
+    if (!user || !profile) { navigate('/auth'); return; }
+    if (!profile.is_artist) { navigate('/profile'); return; }
+    let active = true;
     setLoading(true);
-    try {
-      // Fetch tracks with stats
-      const tracksQuery = query(
-        collection(db, 'tracks'),
-        where('profile_id', '==', profile.id),
-        orderBy('plays', 'desc')
-      );
-      const tracksSnapshot = await getDocs(tracksQuery);
-      const tracksData = tracksSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as TrackStats[];
-
-      setTracks(tracksData);
-      setTotalPlays(tracksData.reduce((acc, t) => acc + (t.plays || 0), 0));
-      setTotalLikes(tracksData.reduce((acc, t) => acc + (t.likes || 0), 0));
-
-      // Fetch follower count
-      const followersQuery = query(
-        collection(db, 'follows'),
-        where('following_id', '==', profile.id)
-      );
-      const followersSnapshot = await getDocs(followersQuery);
-      setFollowerCount(followersSnapshot.size);
-    } catch (err) {
-      console.error('Error fetching analytics:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Generate mock daily data for charts
-  const last7Days: DailyStats[] = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - i));
-    return {
-      date: date.toLocaleDateString('en-US', { weekday: 'short' }),
-      plays: Math.floor(Math.random() * 500) + 100,
-      likes: Math.floor(Math.random() * 50) + 10,
+    const load = async () => {
+      try {
+        const [trackSnapshot, followerSnapshot, postSnapshot, eventSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'tracks'), where('profile_id', '==', profile.id))),
+          getDocs(query(collection(db, 'follows'), where('following_id', '==', profile.id))),
+          getDocs(query(collection(db, 'posts'), where('profile_id', '==', profile.id))),
+          getDocs(query(collection(db, 'analytics_events'), where('artist_id', '==', profile.id))).catch(() => null),
+        ]);
+        if (!active) return;
+        const nextTracks = trackSnapshot.docs.map(item => ({ id: item.id, ...item.data() } as TrackStats))
+          .sort((left, right) => Number(right.plays || 0) - Number(left.plays || 0));
+        const nextEvents = eventSnapshot?.docs.map(item => {
+          const data = item.data();
+          return { event: data.event, createdAt: data.created_at?.toDate?.() || new Date(0) } as AnalyticsEvent;
+        }) || [];
+        const posts = postSnapshot.docs.map(item => item.data()).filter(post => post.is_story !== true);
+        setTracks(nextTracks);
+        setEvents(nextEvents);
+        setFollowers(followerSnapshot.size);
+        setPostStats({
+          posts: posts.length,
+          comments: posts.reduce((sum, post) => sum + (Number(post.comments) || 0), 0),
+          shares: posts.reduce((sum, post) => sum + (Number(post.shares) || 0), 0),
+        });
+      } finally {
+        if (active) setLoading(false);
+      }
     };
-  });
+    void load();
+    return () => { active = false; };
+  }, [navigate, profile, user]);
 
-  // Mock demographics data
-  const demographics = [
-    { name: 'South Africa', value: 45, color: 'hsl(var(--primary))' },
-    { name: 'USA', value: 20, color: 'hsl(var(--secondary))' },
-    { name: 'UK', value: 15, color: 'hsl(var(--accent))' },
-    { name: 'Nigeria', value: 12, color: 'hsl(var(--muted-foreground))' },
-    { name: 'Other', value: 8, color: 'hsl(var(--border))' },
-  ];
-
-  const ageGroups = [
-    { age: '13-17', value: 10 },
-    { age: '18-24', value: 35 },
-    { age: '25-34', value: 30 },
-    { age: '35-44', value: 15 },
-    { age: '45+', value: 10 },
+  const analyticsTracks = useMemo(() => {
+    const merged = new Map(tracks.map(track => [track.id, track]));
+    catalog.filter(track => track.artist.id === profile?.id || track.artist.id === user?.uid).forEach(track => {
+      const stored = merged.get(track.id);
+      merged.set(track.id, {
+        id: track.id, title: track.title, cover_url: track.coverArt,
+        plays: Math.max(Number(stored?.plays || 0), Number(track.plays || 0)),
+        likes: Math.max(Number(stored?.likes || 0), Number(track.likes || 0)),
+      });
+    });
+    return [...merged.values()].sort((left, right) => Number(right.plays || 0) - Number(left.plays || 0));
+  }, [catalog, profile?.id, tracks, user?.uid]);
+  const totalPlays = analyticsTracks.reduce((sum, track) => sum + (Number(track.plays) || 0), 0);
+  const totalLikes = analyticsTracks.reduce((sum, track) => sum + (Number(track.likes) || 0), 0);
+  const weekly = useMemo<DailyStats[]>(() => Array.from({ length: 7 }, (_, index) => {
+    const day = new Date();
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() - (6 - index));
+    const nextDay = new Date(day); nextDay.setDate(day.getDate() + 1);
+    const daily = events.filter(event => event.createdAt >= day && event.createdAt < nextDay);
+    return {
+      date: day.toLocaleDateString('en-ZA', { weekday: 'short' }),
+      plays: daily.filter(event => event.event === 'play').length,
+      likes: daily.filter(event => event.event === 'like').length - daily.filter(event => event.event === 'unlike').length,
+      completions: daily.filter(event => event.event === 'complete').length,
+    };
+  }), [events]);
+  const engagement = [
+    { name: 'Posts', value: postStats.posts },
+    { name: 'Comments', value: postStats.comments },
+    { name: 'Shares', value: postStats.shares },
+    { name: 'Completed plays', value: events.filter(event => event.event === 'complete').length },
   ];
 
   if (!profile?.is_artist) return null;
 
-  return (
-    <div className="min-h-screen pb-36">
-      {/* Header */}
-      <header className="sticky top-0 z-40 glass border-b border-border">
-        <div className="flex items-center gap-3 px-4 h-14">
-          <button
-            onClick={() => navigate(-1)}
-            className="p-2 rounded-full hover:bg-muted transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <BarChart3 className="w-5 h-5 text-primary" />
-          <h1 className="font-display font-bold text-lg">Analytics</h1>
-        </div>
-      </header>
-
-      <div className="p-4 space-y-6">
-        {/* Overview Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="p-4 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5"
-          >
-            <Play className="w-6 h-6 text-primary mb-2" />
-            <p className="text-2xl font-bold">{totalPlays.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">Total Plays</p>
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="p-4 rounded-xl bg-gradient-to-br from-accent/20 to-accent/5"
-          >
-            <Heart className="w-6 h-6 text-accent mb-2" />
-            <p className="text-2xl font-bold">{totalLikes.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">Total Likes</p>
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="p-4 rounded-xl bg-gradient-to-br from-secondary/20 to-secondary/5"
-          >
-            <Users className="w-6 h-6 text-secondary mb-2" />
-            <p className="text-2xl font-bold">{followerCount.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">Followers</p>
-          </motion.div>
-        </div>
-
-        {/* Performance Chart */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="p-4 rounded-xl bg-muted/30"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display font-bold">Weekly Performance</h2>
-            <div className="flex items-center gap-4 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-primary" />
-                Plays
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-accent" />
-                Likes
-              </span>
-            </div>
-          </div>
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={last7Days}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'hsl(var(--card))',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Line type="monotone" dataKey="plays" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="likes" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
-
-        {/* Demographics */}
-        <Tabs defaultValue="location" className="space-y-4">
-          <TabsList className="w-full bg-muted/50">
-            <TabsTrigger value="location" className="flex-1 gap-1">
-              <MapPin className="w-4 h-4" />
-              Location
-            </TabsTrigger>
-            <TabsTrigger value="age" className="flex-1 gap-1">
-              <Users className="w-4 h-4" />
-              Age
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="location">
-            <div className="p-4 rounded-xl bg-muted/30">
-              <h3 className="font-display font-bold mb-4">Listener Locations</h3>
-              <div className="flex items-center gap-6">
-                <div className="w-32 h-32">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={demographics}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={25}
-                        outerRadius={45}
-                        dataKey="value"
-                      >
-                        {demographics.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex-1 space-y-2">
-                  {demographics.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                        {item.name}
-                      </span>
-                      <span className="text-muted-foreground">{item.value}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="age">
-            <div className="p-4 rounded-xl bg-muted/30">
-              <h3 className="font-display font-bold mb-4">Age Distribution</h3>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={ageGroups}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="age" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                      }}
-                    />
-                    <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </TabsContent>
-        </Tabs>
-
-        {/* Top Tracks */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-        >
-          <h2 className="font-display font-bold mb-4">Top Tracks</h2>
-          <div className="space-y-2">
-            {tracks.slice(0, 5).map((track, index) => (
-              <div key={track.id} className="flex items-center gap-3 p-3 rounded-xl bg-muted/30">
-                <span className="w-6 text-center text-muted-foreground font-bold">{index + 1}</span>
-                <div className="w-12 h-12 rounded-lg overflow-hidden bg-muted">
-                  {track.cover_url ? (
-                    <img src={track.cover_url} alt={track.title} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Music2 className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{track.title}</p>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Play className="w-3 h-3" />
-                      {(track.plays || 0).toLocaleString()}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Heart className="w-3 h-3" />
-                      {(track.likes || 0).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {tracks.length === 0 && (
-              <div className="py-12 text-center text-muted-foreground">
-                <Music2 className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>No tracks uploaded yet</p>
-                <Button variant="outline" className="mt-4" onClick={() => navigate('/upload')}>
-                  Upload your first track
-                </Button>
-              </div>
-            )}
-          </div>
-        </motion.div>
+  return <div className="min-h-screen pb-36">
+    <header className="sticky top-0 z-40 border-b border-border glass"><div className="flex h-14 items-center gap-3 px-4"><button onClick={() => navigate(-1)} className="rounded-full p-2 hover:bg-muted"><ArrowLeft className="h-5 w-5" /></button><BarChart3 className="h-5 w-5 text-primary" /><h1 className="font-display text-lg font-bold">Analytics</h1></div></header>
+    <div className="space-y-6 p-4">
+      {loading && <p className="text-sm text-muted-foreground">Loading verified platform analytics…</p>}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: 'Total plays', value: totalPlays, Icon: Play },
+          { label: 'Track likes', value: totalLikes, Icon: Heart },
+          { label: 'Followers', value: followers, Icon: Users },
+          { label: 'Comments', value: postStats.comments, Icon: MessageCircle },
+        ].map(({ label, value, Icon }, index) => <motion.div key={label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * .06 }} className="rounded-xl bg-gradient-to-br from-primary/15 to-muted/20 p-4"><Icon className="mb-2 h-5 w-5 text-primary" /><p className="text-2xl font-bold">{value.toLocaleString()}</p><p className="text-xs text-muted-foreground">{label}</p></motion.div>)}
       </div>
+
+      <section className="rounded-xl bg-muted/30 p-4"><div className="mb-4"><h2 className="font-display font-bold">Recorded interactions — last 7 days</h2><p className="text-xs text-muted-foreground">Live plays, likes and completed listens recorded by MusicInsta. Historical totals remain in the overview above.</p></div><div className="h-56"><ResponsiveContainer width="100%" height="100%"><LineChart data={weekly}><CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" /><XAxis dataKey="date" fontSize={12} /><YAxis allowDecimals={false} fontSize={12} /><Tooltip contentStyle={tooltipStyle} /><Line type="monotone" dataKey="plays" stroke="hsl(var(--primary))" strokeWidth={2} /><Line type="monotone" dataKey="likes" stroke="hsl(var(--accent))" strokeWidth={2} /><Line type="monotone" dataKey="completions" stroke="hsl(var(--secondary))" strokeWidth={2} /></LineChart></ResponsiveContainer></div></section>
+
+      <section className="rounded-xl bg-muted/30 p-4"><div className="mb-4 flex items-center justify-between"><div><h2 className="font-display font-bold">Audience engagement</h2><p className="text-xs text-muted-foreground">Calculated from your real posts and listening events.</p></div><Share2 className="h-5 w-5 text-primary" /></div><div className="h-48"><ResponsiveContainer width="100%" height="100%"><BarChart data={engagement}><CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" /><XAxis dataKey="name" fontSize={11} /><YAxis allowDecimals={false} fontSize={12} /><Tooltip contentStyle={tooltipStyle} /><Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></section>
+
+      <section><h2 className="mb-4 font-display font-bold">Top tracks</h2><div className="space-y-2">{analyticsTracks.slice(0, 10).map((track, index) => <div key={track.id} className="flex items-center gap-3 rounded-xl bg-muted/30 p-3"><span className="w-6 text-center font-bold text-muted-foreground">{index + 1}</span><div className="h-12 w-12 overflow-hidden rounded-lg bg-muted">{track.cover_url ? <img src={track.cover_url} alt={track.title} loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center"><Music2 className="h-5 w-5 text-muted-foreground" /></div>}</div><div className="min-w-0 flex-1"><p className="truncate font-medium">{track.title || 'Untitled track'}</p><p className="text-xs text-muted-foreground">{Number(track.plays || 0).toLocaleString()} plays · {Number(track.likes || 0).toLocaleString()} likes</p></div></div>)}{!loading && analyticsTracks.length === 0 && <div className="py-12 text-center text-muted-foreground"><Music2 className="mx-auto mb-3 h-12 w-12 opacity-50" /><p>No tracks uploaded yet</p><Button variant="outline" className="mt-4" onClick={() => navigate('/upload')}>Upload your first track</Button></div>}</div></section>
     </div>
-  );
+  </div>;
 }

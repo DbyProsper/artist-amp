@@ -18,6 +18,8 @@ import { useRealTimeNotifications } from '@/hooks/useRealTimeNotifications';
 import { usePlayer } from '@/context/PlayerContext';
 import { rankFeedPosts } from '@/services/recommendationEngine';
 
+const FEED_SCROLL_KEY = 'musicinsta:feed-scroll-position';
+
 export default function HomePage() {
   const reduceMotion = useReducedMotion();
   const [selectedStoryIndex, setSelectedStoryIndex] = useState<number | null>(null);
@@ -43,6 +45,15 @@ export default function HomePage() {
     return () => window.removeEventListener(UPLOAD_PROGRESS_EVENT, update);
   }, []);
 
+  useEffect(() => {
+    const savedPosition = Number(sessionStorage.getItem(FEED_SCROLL_KEY) || 0);
+    const frame = window.requestAnimationFrame(() => window.scrollTo({ top: savedPosition, behavior: 'auto' }));
+    return () => {
+      window.cancelAnimationFrame(frame);
+      sessionStorage.setItem(FEED_SCROLL_KEY, String(window.scrollY));
+    };
+  }, []);
+
   const handleStoryClick = (story: Story) => {
     const index = groupedStories.findIndex(s => s.id === story.id);
     setSelectedStoryIndex(index);
@@ -50,7 +61,6 @@ export default function HomePage() {
 
   const handleLogoClick = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    window.location.reload();
   };
 
   const handleAddStory = () => {
@@ -188,6 +198,8 @@ export default function HomePage() {
                 <img
                   src={artist.avatar}
                   alt={artist.name}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover"
                 />
               </div>

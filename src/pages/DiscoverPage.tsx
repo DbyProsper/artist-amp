@@ -58,18 +58,25 @@ export default function DiscoverPage() {
         const data = item.data();
         const target = String(data.following_id || '');
         counts[target] = (counts[target] || 0) + 1;
-        if (profile && data.follower_id === profile.id) own.add(target);
+        const belongsToCurrentUser = Boolean(user?.uid && (
+          data.auth_user_id === user.uid || data.follower_id === user.uid || data.follower_id === profile?.id
+        ));
+        if (belongsToCurrentUser) own.add(target);
       });
       setFollowerCounts(counts); setFollowingIds(own);
     }).catch(() => undefined);
-  }, [profile]);
+  }, [profile?.id, user?.uid]);
 
   const toggleFollow = async (artistId: string) => {
     if (!user || !profile) { toast.info('Sign in to follow artists.'); navigate('/auth'); return; }
     try {
-      const existing = await getDocs(query(collection(db, 'follows'), where('follower_id', '==', profile.id), where('following_id', '==', artistId)));
-      if (!existing.empty) {
-        await Promise.all(existing.docs.map(item => deleteDoc(item.ref)));
+      const candidates = await getDocs(query(collection(db, 'follows'), where('following_id', '==', artistId)));
+      const existing = candidates.docs.filter(item => {
+        const data = item.data();
+        return data.auth_user_id === user.uid || data.follower_id === user.uid || data.follower_id === profile.id;
+      });
+      if (existing.length) {
+        await Promise.all(existing.map(item => deleteDoc(item.ref)));
         setFollowingIds(current => { const next = new Set(current); next.delete(artistId); return next; });
         setFollowerCounts(current => ({ ...current, [artistId]: Math.max(0, (current[artistId] || 1) - 1) }));
       } else {
@@ -92,11 +99,16 @@ export default function DiscoverPage() {
     const needle = searchQuery.toLowerCase().replace(/^#/, '');
     const searchable = [track.title, track.artist.name, track.genre, track.mood, ...(track.tags || [])].filter(Boolean).join(' ').toLowerCase();
     const matchesSearch = searchable.includes(needle);
-    const matchesGenre = !selectedGenre || genreMatches(track.genre, selectedGenre) || track.artist.genres.some(genre => genreMatches(genre, selectedGenre));
+    // Track filters are deliberately strict. An artist's profile genre must not
+    // cause all of their songs to appear under that genre.
+    const matchesGenre = !selectedGenre || genreMatches(track.genre, selectedGenre);
     return matchesSearch && matchesGenre;
   });
-  const personalizedGenreTracks = personalizedTracks.filter(track => filteredTracks.some(item => item.id === track.id));
-  const fallbackTracks = selectedGenre ? personalizedTracks.filter(track => !genreMatches(track.genre, selectedGenre) && !track.artist.genres.some(genre => genreMatches(genre, selectedGenre))).slice(0, 6) : [];
+  const filteredTrackIds = new Set(filteredTracks.map(track => track.id));
+  const rankedFilteredTracks = personalizedTracks.filter(track => filteredTrackIds.has(track.id));
+  const rankedFilteredIds = new Set(rankedFilteredTracks.map(track => track.id));
+  const personalizedGenreTracks = [...rankedFilteredTracks, ...filteredTracks.filter(track => !rankedFilteredIds.has(track.id))];
+  const fallbackTracks = selectedGenre ? personalizedTracks.filter(track => !genreMatches(track.genre, selectedGenre)).slice(0, 6) : [];
   const visibleArtists = selectedGenre ? filteredArtists : catalogArtists;
   const followedArtists = visibleArtists.filter(artist => followingIds.has(artist.id));
   const suggestedArtists = visibleArtists.filter(artist => artist.id !== profile?.id && !followingIds.has(artist.id));

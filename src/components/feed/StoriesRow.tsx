@@ -26,6 +26,8 @@ export function StoryCircle({ story, onClick }: StoryCircleProps) {
           <img
             src={story.artist.avatar}
             alt={story.artist.name}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full rounded-full object-cover"
           />
         </div>

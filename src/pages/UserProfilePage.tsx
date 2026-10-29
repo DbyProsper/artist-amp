@@ -96,13 +96,12 @@ export default function UserProfilePage() {
 
         // Check if current user is following
         if (currentProfile) {
-          const followQuery = query(
-            collection(db, 'follows'),
-            where('follower_id', '==', currentProfile.id),
-            where('following_id', '==', userId)
-          );
+          const followQuery = query(collection(db, 'follows'), where('following_id', '==', userId));
           const followSnapshot = await getDocs(followQuery);
-          setIsFollowing(!followSnapshot.empty);
+          setIsFollowing(followSnapshot.docs.some(item => {
+            const data = item.data();
+            return data.auth_user_id === user?.uid || data.follower_id === user?.uid || data.follower_id === currentProfile.id;
+          }));
         }
 
         // Fetch social links
@@ -121,7 +120,7 @@ export default function UserProfilePage() {
     };
 
     fetchProfile();
-  }, [userId, currentProfile, navigate]);
+  }, [userId, currentProfile, navigate, user?.uid]);
 
   const handleFollow = async () => {
     if (!user || !currentProfile) {
@@ -135,15 +134,12 @@ export default function UserProfilePage() {
     try {
       if (isFollowing) {
         // Unfollow - find and delete the follow document
-        const followQuery = query(
-          collection(db, 'follows'),
-          where('follower_id', '==', currentProfile.id),
-          where('following_id', '==', profile.id)
-        );
+        const followQuery = query(collection(db, 'follows'), where('following_id', '==', profile.id));
         const followSnapshot = await getDocs(followQuery);
-        followSnapshot.forEach(async (doc) => {
-          await deleteDoc(doc.ref);
-        });
+        await Promise.all(followSnapshot.docs.filter(item => {
+          const data = item.data();
+          return data.auth_user_id === user.uid || data.follower_id === user.uid || data.follower_id === currentProfile.id;
+        }).map(item => deleteDoc(item.ref)));
 
         setFollowerCount(prev => prev - 1);
         setIsFollowing(false);
@@ -152,6 +148,7 @@ export default function UserProfilePage() {
         // Follow - add new follow document
         await addDoc(collection(db, 'follows'), {
           follower_id: currentProfile.id,
+          auth_user_id: user.uid,
           following_id: profile.id,
           created_at: new Date(),
         });

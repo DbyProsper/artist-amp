@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track } from '@/types';
-import { DEFAULT_MEDIA_IMAGE, hydrateTrackDurations } from '@/lib/media';
+import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
 
 interface DatabasePost {
   id: string;
@@ -92,7 +92,7 @@ export function useProfilePosts(profileId: string | undefined) {
         }));
 
         // Transform tracks
-        const transformedTracks: Track[] = await hydrateTrackDurations(tracksData.map((track) => ({
+        const transformedTracks: Track[] = tracksData.map((track) => ({
             id: track.id,
             title: track.title,
             artist: artist,
@@ -101,7 +101,7 @@ export function useProfilePosts(profileId: string | undefined) {
             plays: track.plays || 0,
             likes: track.likes || 0,
             audioUrl: track.audio_url || undefined,
-          })));
+          }));
         setTracks(transformedTracks);
 
         // Transform posts

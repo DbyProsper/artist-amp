@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
@@ -24,7 +24,11 @@ console.debug('Firebase config', {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
-export const db = getFirestore(app, 'musicinsta');
+// IndexedDB-backed persistence lets Firestore reuse documents between routes,
+// refreshes and browser sessions instead of downloading the same feed again.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+}, 'musicinsta');
 export const storage = firebaseConfig.storageBucket ? getStorage(app, firebaseConfig.storageBucket) : getStorage(app);
 
 export default app;

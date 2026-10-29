@@ -103,15 +103,16 @@ service cloud.firestore {
       allow create: if request.auth != null;
       allow update: if (request.auth != null && request.auth.uid == resource.data.user_id) ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plays']) &&
-          request.resource.data.plays == resource.data.plays + 1);
+          request.resource.data.plays == resource.data.plays + 1) ||
+        (request.auth != null && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']));
       allow delete: if request.auth != null && request.auth.uid == resource.data.user_id;
     }
 
     // Allow authenticated users to read and write their own data in other collections
     match /playlists/{playlistId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && (request.auth.uid == request.resource.data.creator_id || (isAdmin() && request.resource.data.creator_id == 'musicinsta-official'));
-      allow update, delete: if request.auth != null && (request.auth.uid == resource.data.creator_id || (isAdmin() && resource.data.creator_id == 'musicinsta-official'));
+      allow create: if request.auth != null && (request.auth.uid == request.resource.data.creator_id || request.auth.uid == request.resource.data.auth_user_id || (isAdmin() && request.resource.data.creator_id == 'musicinsta-official'));
+      allow update, delete: if request.auth != null && (request.auth.uid == resource.data.creator_id || request.auth.uid == resource.data.auth_user_id || (isAdmin() && resource.data.creator_id == 'musicinsta-official'));
     }
 
     match /tracks/{trackId} {
@@ -176,10 +177,12 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.auth != null && (
         request.resource.data.follower_id == request.auth.uid ||
+        request.resource.data.auth_user_id == request.auth.uid ||
         (isAdmin() && request.resource.data.follower_id == 'musicinsta-official')
       );
       allow delete: if request.auth != null && (
         resource.data.follower_id == request.auth.uid ||
+        resource.data.auth_user_id == request.auth.uid ||
         (isAdmin() && resource.data.follower_id == 'musicinsta-official')
       );
     }
@@ -237,6 +240,12 @@ service cloud.firestore {
       allow update: if request.auth != null
         && request.auth.uid == resource.data.user_id
         && request.auth.uid == request.resource.data.user_id;
+    }
+
+    match /analytics_events/{eventId} {
+      allow create: if request.auth != null && request.resource.data.actor_id == request.auth.uid;
+      allow read: if request.auth != null && (resource.data.artist_id == request.auth.uid || isAdmin());
+      allow update, delete: if false;
     }
 
     match /story_likes/{likeId} {

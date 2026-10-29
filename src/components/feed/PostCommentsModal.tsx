@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { EmojiPicker } from '@/components/chat/EmojiPicker';
+import { createPortal } from 'react-dom';
 
 interface CommentItem {
   id: string;
@@ -102,8 +103,8 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
   };
 
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/60 sm:items-center" onClick={onClose}>
       <section className="flex max-h-[75vh] w-full max-w-lg flex-col rounded-t-2xl border border-border bg-card sm:rounded-2xl" onClick={event => event.stopPropagation()}>
         <header className="flex items-center justify-between border-b border-border p-4">
           <h2 className="font-display font-bold">Comments</h2>
@@ -120,6 +121,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
           <Button type="submit" disabled={!user || !text.trim()}>Post</Button>
         </form>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

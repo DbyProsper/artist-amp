@@ -1,5 +1,5 @@
 import { Toaster } from "@/components/ui/toaster";
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -10,37 +10,40 @@ import { BottomNav } from "@/components/navigation/BottomNav";
 import { MiniPlayer, FullPlayer } from "@/components/player/MusicPlayer";
 import { FloatingPlayerButton } from "@/components/player/FloatingPlayerButton";
 import { useScrollToTop } from "@/hooks/useScrollToTop";
-import LandingPage from "./pages/LandingPage";
-import HomePage from "./pages/HomePage";
-import DiscoverPage from "./pages/DiscoverPage";
-import UploadPage from "./pages/UploadPage";
-import MessagesPage from "./pages/MessagesPage";
-import ProfilePage from "./pages/ProfilePage";
-import UserProfilePage from "./pages/UserProfilePage";
-import PlaylistsPage from "./pages/PlaylistsPage";
-import PlaylistDetailPage from "./pages/PlaylistDetailPage";
-import SettingsPage from "./pages/SettingsPage";
-import EditProfilePage from "./pages/EditProfilePage";
-import PreferencesPage from "./pages/PreferencesPage";
-import AuthPage from "./pages/AuthPage";
-import OnboardingPage from "./pages/OnboardingPage";
-import AdminPage from "./pages/AdminPage";
-import AnalyticsDashboardPage from "./pages/AnalyticsDashboardPage";
-import OnlineStudioPage from "./pages/OnlineStudioPage";
-import StudioPage from "./pages/StudioPage";
-import StudioDawPage from "./pages/StudioDawPage";
-import AudioEnhancementPage from "./features/audio-enhancement/AudioEnhancementPage";
-import BillingPage from "./pages/BillingPage";
-import BillingSuccessPage from "./pages/BillingSuccessPage";
-import NotFound from "./pages/NotFound";
-import AlbumDetailPage from "./pages/AlbumDetailPage";
-import AlbumUploadPage from "./pages/AlbumUploadPage";
-import StemSeparationPage from "./features/stem-separation/StemSeparationPage";
 import { useUserRole } from "@/hooks/useUserRole";
-import UpgradeModal from "@/components/UpgradeModal";
 import type { QuotaKey } from "@/lib/planLimits";
 
+const LandingPage = lazy(() => import('./pages/LandingPage'));
+const HomePage = lazy(() => import('./pages/HomePage'));
+const DiscoverPage = lazy(() => import('./pages/DiscoverPage'));
+const UploadPage = lazy(() => import('./pages/UploadPage'));
+const MessagesPage = lazy(() => import('./pages/MessagesPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const UserProfilePage = lazy(() => import('./pages/UserProfilePage'));
+const PlaylistsPage = lazy(() => import('./pages/PlaylistsPage'));
+const PlaylistDetailPage = lazy(() => import('./pages/PlaylistDetailPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const EditProfilePage = lazy(() => import('./pages/EditProfilePage'));
+const PreferencesPage = lazy(() => import('./pages/PreferencesPage'));
+const AuthPage = lazy(() => import('./pages/AuthPage'));
+const OnboardingPage = lazy(() => import('./pages/OnboardingPage'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
+const AnalyticsDashboardPage = lazy(() => import('./pages/AnalyticsDashboardPage'));
+const OnlineStudioPage = lazy(() => import('./pages/OnlineStudioPage'));
+const StudioPage = lazy(() => import('./pages/StudioPage'));
+const StudioDawPage = lazy(() => import('./pages/StudioDawPage'));
+const AudioEnhancementPage = lazy(() => import('./features/audio-enhancement/AudioEnhancementPage'));
+const BillingPage = lazy(() => import('./pages/BillingPage'));
+const BillingSuccessPage = lazy(() => import('./pages/BillingSuccessPage'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const AlbumDetailPage = lazy(() => import('./pages/AlbumDetailPage'));
+const AlbumUploadPage = lazy(() => import('./pages/AlbumUploadPage'));
+const StemSeparationPage = lazy(() => import('./features/stem-separation/StemSeparationPage'));
+const UpgradeModal = lazy(() => import('@/components/UpgradeModal'));
+
 const queryClient = new QueryClient();
+
+const routeFallback = <div className="grid min-h-screen place-items-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
 
 const SERVER_QUOTA_KEYS: Record<string, QuotaKey> = {
   full_songs: 'fullSongs',
@@ -67,7 +70,7 @@ function GlobalQuotaPrompt() {
     return () => window.removeEventListener('musicinsta:quota-exceeded', showPrompt);
   }, []);
 
-  return blocked ? <UpgradeModal reason={blocked.reason} quotaKey={blocked.key} onClose={() => setBlocked(null)} /> : null;
+  return blocked ? <Suspense fallback={null}><UpgradeModal reason={blocked.reason} quotaKey={blocked.key} onClose={() => setBlocked(null)} /></Suspense> : null;
 }
 
 // Component to handle landing page redirect logic
@@ -134,6 +137,7 @@ const AppRoutes = () => {
     <div className="min-h-screen bg-background">
       <ScrollToTop />
       <GlobalQuotaPrompt />
+      <Suspense fallback={routeFallback}>
       <Routes>
         {/* Landing page for new users */}
         <Route path="/landing" element={<LandingRedirect />} />
@@ -168,6 +172,7 @@ const AppRoutes = () => {
         <Route path="/studio-legacy" element={<StudioReadOnly><OnlineStudioPage /></StudioReadOnly>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </Suspense>
       <PlayerComponents />
       {showBottomNav && <BottomNav />}
     </div>

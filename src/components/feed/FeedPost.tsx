@@ -51,7 +51,11 @@ export function FeedPost({ post }: FeedPostProps) {
   const [playlists, setPlaylists] = useState<Array<{ id: string; name: string }>>([]);
   const [videoSpeed, setVideoSpeed] = useState(1);
   const [playCount, setPlayCount] = useState(post.track?.plays || 0);
-  const [showNewBadge, setShowNewBadge] = useState(() => Boolean((post.isNewPost || post.isNewRelease) && !sessionStorage.getItem(`musicinsta_seen_post_${post.id}`)));
+  const [showNewBadge, setShowNewBadge] = useState(() => Boolean(
+    (post.isNewPost || post.isNewRelease) &&
+    Date.now() - post.createdAt.getTime() < 24 * 60 * 60 * 1000 &&
+    !sessionStorage.getItem(`musicinsta_seen_post_${post.id}`)
+  ));
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const [displayCaption, setDisplayCaption] = useState(post.caption);
   const [displayImage, setDisplayImage] = useState(post.imageUrl || post.track?.coverArt || '');
@@ -103,6 +107,13 @@ export function FeedPost({ post }: FeedPostProps) {
   useEffect(() => () => {
     if (showNewBadge) sessionStorage.setItem(`musicinsta_seen_post_${post.id}`, '1');
   }, [post.id, showNewBadge]);
+
+  useEffect(() => {
+    if (!showNewBadge) return;
+    const remaining = Math.max(0, 24 * 60 * 60 * 1000 - (Date.now() - post.createdAt.getTime()));
+    const timeout = window.setTimeout(() => setShowNewBadge(false), remaining);
+    return () => window.clearTimeout(timeout);
+  }, [post.createdAt, showNewBadge]);
 
   useEffect(() => {
     if (post.type !== 'video' || !post.videoUrl || !videoRef.current || typeof IntersectionObserver === 'undefined') return;
@@ -289,6 +300,7 @@ export function FeedPost({ post }: FeedPostProps) {
     <>
       <motion.article
         className="w-full max-w-[630px] mx-auto border-x border-b border-border bg-background transition-[border-color,box-shadow] duration-300 hover:border-primary/20 hover:shadow-[0_14px_40px_hsl(var(--primary)/0.06)]"
+        style={{ contentVisibility: 'auto', containIntrinsicSize: '800px' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4">
@@ -300,6 +312,8 @@ export function FeedPost({ post }: FeedPostProps) {
               <img
                 src={post.artist.avatar}
                 alt={post.artist.name}
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover"
               />
             </div>
@@ -335,9 +349,9 @@ export function FeedPost({ post }: FeedPostProps) {
             onContextMenu={post.type === 'video' ? event => event.preventDefault() : undefined}
           >
             {post.type === 'video' && post.videoUrl ? (
-              <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="metadata" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; void updateDoc(doc(db, 'posts', post.id), { plays: increment(1) }).catch(() => undefined); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
+              <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="none" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; void updateDoc(doc(db, 'posts', post.id), { plays: increment(1) }).catch(() => undefined); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
             ) : (
-              <img src={postImage} alt={post.track?.title || post.caption || 'Post'} style={{ filter: post.visualFilter }} className={cn('w-full object-contain', post.type === 'image' ? 'h-auto max-h-[82vh]' : 'h-full')} />
+              <img src={postImage} alt={post.track?.title || post.caption || 'Post'} loading="lazy" decoding="async" fetchPriority="low" style={{ filter: post.visualFilter }} className={cn('w-full object-contain', post.type === 'image' ? 'h-auto max-h-[82vh]' : 'h-full')} />
             )}
             
             {/* Overlay */}

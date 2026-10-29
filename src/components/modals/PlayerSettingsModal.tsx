@@ -5,7 +5,7 @@ import { Track } from '@/types';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { addDoc, arrayUnion, collection, doc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { usePlayer } from '@/context/PlayerContext';
 import { storeDawAudio } from '@/lib/dawTransfer';
@@ -71,7 +71,6 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
           return;
         }
         likeTrack(track, true);
-        void setDoc(doc(db, 'track_likes', `${user.uid}_${track.id}`.replaceAll('/', '_')), { user_id: user.uid, track_id: track.id, created_at: serverTimestamp() }, { merge: true });
         toast.success('Added to liked music');
         onClose();
       }

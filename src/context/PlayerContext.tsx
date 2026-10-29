@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import type { Track } from '@/types';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { buildPersonalizedQueue, shuffleUpcoming, type ListeningHistoryEntry } from '@/services/recommendationEngine';
-import { loadListeningHistory, loadMusicCatalog, recordListeningInteraction } from '@/services/musicCatalogService';
+import { loadListeningHistory, loadMusicCatalog, recordListeningInteraction, syncLikedTrack } from '@/services/musicCatalogService';
 import { doc, getDoc, increment, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -49,7 +49,7 @@ interface PlayerContextType {
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [queue, setQueueState] = useState<Track[]>([]);
@@ -156,6 +156,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setDuration(track.duration || 0);
     setIsMiniPlayerVisible(true);
     setIsPlaying(true);
+    // Start from the original tap/click call stack. Mobile browsers can reject
+    // playback when it is deferred until a later React effect.
+    const audio = audioRef.current ?? new Audio();
+    audioRef.current = audio;
+    if (audio.src !== track.audioUrl) {
+      audio.src = track.audioUrl;
+      audio.load();
+    }
+    void audio.play().catch(() => {
+      setIsPlaying(false);
+      setPlaybackError('Tap play to start this track.');
+    });
     if (countPlay) {
       updateHistory(track, 'play');
       const isGeneratedSong = track.id.startsWith('song-');
@@ -179,11 +191,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const activeQueue = queueRef.current;
     const index = activeQueue.findIndex(track => track.id === active.id);
     if (index >= 0 && index + 1 < activeQueue.length) {
-      selectTrack(activeQueue[index + 1], undefined);
+      selectTrack(activeQueue[index + 1], undefined, true);
       return;
     }
     if (repeatRef.current === 'all' && activeQueue.length) {
-      selectTrack(activeQueue[0], undefined);
+      selectTrack(activeQueue[0], undefined, true);
       return;
     }
     setIsPlaying(false);
@@ -261,6 +273,38 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     else if (audio) audio.currentTime = 0;
   }, [selectTrack]);
 
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    if (!currentTrack) {
+      navigator.mediaSession.metadata = null;
+      return;
+    }
+    const artwork = currentTrack.coverArt
+      ? new URL(currentTrack.coverArt, window.location.origin).toString()
+      : new URL('/musicinsta-default-cover.webp', window.location.origin).toString();
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentTrack.title,
+      artist: currentTrack.artist.name,
+      album: currentTrack.genre || 'MusicInsta',
+      artwork: [{ src: artwork }],
+    });
+  }, [currentTrack]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.setActionHandler('play', resumeTrack);
+    navigator.mediaSession.setActionHandler('pause', pauseTrack);
+    navigator.mediaSession.setActionHandler('nexttrack', nextTrack);
+    navigator.mediaSession.setActionHandler('previoustrack', previousTrack);
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    return () => {
+      navigator.mediaSession.setActionHandler('play', null);
+      navigator.mediaSession.setActionHandler('pause', null);
+      navigator.mediaSession.setActionHandler('nexttrack', null);
+      navigator.mediaSession.setActionHandler('previoustrack', null);
+    };
+  }, [isPlaying, nextTrack, pauseTrack, previousTrack, resumeTrack]);
+
   const handleSetProgress = useCallback((nextProgress: number) => {
     const safeProgress = Math.max(0, Math.min(100, nextProgress));
     setProgress(safeProgress);
@@ -296,7 +340,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     selectTrack(track, buildPersonalizedQueue(track, catalogRef.current, historyRef.current));
   }, [selectTrack]);
 
-  const likeTrack = useCallback((track: Track, liked: boolean) => updateHistory(track, liked ? 'like' : 'unlike'), [updateHistory]);
+  const likeTrack = useCallback((track: Track, liked: boolean) => {
+    const wasLiked = Boolean(historyRef.current.find(entry => entry.trackId === track.id)?.liked);
+    if (wasLiked === liked) {
+      if (user?.uid) void syncLikedTrack(user.uid, profile?.id || user.uid, track, liked).catch(() => undefined);
+      return;
+    }
+    updateHistory(track, liked ? 'like' : 'unlike');
+    setCatalog(current => current.map(item => item.id === track.id ? { ...item, likes: Math.max(0, item.likes + (liked ? 1 : -1)) } : item));
+    if (user?.uid) void syncLikedTrack(user.uid, profile?.id || user.uid, track, liked).catch(() => undefined);
+  }, [profile?.id, updateHistory, user?.uid]);
 
   const setSleepTimer = useCallback((minutes: number | null) => {
     if (sleepTimerRef.current) window.clearTimeout(sleepTimerRef.current);

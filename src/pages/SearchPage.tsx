@@ -10,7 +10,7 @@ import { useAuth } from '@/context/FirebaseAuthContext';
 import { collection, query, where, orderBy, limit, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Track, Artist } from '@/types';
-import { DEFAULT_MEDIA_IMAGE, hydrateTrackDurations } from '@/lib/media';
+import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
 
 interface Profile {
   id: string;
@@ -137,7 +137,9 @@ export default function SearchPage() {
             } as Artist,
           });
         }
-        setDbTracks(await hydrateTrackDurations(transformed));
+        // Durations are persisted when tracks are uploaded. Avoid probing every
+        // remote audio file during search, which can consume significant data.
+        setDbTracks(transformed);
 
         // Search playlists
         const playlistsQuery = query(

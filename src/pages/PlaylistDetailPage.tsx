@@ -131,6 +131,26 @@ export default function PlaylistDetailPage() {
             } as Track,
           } as PlaylistTrack;
         }
+        if (catalogTrack) {
+          return {
+            id: trackDoc.id,
+            playlist_id: trackData.playlist_id,
+            track_id: trackData.track_id,
+            added_at: trackData.added_at?.toDate?.() || new Date(),
+            track: {
+              id: catalogTrack.id,
+              title: catalogTrack.title,
+              artist: catalogTrack.artist.name,
+              cover_url: catalogTrack.coverArt,
+              audio_url: catalogTrack.audioUrl || null,
+              duration: catalogTrack.duration,
+              plays: catalogTrack.plays,
+              likes: catalogTrack.likes,
+              user_id: catalogTrack.artist.id,
+              created_at: catalogTrack.createdAt || new Date(),
+            } as Track,
+          } as PlaylistTrack;
+        }
         return null;
       });
 
