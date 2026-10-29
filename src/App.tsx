@@ -84,6 +84,13 @@ function LandingRedirect() {
   return <LandingPage />;
 }
 
+function FirstVisitHome() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user && localStorage.getItem('musicinsta_landing_seen') !== '1') return <Navigate to="/landing" replace />;
+  return <HomePage />;
+}
+
 function PlayerComponents() {
   return (
     <>
@@ -134,7 +141,7 @@ const AppRoutes = () => {
         <Route path="/search" element={<Navigate to="/discover" replace />} />
         
         {/* Main app routes */}
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<FirstVisitHome />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/upload" element={authenticatedPage(<UploadPage />)} />
         <Route path="/messages" element={authenticatedPage(<MessagesPage />)} />

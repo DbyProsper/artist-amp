@@ -30,7 +30,8 @@ Inputs
    and loudness when those values are available.
 3. Private per-user behaviour: play count, completed plays, skips, likes, last
    position, and recency.
-4. The track currently selected by the listener (the seed track).
+4. The listener's preferred genres selected during onboarding or in settings.
+5. The track currently selected by the listener (the seed track).
 
 Content representation
 ----------------------
@@ -59,9 +60,10 @@ Ranking
 -------
 For each playable candidate other than the current seed:
 
-  score = seed similarity       * 0.48
-        + taste-profile match   * 0.34
-        + personal familiarity  * 0.18
+  score = seed similarity       * 0.38
+        + taste-profile match   * 0.28
+        + personal familiarity  * 0.16
+        + preferred-genre match * 0.28
         + new-artist boost
 
 The familiarity term belongs only to the current listener. It is not a global
@@ -99,11 +101,13 @@ for candidate in catalog excluding seed:
     )
     familiar = listener_played_or_liked(candidate)
     personal_affinity = plays + completions + like - skips
+    preferred_genre = 1 if candidate.genre in listener.preferences else 0
     discovery_bonus = 0.08 if candidate.artist not in profile.artists else 0
     candidate.score = (
-        0.48 * seed_match
-        + 0.34 * taste_match
-        + 0.18 * personal_affinity
+        0.38 * seed_match
+        + 0.28 * taste_match
+        + 0.16 * personal_affinity
+        + 0.28 * preferred_genre
         + discovery_bonus
     )
 

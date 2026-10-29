@@ -30,7 +30,6 @@ export function EmojiPicker({ onEmojiSelect }: EmojiPickerProps) {
           theme={Theme.DARK}
           onEmojiClick={(emojiData) => {
             onEmojiSelect(emojiData.emoji);
-            setOpen(false);
           }}
           width={300}
           height={400}

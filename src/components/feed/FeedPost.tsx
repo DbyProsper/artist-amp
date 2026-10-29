@@ -33,6 +33,12 @@ function formatCount(num: number): string {
   return num.toString();
 }
 
+function RichCaption({ text, navigate }: { text: string; navigate: (path: string) => void }) {
+  return <>{text.split(/([#@][\p{L}\p{N}_.-]+)/gu).map((part, index) => part.startsWith('#') || part.startsWith('@')
+    ? <button type="button" key={`${part}-${index}`} onClick={() => navigate(`/discover?q=${encodeURIComponent(part)}`)} className="text-primary hover:underline">{part}</button>
+    : <span key={index}>{part}</span>)}</>;
+}
+
 export function FeedPost({ post }: FeedPostProps) {
   const [isLiked, setIsLiked] = useState(post.isLiked);
   const [isSaved, setIsSaved] = useState(post.isSaved);
@@ -180,7 +186,6 @@ export function FeedPost({ post }: FeedPostProps) {
     if (!post.track) return;
     if (!playCountedRef.current) {
       playCountedRef.current = true; setPlayCount(current => current + 1);
-      void updateDoc(doc(db, 'tracks', post.track.id), { plays: increment(1) }).catch(() => undefined);
     }
     if (isCurrentTrack) {
       if (isPlaying) pauseTrack();
@@ -325,11 +330,12 @@ export function FeedPost({ post }: FeedPostProps) {
           <div
             className={cn('relative overflow-hidden bg-black group', post.type === 'image' ? '' : 'aspect-[4/5] sm:aspect-square', post.type === 'album' && 'cursor-pointer')}
             onClick={post.type === 'album' && post.album ? () => navigate(`/albums/${post.album!.id}`) : undefined}
-            onDoubleClick={post.type === 'video' ? undefined : likeFromMedia}
-            onPointerUp={post.type === 'video' ? undefined : handleMediaPointerUp}
+            onDoubleClick={likeFromMedia}
+            onPointerUp={handleMediaPointerUp}
+            onContextMenu={post.type === 'video' ? event => event.preventDefault() : undefined}
           >
             {post.type === 'video' && post.videoUrl ? (
-              <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: post.visualFilter }} muted controls loop playsInline preload="metadata" onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; void updateDoc(doc(db, 'posts', post.id), { plays: increment(1) }).catch(() => undefined); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
+              <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="metadata" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; void updateDoc(doc(db, 'posts', post.id), { plays: increment(1) }).catch(() => undefined); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
             ) : (
               <img src={postImage} alt={post.track?.title || post.caption || 'Post'} style={{ filter: post.visualFilter }} className={cn('w-full object-contain', post.type === 'image' ? 'h-auto max-h-[82vh]' : 'h-full')} />
             )}
@@ -446,7 +452,7 @@ export function FeedPost({ post }: FeedPostProps) {
             >
               {post.artist.username}
             </button>{' '}
-            <span className={cn('whitespace-pre-wrap text-muted-foreground', !captionExpanded && displayCaption.length > 180 && 'line-clamp-3')}>{displayCaption}</span>
+            <span className={cn('whitespace-pre-wrap text-muted-foreground', !captionExpanded && displayCaption.length > 180 && 'line-clamp-3')}><RichCaption text={displayCaption} navigate={navigate} /></span>
             {displayCaption.length > 180 && <button type="button" onClick={() => setCaptionExpanded(value => !value)} className="ml-1 font-medium text-foreground hover:underline">{captionExpanded ? 'Show less' : 'Read more'}</button>}
           </p>
           {displayCredits && (

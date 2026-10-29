@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
-import { genres } from '@/data/mockData';
+import { MUSIC_GENRES as genres } from '@/lib/genres';
 
 export default function PreferencesPage() {
   const { user, profile } = useAuth();

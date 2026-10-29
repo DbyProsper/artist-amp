@@ -70,6 +70,8 @@ export default function AdminPage() {
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostCaption, setEditingPostCaption] = useState('');
   const [editingPostImage, setEditingPostImage] = useState<File | null>(null);
+  const [aiToolsEnabled, setAiToolsEnabled] = useState(true);
+  const [savingAiTools, setSavingAiTools] = useState(false);
 
   useEffect(() => {
     if (!roleLoading && !isAdminOrModerator) {
@@ -149,8 +151,20 @@ export default function AdminPage() {
       fetchProfiles();
       fetchReports();
       fetchOfficialPosts();
+      void getDoc(doc(db, 'system_settings', 'ai_tools')).then(snapshot => setAiToolsEnabled(snapshot.exists() ? snapshot.data().enabled !== false : true));
     }
   }, [isAdminOrModerator]);
+
+  const toggleAiTools = async () => {
+    setSavingAiTools(true);
+    try {
+      const next = !aiToolsEnabled;
+      await setDoc(doc(db, 'system_settings', 'ai_tools'), { enabled: next, updated_at: serverTimestamp(), updated_by: user?.uid }, { merge: true });
+      setAiToolsEnabled(next);
+      toast.success(next ? 'AI tools enabled for all eligible users.' : 'AI tools disabled for free non-admin users.');
+    } catch { toast.error('AI tool availability could not be changed.'); }
+    finally { setSavingAiTools(false); }
+  };
 
   const handleApprove = async (request: VerificationRequest) => {
     try {
@@ -319,6 +333,7 @@ export default function AdminPage() {
       </header>
 
       <div className="p-4">
+        <section className="mb-5 flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">AI tool availability</h2><p className="text-sm text-muted-foreground">One-click emergency control for free, non-admin accounts. Administrators retain access.</p></div><Button disabled={savingAiTools} variant={aiToolsEnabled ? 'destructive' : 'default'} onClick={() => void toggleAiTools()}>{savingAiTools ? 'Saving…' : aiToolsEnabled ? 'Disable AI tools' : 'Enable AI tools'}</Button></section>
         <section className="mb-5 space-y-3 rounded-2xl border border-border bg-card p-4">
           <div className="flex items-center gap-3"><img src="/musicinsta-default-cover.webp" alt="MusicInsta" className="h-10 w-10 rounded-full object-cover" /><div><h2 className="font-bold">Post as MusicInsta</h2><p className="text-xs text-muted-foreground">Publish an announcement, image, or playable track as the official account.</p></div></div>
           <Textarea value={officialCaption} onChange={event => setOfficialCaption(event.target.value)} placeholder="Official announcement or community update..." className="min-h-24" />

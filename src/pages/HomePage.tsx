@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc, Sparkles, Wand2, Zap, SlidersHorizontal, ArrowRight, X } from 'lucide-react';
 import { StoriesRow } from '@/components/feed/StoriesRow';
@@ -7,7 +7,6 @@ import { StoryViewer } from '@/components/stories/StoryViewer';
 import { TrackRow } from '@/components/tracks/TrackRow';
 import { NotificationsPanel } from '@/components/notifications/NotificationsPanel';
 import { Button } from '@/components/ui/button';
-import { mockArtists } from '@/data/mockData';
 import { useFeedPosts } from '@/hooks/useFeedPosts';
 import { Story } from '@/types';
 import { useNavigate } from 'react-router-dom';
@@ -17,7 +16,7 @@ import { clearUploadProgress, readUploadProgress, UPLOAD_PROGRESS_EVENT, type Up
 import { useStories } from '@/hooks/useStories';
 import { useRealTimeNotifications } from '@/hooks/useRealTimeNotifications';
 import { usePlayer } from '@/context/PlayerContext';
-import { rankCatalog, rankFeedPosts } from '@/services/recommendationEngine';
+import { rankFeedPosts } from '@/services/recommendationEngine';
 
 export default function HomePage() {
   const reduceMotion = useReducedMotion();
@@ -74,12 +73,16 @@ export default function HomePage() {
     navigate('/studio');
   };
 
-  const personalizedPosts = useMemo(() => rankFeedPosts(posts, listeningHistory, preferredGenres), [posts, listeningHistory, preferredGenres]);
-  const personalizedTracks = useMemo(() => rankCatalog(catalog, listeningHistory, null, preferredGenres).map(item => item.track), [catalog, listeningHistory, preferredGenres]);
+  const rankingHistoryRef = useRef(listeningHistory);
+  rankingHistoryRef.current = listeningHistory;
+  const personalizedPosts = useMemo(() => rankFeedPosts(posts, rankingHistoryRef.current, preferredGenres), [posts, preferredGenres]);
   const realArtists = [...catalog.map(track => track.artist), ...posts.map(post => post.artist)].filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
-  const trendingArtists = [...realArtists, ...mockArtists.filter(mock => !realArtists.some(real => real.id === mock.id))].slice(0, 8);
+  const trendingArtists = realArtists.filter(artist => artist.id !== 'musicinsta-official' && artist.username !== 'musicinsta').slice(0, 8);
   const realReleases = posts.filter(post => post.track && (post.isNewRelease || post.type === 'audio')).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
-  const newReleases = (personalizedTracks.length ? personalizedTracks : realReleases.filter(track => track.audioUrl)).slice(0, 6);
+  const newReleases = [...(catalog.length ? catalog : realReleases.filter(track => track.audioUrl))]
+    .filter(track => track.audioUrl)
+    .sort((left, right) => right.plays - left.plays || (right.createdAt?.getTime() || 0) - (left.createdAt?.getTime() || 0))
+    .slice(0, 6);
 
   return (
     <div className="min-h-screen pb-36">

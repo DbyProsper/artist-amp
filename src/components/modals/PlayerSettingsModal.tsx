@@ -42,6 +42,8 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
   };
 
   const openInDaw = async () => {
+    const ownerId = profile?.id || user?.uid;
+    if (!user || !ownerId || track.artist.id !== ownerId) { toast.error('Only the owner of this audio can export it to the DAW.'); return; }
     if (!track.audioUrl) { toast.error('This track has no audio to send to the DAW'); return; }
     setIsTransferring(true);
     try {
@@ -131,11 +133,11 @@ export function PlayerSettingsModal({ track, isOpen, onClose }: PlayerSettingsMo
         onClose();
       }
     },
-    {
+    ...(user && track.artist.id === (profile?.id || user.uid) ? [{
       icon: ExternalLink,
       label: isTransferring ? 'Sending to DAW...' : 'Open in DAW',
       action: () => void openInDaw()
-    },
+    }] : []),
     {
       icon: Flag,
       label: 'Report',

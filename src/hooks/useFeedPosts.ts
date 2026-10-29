@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, getDocs, getDoc, doc, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, getDoc, doc, onSnapshot, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track, Album } from '@/types';
 import { DEFAULT_MEDIA_IMAGE, hydrateTrackDurations } from '@/lib/media';
@@ -37,12 +37,24 @@ interface DatabasePost {
   } | null;
 }
 
+const profileCache = new Map<string, DocumentData | null>();
+const trackCache = new Map<string, DocumentData | null>();
+const albumCache = new Map<string, DocumentData | null>();
+
+async function cachedDocument(collectionName: string, id: string, cache: Map<string, DocumentData | null>) {
+  if (cache.has(id)) return cache.get(id) ?? null;
+  const snapshot = await getDoc(doc(db, collectionName, id));
+  const value = snapshot.exists() ? snapshot.data() : null;
+  cache.set(id, value);
+  return value;
+}
+
 export function useFeedPosts() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPosts = async (showLoading = true) => {
+  const fetchPosts = async (showLoading = true, suppliedDocs?: QueryDocumentSnapshot<DocumentData>[]) => {
     if (showLoading) setLoading(true);
     try {
       // Fetch posts from database
@@ -52,22 +64,21 @@ export function useFeedPosts() {
         limit(50)
       );
 
-      const postsSnapshot = await getDocs(postsQuery);
+      const postDocs = suppliedDocs ?? (await getDocs(postsQuery)).docs;
 
-      if (postsSnapshot.empty) { setPosts([]); return; }
+      if (!postDocs.length) { setPosts([]); return; }
 
       // Transform database posts to Post type
       const transformedPosts: Post[] = [];
 
-      for (const postDoc of postsSnapshot.docs) {
+      for (const postDoc of postDocs) {
         const post = postDoc.data();
         if (post.is_story === true) continue;
 
         // Fetch profile data
         let profileData = null;
         try {
-          const profileDoc = await getDoc(doc(db, 'profiles', post.profile_id));
-          profileData = profileDoc.exists() ? profileDoc.data() : null;
+          profileData = await cachedDocument('profiles', post.profile_id, profileCache);
         } catch (error) {
           console.error('Error fetching profile:', error);
         }
@@ -76,8 +87,7 @@ export function useFeedPosts() {
         let trackData = null;
         if (post.track_id) {
           try {
-            const trackDoc = await getDoc(doc(db, 'tracks', post.track_id));
-            trackData = trackDoc.exists() ? trackDoc.data() : null;
+            trackData = await cachedDocument('tracks', post.track_id, trackCache);
           } catch (error) {
             console.error('Error fetching track:', error);
           }
@@ -86,22 +96,20 @@ export function useFeedPosts() {
         let album: Album | undefined;
         if (post.album_id) {
           try {
-            const albumDoc = await getDoc(doc(db, 'albums', post.album_id));
-            if (albumDoc.exists()) {
-              const albumData = albumDoc.data();
+            const albumData = await cachedDocument('albums', post.album_id, albumCache);
+            if (albumData) {
               const albumTracks = (await Promise.all(((albumData.track_ids || []) as string[]).map(async (trackId: string) => {
-                const snapshot = await getDoc(doc(db, 'tracks', trackId));
-                if (!snapshot.exists()) return null;
-                const value = snapshot.data();
+                const value = await cachedDocument('tracks', trackId, trackCache);
+                if (!value) return null;
                 return {
-                  id: snapshot.id, title: value.title || 'Untitled track', artist: undefined,
+                  id: trackId, title: value.title || 'Untitled track', artist: undefined,
                   coverArt: value.cover_url || albumData.cover_url || DEFAULT_MEDIA_IMAGE,
                   duration: Number(value.duration) || 0, plays: Number(value.plays) || 0, likes: Number(value.likes) || 0,
                   audioUrl: value.audio_url || undefined, lyrics: value.lyrics || undefined, genre: value.genre || albumData.genre || undefined,
                   albumId: albumDoc.id, trackNumber: Number(value.track_number) || undefined,
                 };
               }))).filter(Boolean) as Array<Omit<Track, 'artist'> & { artist?: Artist }>;
-              album = { id: albumDoc.id, title: albumData.title || 'Untitled release', type: albumData.release_type === 'ep' ? 'ep' : 'album', artist: undefined as unknown as Artist, coverArt: albumData.cover_url || DEFAULT_MEDIA_IMAGE, genre: albumData.genre || undefined, description: albumData.description || undefined, tracks: albumTracks as Track[], releaseDate: albumData.created_at?.toDate?.() };
+              album = { id: post.album_id, title: albumData.title || 'Untitled release', type: albumData.release_type === 'ep' ? 'ep' : 'album', artist: undefined as unknown as Artist, coverArt: albumData.cover_url || DEFAULT_MEDIA_IMAGE, genre: albumData.genre || undefined, description: albumData.description || undefined, tracks: albumTracks as Track[], releaseDate: albumData.created_at?.toDate?.() };
             }
           } catch (error) { console.error('Error fetching album:', error); }
         }
@@ -195,7 +203,7 @@ export function useFeedPosts() {
 
   useEffect(() => {
     const postsQuery = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(50));
-    const unsubscribe = onSnapshot(postsQuery, () => void fetchPosts(false), () => setError('Failed to listen for new posts'));
+    const unsubscribe = onSnapshot(postsQuery, snapshot => void fetchPosts(false, snapshot.docs), () => setError('Failed to listen for new posts'));
     const refresh = () => void fetchPosts(false);
     window.addEventListener('musicinsta:feed-refresh', refresh);
     return () => { unsubscribe(); window.removeEventListener('musicinsta:feed-refresh', refresh); };

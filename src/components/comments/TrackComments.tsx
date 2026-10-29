@@ -4,7 +4,6 @@ import { MessageCircle, Send, Clock, BadgeCheck } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Track } from '@/types';
-import { mockArtists } from '@/data/mockData';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
@@ -38,29 +37,7 @@ export function TrackComments({ track, currentTime = 0 }: TrackCommentsProps) {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [newComment, setNewComment] = useState('');
-  const [comments, setComments] = useState<Comment[]>([
-    {
-      id: '1',
-      content: '🔥 This drop is insane!',
-      timestampSeconds: 45,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
-      user: mockArtists[1],
-    },
-    {
-      id: '2',
-      content: 'The production on this is crazy good',
-      timestampSeconds: 120,
-      createdAt: new Date(Date.now() - 1000 * 60 * 30),
-      user: mockArtists[2],
-    },
-    {
-      id: '3',
-      content: 'Best track of 2024 no cap 🧢',
-      timestampSeconds: 180,
-      createdAt: new Date(Date.now() - 1000 * 60 * 10),
-      user: mockArtists[3],
-    },
-  ]);
+  const [comments, setComments] = useState<Comment[]>([]);
 
   const handleSubmit = () => {
     if (!user || !profile) {

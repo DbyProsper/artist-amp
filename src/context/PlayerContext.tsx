@@ -3,7 +3,7 @@ import type { Track } from '@/types';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { buildPersonalizedQueue, shuffleUpcoming, type ListeningHistoryEntry } from '@/services/recommendationEngine';
 import { loadListeningHistory, loadMusicCatalog, recordListeningInteraction } from '@/services/musicCatalogService';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, increment, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 interface PlayerContextType {
@@ -75,6 +75,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const repeatRef = useRef(repeatMode);
   const userIdRef = useRef<string | null>(null);
   const sleepTimerRef = useRef<number | null>(null);
+  const previousUserIdRef = useRef<string | null>(user?.uid ?? null);
 
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
   useEffect(() => { queueRef.current = queue; }, [queue]);
@@ -82,6 +83,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => { historyRef.current = listeningHistory; }, [listeningHistory]);
   useEffect(() => { repeatRef.current = repeatMode; }, [repeatMode]);
   useEffect(() => { userIdRef.current = user?.uid ?? null; }, [user?.uid]);
+
+  useEffect(() => {
+    const previous = previousUserIdRef.current;
+    if (previous && !user?.uid) {
+      const audio = audioRef.current;
+      if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
+      currentTrackRef.current = null; queueRef.current = [];
+      setCurrentTrack(null); setQueueState([]); setIsPlaying(false); setIsExpanded(false); setIsMiniPlayerVisible(false);
+      setProgress(0); setCurrentTime(0); setDuration(0); setPlaybackError(null); setShowLyrics(false);
+    }
+    previousUserIdRef.current = user?.uid ?? null;
+  }, [user?.uid]);
 
   const setQueue = useCallback((tracks: Track[]) => {
     const playable = tracks.filter((track, index, items) => Boolean(track.audioUrl) && items.findIndex(item => item.id === track.id) === index);
@@ -143,7 +156,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setDuration(track.duration || 0);
     setIsMiniPlayerVisible(true);
     setIsPlaying(true);
-    if (countPlay) updateHistory(track, 'play');
+    if (countPlay) {
+      updateHistory(track, 'play');
+      const isGeneratedSong = track.id.startsWith('song-');
+      const collectionName = isGeneratedSong ? 'songs' : 'tracks';
+      const documentId = isGeneratedSong ? track.id.slice('song-'.length) : track.id;
+      void updateDoc(doc(db, collectionName, documentId), { plays: increment(1) }).catch(() => undefined);
+      setCatalog(current => current.map(item => item.id === track.id ? { ...item, plays: item.plays + 1 } : item));
+    }
   }, [setQueue, updateHistory]);
 
   const playTrack = useCallback((track: Track, queueSource?: Track[]) => {

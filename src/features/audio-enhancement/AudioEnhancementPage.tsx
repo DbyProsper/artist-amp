@@ -162,10 +162,9 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
       ...s,
       activePreset: 'custom',
       settings: { ...s.settings, ...patch },
-      status: s.originalBuffer ? 'Processing preview' : s.status,
-      processingKind: s.originalBuffer ? 'preview' : s.processingKind,
-      stage: s.originalBuffer ? 'processing' : s.stage,
-      progress: s.originalBuffer ? 0 : s.progress,
+      status: s.originalBuffer ? 'Custom changes ready to process' : s.status,
+      processingKind: null,
+      stage: s.originalBuffer ? 'idle' : s.stage,
       timings: s.originalBuffer ? null : s.timings,
     }
   )), []);

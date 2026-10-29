@@ -7,7 +7,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { ArtistCard } from '@/components/artists/ArtistCard';
 import { TrackRow } from '@/components/tracks/TrackRow';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   DropdownMenu,
@@ -29,9 +29,10 @@ type SortOption = 'trending' | 'newest' | 'popular';
 
 export default function DiscoverPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, profile } = useAuth();
   const { catalog, listeningHistory, preferredGenres, currentTrack, catalogLoading } = usePlayer();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('for-you');
   const [sortBy, setSortBy] = useState<SortOption>('trending');
@@ -80,15 +81,17 @@ export default function DiscoverPage() {
   };
 
   const filteredArtists = catalogArtists.filter((artist) => {
-    const matchesSearch = artist.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         artist.username.toLowerCase().includes(searchQuery.toLowerCase());
+    const artistNeedle = searchQuery.toLowerCase().replace(/^[@#]/, '');
+    const matchesSearch = artist.name.toLowerCase().includes(artistNeedle) ||
+                         artist.username.toLowerCase().includes(artistNeedle);
     const matchesGenre = !selectedGenre || artist.genres.some(genre => genreMatches(genre, selectedGenre));
     return matchesSearch && matchesGenre;
   });
 
   const filteredTracks = catalogTracks.filter((track) => {
-    const matchesSearch = track.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         track.artist.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const needle = searchQuery.toLowerCase().replace(/^#/, '');
+    const searchable = [track.title, track.artist.name, track.genre, track.mood, ...(track.tags || [])].filter(Boolean).join(' ').toLowerCase();
+    const matchesSearch = searchable.includes(needle);
     const matchesGenre = !selectedGenre || genreMatches(track.genre, selectedGenre) || track.artist.genres.some(genre => genreMatches(genre, selectedGenre));
     return matchesSearch && matchesGenre;
   });

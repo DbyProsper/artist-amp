@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Search, TrendingUp, Music2, Users, ListMusic, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { TrackRow } from '@/components/tracks/TrackRow';
-import { genres } from '@/data/mockData';
+import { MUSIC_GENRES as genres } from '@/lib/genres';
 import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/context/FirebaseAuthContext';

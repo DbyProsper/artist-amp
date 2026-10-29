@@ -189,7 +189,7 @@ export function FullPlayer() {
   const hasTimestampedLyrics = Boolean(currentTrack?.timestampedLyrics?.length || currentTrack?.lyrics?.match(/^\[\d{1,2}:\d{2}/m));
   // Authored timestamps remain exact. Untimed lyrics reserve the estimated intro
   // and are compressed into the likely vocal window so they do not drift late.
-  const lyricClock = currentTime;
+  const lyricClock = currentTime + (hasTimestampedLyrics ? 0 : 1.5);
   const activeLyricIndex = timedLyrics.findIndex(line => lyricClock >= line.startTime && lyricClock < line.endTime);
 
   useEffect(() => {

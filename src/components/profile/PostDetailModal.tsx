@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Post } from '@/types';
 import { FeedPost } from '@/components/feed/FeedPost';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface PostDetailModalProps {
   posts: Post[];
@@ -14,16 +14,20 @@ interface PostDetailModalProps {
 export function PostDetailModal({ posts, initialIndex, isOpen, onClose }: PostDetailModalProps) {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
 
+  useEffect(() => {
+    if (isOpen) setCurrentIndex(Math.max(0, Math.min(initialIndex, posts.length - 1)));
+  }, [initialIndex, isOpen, posts.length]);
+
   if (!isOpen || posts.length === 0) return null;
 
   const currentPost = posts[currentIndex];
 
   const goNext = () => {
-    if (currentIndex < posts.length - 1) setCurrentIndex(currentIndex + 1);
+    if (currentIndex < posts.length - 1) setCurrentIndex(index => index + 1);
   };
 
   const goPrev = () => {
-    if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
+    if (currentIndex > 0) setCurrentIndex(index => index - 1);
   };
 
   return (

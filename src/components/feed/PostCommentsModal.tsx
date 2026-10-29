@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
-import { X } from 'lucide-react';
+import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, increment, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { Heart, Reply, Trash2, X } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,11 @@ interface CommentItem {
   text: string;
   authorName: string;
   avatar: string;
+  authorId: string;
+  likes: number;
+  likedBy: string[];
+  parentId?: string;
+  replyToName?: string;
 }
 interface Props {
   postId: string;
@@ -26,6 +31,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
   const { user, profile } = useAuth();
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [text, setText] = useState('');
+  const [replyingTo, setReplyingTo] = useState<CommentItem | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -38,6 +44,9 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
           text: data.text || '',
           authorName: data.author_name || 'MusicInsta user',
           avatar: data.avatar_url || '/musicinsta-default-cover.webp',
+          authorId: data.author_id || '', likes: Number(data.likes) || 0,
+          likedBy: Array.isArray(data.liked_by) ? data.liked_by : [],
+          parentId: data.parent_id || undefined, replyToName: data.reply_to_name || undefined,
         };
       }));
     }, () => toast.error('Comments could not be loaded.'));
@@ -54,6 +63,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
       author_name: profile?.name || user.displayName || 'MusicInsta user',
       avatar_url: profile?.avatar_url || user.photoURL || '/musicinsta-default-cover.webp',
       created_at: serverTimestamp(),
+      likes: 0, liked_by: [], parent_id: replyingTo?.id || null, reply_to_name: replyingTo?.authorName || null,
     });
     if (ownerId && ownerId !== (profile?.id || user.uid)) {
       await addDoc(collection(db, 'notifications'), {
@@ -67,6 +77,28 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
       });
     }
     onAdded?.();
+    setReplyingTo(null);
+  };
+
+  const toggleLike = async (comment: CommentItem) => {
+    if (!user) { toast.info('Sign in to like comments.'); return; }
+    const actor = profile?.id || user.uid;
+    const liked = comment.likedBy.includes(actor);
+    await updateDoc(doc(db, 'posts', postId, 'comments', comment.id), { likes: increment(liked ? -1 : 1), liked_by: liked ? arrayRemove(actor) : arrayUnion(actor) });
+  };
+
+  const removeComment = async (comment: CommentItem) => {
+    if (!user || (comment.authorId !== (profile?.id || user.uid) && ownerId !== (profile?.id || user.uid))) return;
+    await deleteDoc(doc(db, 'posts', postId, 'comments', comment.id));
+    await updateDoc(doc(db, 'posts', postId), { comments: increment(-1) }).catch(() => undefined);
+  };
+
+  const renderComment = (comment: CommentItem, nested = false) => {
+    const actor = profile?.id || user?.uid || '';
+    return <div key={comment.id} className={`flex gap-3 ${nested ? 'ml-10 border-l border-border pl-3' : ''}`}>
+      <img src={comment.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
+      <div className="min-w-0 flex-1"><div className="rounded-2xl bg-muted px-3 py-2 text-sm"><strong>{comment.authorName}</strong>{comment.replyToName && <span className="ml-1 text-xs text-primary">replying to @{comment.replyToName}</span>}<p className="whitespace-pre-wrap break-words">{comment.text}</p></div><div className="mt-1 flex items-center gap-3 px-2 text-xs text-muted-foreground"><button onClick={() => void toggleLike(comment)} className={comment.likedBy.includes(actor) ? 'text-red-500' : ''}><Heart className={`mr-1 inline h-3.5 w-3.5 ${comment.likedBy.includes(actor) ? 'fill-current' : ''}`} />{comment.likes || 'Like'}</button><button onClick={() => { setReplyingTo(comment); setText(current => current || `@${comment.authorName} `); }}><Reply className="mr-1 inline h-3.5 w-3.5" />Reply</button>{user && (comment.authorId === actor || ownerId === actor) && <button onClick={() => void removeComment(comment)} className="text-destructive"><Trash2 className="mr-1 inline h-3.5 w-3.5" />Delete</button>}</div></div>
+    </div>;
   };
 
   if (!open) return null;
@@ -79,13 +111,9 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
         </header>
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {comments.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Be the first to comment.</p>}
-          {comments.map(comment => (
-            <div key={comment.id} className="flex gap-3">
-              <img src={comment.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
-              <div className="rounded-2xl bg-muted px-3 py-2 text-sm"><strong>{comment.authorName}</strong><p>{comment.text}</p></div>
-            </div>
-          ))}
+          {comments.filter(comment => !comment.parentId).map(comment => <div key={comment.id} className="space-y-3">{renderComment(comment)}{comments.filter(reply => reply.parentId === comment.id).map(reply => renderComment(reply, true))}</div>)}
         </div>
+        {replyingTo && <div className="flex items-center justify-between border-t border-border bg-muted/40 px-4 py-2 text-xs"><span>Replying to {replyingTo.authorName}</span><button onClick={() => setReplyingTo(null)}><X className="h-3.5 w-3.5" /></button></div>}
         <form onSubmit={submit} className="flex gap-2 border-t border-border p-4">
           <Input value={text} onChange={event => setText(event.target.value)} placeholder={user ? 'Add a comment…' : 'Sign in to comment'} disabled={!user} />
           <EmojiPicker onEmojiSelect={emoji => setText(current => current + emoji)} />

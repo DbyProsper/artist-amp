@@ -17,6 +17,7 @@ import { doc, getDoc, collection, query, where, getDocs, addDoc, deleteDoc } fro
 import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { VideoThumbnail } from '@/components/media/VideoThumbnail';
+import { PostDetailModal } from '@/components/profile/PostDetailModal';
 
 interface Profile {
   id: string;
@@ -54,6 +55,8 @@ export default function UserProfilePage() {
   const [socialLinks, setSocialLinks] = useState<SocialLinks>({});
   const [showLinksModal, setShowLinksModal] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedPostIndex, setSelectedPostIndex] = useState(0);
+  const [postDetailOpen, setPostDetailOpen] = useState(false);
 
   const { posts, tracks, loading: postsLoading } = useProfilePosts(userId);
 
@@ -337,13 +340,13 @@ export default function UserProfilePage() {
             <div className="py-12 text-center text-muted-foreground">Loading...</div>
           ) : posts.length > 0 ? (
             <div className="grid grid-cols-3 gap-1">
-              {posts.map((post) => (
-                <div key={post.id} className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer">
+              {posts.map((post, index) => (
+                <button type="button" onClick={() => { setSelectedPostIndex(index); setPostDetailOpen(true); }} key={post.id} className="aspect-square rounded-lg overflow-hidden relative group cursor-pointer">
                   {post.type === 'video' && post.videoUrl ? <VideoThumbnail src={post.videoUrl} poster={post.imageUrl} alt={post.caption || 'Video post'} className="h-full w-full" /> : <img src={post.imageUrl || post.track?.coverArt || '/musicinsta-default-cover.webp'} alt={post.caption || 'Post'} className="h-full w-full object-cover" />}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Play className="w-8 h-8 text-white" fill="currentColor" />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -405,6 +408,7 @@ export default function UserProfilePage() {
           profileId={profile.id}
         />
       )}
+      <PostDetailModal posts={posts} initialIndex={selectedPostIndex} isOpen={postDetailOpen} onClose={() => setPostDetailOpen(false)} />
     </div>
   );
 }

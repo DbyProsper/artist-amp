@@ -66,13 +66,14 @@ export default function LandingPage() {
     pointerX.set(x * 2 - 1); pointerY.set(y * 2 - 1); glowX.set(x * 100); glowY.set(y * 100);
   };
   const resetPage = () => { pointerX.set(0); pointerY.set(0); glowX.set(50); glowY.set(35); };
+  const explore = () => { localStorage.setItem('musicinsta_landing_seen', '1'); navigate('/'); };
 
   return <div className="relative min-h-screen overflow-hidden bg-background text-foreground" onMouseMove={movePage} onMouseLeave={resetPage}>
     <motion.div aria-hidden className="pointer-events-none fixed inset-0 z-30" style={{ background: cursorGlow }} />
     <motion.header initial={{ opacity: 0, y: -18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55 }} className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-5">
         <motion.div className="flex items-center gap-3" whileHover={reduceMotion ? undefined : { scale: 1.025 }}><AppLogo size="lg" /><span className="font-display text-xl font-bold text-primary">MusicInsta</span></motion.div>
-        <div className="flex gap-1 sm:gap-2"><Button variant="ghost" onClick={() => navigate('/')}>Explore</Button><Button onClick={() => navigate('/auth')}>Sign in</Button></div>
+        <div className="flex gap-1 sm:gap-2"><Button variant="ghost" onClick={explore}>Explore</Button><Button onClick={() => navigate('/auth')}>Sign in</Button></div>
       </div>
     </motion.header>
 
@@ -87,7 +88,7 @@ export default function LandingPage() {
             <motion.span variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }} className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/15 px-4 py-2 text-sm font-semibold text-primary backdrop-blur-md"><Sparkles className="h-4 w-4" />Create, release and get discovered</motion.span>
             <motion.h1 variants={{ hidden: { opacity: 0, y: 28 }, visible: { opacity: 1, y: 0 } }} className="mt-6 font-display text-4xl font-black leading-[.95] text-white sm:text-6xl lg:text-7xl">The music platform built around independent artists.</motion.h1>
             <motion.p variants={{ hidden: { opacity: 0, y: 22 }, visible: { opacity: 1, y: 0 } }} className="mt-6 max-w-2xl text-base leading-7 text-white/75 sm:text-lg sm:leading-8">MusicInsta connects an AI-powered production studio, a complete browser DAW and a social music community. Make the work, publish it and reach listeners whose taste genuinely matches your sound.</motion.p>
-            <motion.div variants={{ hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0 } }} className="mt-8 flex flex-wrap gap-3"><Button size="lg" onClick={() => navigate('/auth')}>Start creating <ArrowRight className="ml-2 h-4 w-4" /></Button><Button size="lg" variant="secondary" onClick={() => navigate('/')}>Discover music</Button></motion.div>
+            <motion.div variants={{ hidden: { opacity: 0, y: 18 }, visible: { opacity: 1, y: 0 } }} className="mt-8 flex flex-wrap gap-3"><Button size="lg" onClick={() => navigate('/auth')}>Start creating <ArrowRight className="ml-2 h-4 w-4" /></Button><Button size="lg" variant="secondary" onClick={explore}>Discover music</Button></motion.div>
           </motion.div>
         </div>
       </section>

@@ -11,7 +11,7 @@ import { EmojiPicker } from '@/components/chat/EmojiPicker';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { arrayUnion, collection, addDoc, doc, getDoc, getDocs, increment, limit, orderBy, query, setDoc, updateDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { ImageEditorModal } from '@/components/studio/ImageEditorModal';
@@ -22,6 +22,7 @@ import { takeDawAudio } from '@/lib/dawTransfer';
 import { generateImage } from '@/lib/api';
 import { DEFAULT_MEDIA_IMAGE, readMediaDuration } from '@/lib/media';
 import { deletePostDraft, loadPostDraft, savePostDraft } from '@/lib/postDrafts';
+import { MUSIC_GENRES } from '@/lib/genres';
 
 type UploadType = 'audio' | 'video' | 'image' | 'story';
 
@@ -36,6 +37,8 @@ export default function UploadPage() {
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [generatedCoverUrl, setGeneratedCoverUrl] = useState('');
   const [draftAvailable, setDraftAvailable] = useState(false);
+  const [knownHashtags, setKnownHashtags] = useState<Array<{ tag: string; count: number }>>([]);
+  const [mentionProfiles, setMentionProfiles] = useState<Array<{ id: string; username: string; name: string }>>([]);
   const [mediaDuration, setMediaDuration] = useState(0);
   const [storyClipStart, setStoryClipStart] = useState(0);
   const [storyClipEnd, setStoryClipEnd] = useState(30);
@@ -95,6 +98,31 @@ export default function UploadPage() {
   }, [existingTrackId, profile]);
 
   useEffect(() => { if (user) void loadPostDraft(user.uid).then(draft => setDraftAvailable(Boolean(draft))); }, [user]);
+
+  useEffect(() => {
+    void Promise.all([
+      getDocs(query(collection(db, 'hashtags'), orderBy('count', 'desc'), limit(30))).catch(() => null),
+      getDocs(query(collection(db, 'profiles'), limit(100))).catch(() => null),
+      getDocs(query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(100))).catch(() => null),
+    ]).then(([hashtags, profiles, posts]) => {
+      const counts = new Map<string, number>();
+      posts?.docs.forEach(item => {
+        const data = item.data();
+        const tags = Array.isArray(data.hashtags) ? data.hashtags : (String(data.caption || '').match(/#[\p{L}\p{N}_-]+/gu) || []).map((value: string) => value.slice(1).toLowerCase());
+        new Set(tags.map(String)).forEach(tag => counts.set(tag.toLowerCase(), (counts.get(tag.toLowerCase()) || 0) + 1));
+      });
+      hashtags?.docs.forEach(item => { const tag = String(item.data().tag || item.id).toLowerCase(); counts.set(tag, Math.max(counts.get(tag) || 0, Number(item.data().count) || 0)); });
+      setKnownHashtags([...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count));
+      if (profiles) setMentionProfiles(profiles.docs.map(item => ({ id: item.id, username: String(item.data().username || ''), name: String(item.data().name || 'MusicInsta user') })).filter(item => item.username));
+    });
+  }, []);
+
+  const captionToken = formData.caption.match(/(^|\s)([#@][\w-]*)$/)?.[2] || '';
+  const captionSuggestions = captionToken.startsWith('#')
+    ? knownHashtags.filter(item => item.tag.toLowerCase().includes(captionToken.slice(1).toLowerCase())).slice(0, 6).map(item => ({ value: `#${item.tag}`, label: `#${item.tag}`, detail: `${item.count} posts` }))
+    : captionToken.startsWith('@') ? mentionProfiles.filter(item => item.username.toLowerCase().includes(captionToken.slice(1).toLowerCase())).slice(0, 6).map(item => ({ value: `@${item.username}`, label: `@${item.username}`, detail: item.name })) : [];
+
+  const applyCaptionSuggestion = (value: string) => setFormData(current => ({ ...current, caption: current.caption.replace(/[#@][\w-]*$/, `${value} `) }));
 
   const saveDraft = async () => {
     if (!user || !uploadType) { toast.error('Choose a post type before saving a draft.'); return; }
@@ -237,6 +265,9 @@ export default function UploadPage() {
       let createdTrackId: string | null = existingTrackId;
 
       const creatorId = profile?.id || user.uid;
+      const hashtags = [...new Set((formData.caption.match(/#[\p{L}\p{N}_-]+/gu) || []).map(value => value.slice(1).toLowerCase()))];
+      const mentionUsernames = [...new Set((formData.caption.match(/@[\w.-]+/g) || []).map(value => value.slice(1).toLowerCase()))];
+      const mentionedProfileIds = mentionProfiles.filter(item => mentionUsernames.includes(item.username.toLowerCase())).map(item => item.id);
       const splitCredits = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
       const artistName = profile?.name || user.displayName || 'Unknown artist';
       const credits = studioGenerated ? {
@@ -278,8 +309,8 @@ export default function UploadPage() {
       }
 
       if (uploadType === 'audio' && existingTrackId) {
-        if (coverUrl && coverUrl !== DEFAULT_MEDIA_IMAGE) await updateDoc(doc(db, 'tracks', existingTrackId), { cover_url: coverUrl, updated_at: new Date() });
-        await addDoc(collection(db, 'posts'), { profile_id: creatorId, type: 'audio', track_id: existingTrackId, image_url: coverUrl, caption: formData.caption, is_story: false, expires_at: null, created_at: new Date(), is_new_release: false, is_new_post: true });
+        await updateDoc(doc(db, 'tracks', existingTrackId), { ...(coverUrl && coverUrl !== DEFAULT_MEDIA_IMAGE ? { cover_url: coverUrl } : {}), ...(hashtags.length ? { tags: arrayUnion(...hashtags) } : {}), updated_at: new Date() });
+        await addDoc(collection(db, 'posts'), { profile_id: creatorId, type: 'audio', track_id: existingTrackId, image_url: coverUrl, caption: formData.caption, hashtags, mentions: mentionedProfileIds, is_story: false, expires_at: null, created_at: new Date(), is_new_release: false, is_new_post: true });
       } else if (uploadType === 'audio') {
         // Create track document
         const trackData = {
@@ -296,6 +327,7 @@ export default function UploadPage() {
           is_new_release: true,
           is_new_post: true,
           studio_generated: studioGenerated,
+          tags: hashtags,
         };
         const trackRef = await addDoc(collection(db, 'tracks'), trackData);
         createdTrackId = trackRef.id;
@@ -311,6 +343,7 @@ export default function UploadPage() {
           created_at: new Date(),
           credits,
           is_new_release: true,
+          hashtags, mentions: mentionedProfileIds,
         };
         await addDoc(collection(db, 'posts'), postData);
       } else if (uploadType === 'story') {
@@ -326,6 +359,7 @@ export default function UploadPage() {
           is_story: true,
           expires_at: new Date(Date.now() + 24*60*60*1000),
           created_at: new Date(),
+          hashtags, mentions: mentionedProfileIds,
         };
         await addDoc(collection(db, 'posts'), postData);
       } else {
@@ -343,9 +377,13 @@ export default function UploadPage() {
           credits: uploadType === 'video' ? credits : null,
           is_new_release: false,
           is_new_post: true,
+          hashtags, mentions: mentionedProfileIds,
         };
         await addDoc(collection(db, 'posts'), postData);
       }
+
+      await Promise.all(hashtags.map(tag => setDoc(doc(db, 'hashtags', tag), { tag, count: increment(1), updated_at: new Date() }, { merge: true })));
+      await Promise.all(mentionedProfileIds.filter(id => id !== creatorId).map(id => addDoc(collection(db, 'notifications'), { profile_id: id, from_profile_id: creatorId, type: 'mention', message: `${profile?.name || 'Someone'} mentioned you in a post`, read: false, created_at: new Date() })));
 
       if (formData.addToStory && uploadType !== 'story') {
         await addDoc(collection(db, 'posts'), {
@@ -549,7 +587,7 @@ export default function UploadPage() {
                   />
                 </div>
                 <div className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
-                  <div className="space-y-2"><Label>Genre *</Label><select required className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={formData.genre} onChange={e => setFormData({ ...formData, genre: e.target.value })}><option value="">Select genre</option><option value="amapiano">Amapiano</option><option value="afrobeats">Afrobeats</option><option value="hiphop">Hip-hop</option><option value="rnb">R&B</option><option value="house">House</option><option value="gqom">Gqom</option><option value="pop">Pop</option><option value="rock">Rock</option><option value="jazz">Jazz</option><option value="electronic">Electronic</option><option value="other">Other</option></select></div>
+                  <div className="space-y-2"><Label>Genre *</Label><select required className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={formData.genre} onChange={e => setFormData({ ...formData, genre: e.target.value })}><option value="">Select genre</option>{MUSIC_GENRES.map(genre => <option key={genre} value={genre}>{genre}</option>)}</select></div>
                   <div className="space-y-2"><Label>Release type</Label><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={formData.releaseType} onChange={e => setFormData({ ...formData, releaseType: e.target.value })}><option value="single">Single</option><option value="ep">EP</option><option value="album">Album</option><option value="mixtape">Mixtape</option><option value="demo">Demo</option></select></div>
                   <div className="space-y-2"><Label>Featured artists</Label><Input placeholder="Artist A, Artist B" value={formData.featuredArtists} onChange={e => setFormData({ ...formData, featuredArtists: e.target.value })} /></div>
                   <div className="space-y-2"><Label>Writers</Label><Input placeholder="Comma-separated names" value={formData.writers} onChange={e => setFormData({ ...formData, writers: e.target.value })} /></div>
@@ -613,6 +651,7 @@ export default function UploadPage() {
                 value={formData.caption}
                 onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
               />
+              {captionSuggestions.length > 0 && <div className="overflow-hidden rounded-xl border border-border bg-card shadow-lg">{captionSuggestions.map(item => <button key={item.value} type="button" onClick={() => applyCaptionSuggestion(item.value)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"><strong>{item.label}</strong><span className="text-xs text-muted-foreground">{item.detail}</span></button>)}</div>}
               <p className="text-xs text-muted-foreground">
                 Tip: Use @username to tag users and #hashtags to increase visibility
               </p>
