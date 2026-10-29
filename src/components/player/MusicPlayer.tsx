@@ -445,7 +445,7 @@ export function FullPlayer() {
           </div>
 
           {/* Volume & Queue */}
-          <div className="flex items-center justify-between px-8 pb-8 safe-bottom">
+          <div className="player-volume-queue flex items-center justify-between px-8 pb-8 safe-bottom">
             <div className="flex items-center gap-3 w-32">
               <Volume2 className="w-5 h-5 text-muted-foreground" />
               <Slider
@@ -462,7 +462,7 @@ export function FullPlayer() {
           </div>
 
           {showQueue && (
-            <div className="absolute inset-x-0 bottom-0 z-20 max-h-[55vh] overflow-y-auto rounded-t-3xl border-t border-border bg-card p-4 shadow-2xl">
+            <div className="player-up-next absolute inset-x-0 bottom-0 z-20 max-h-[55vh] overflow-y-auto rounded-t-3xl border-t border-border bg-card p-4 shadow-2xl">
               <div className="mb-3 flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold">Up next</h3>

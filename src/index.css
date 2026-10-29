@@ -178,3 +178,13 @@
     display: none;
   }
 }
+@media (min-width: 1024px) and (max-height: 900px) {
+  .player-volume-queue {
+    transform: translateY(-1.5rem);
+    padding-bottom: 0.5rem;
+  }
+
+  .player-up-next {
+    bottom: 1.5rem;
+  }
+}

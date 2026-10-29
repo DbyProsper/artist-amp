@@ -16,7 +16,8 @@ import { clearUploadProgress, readUploadProgress, UPLOAD_PROGRESS_EVENT, type Up
 import { useStories } from '@/hooks/useStories';
 import { useRealTimeNotifications } from '@/hooks/useRealTimeNotifications';
 import { usePlayer } from '@/context/PlayerContext';
-import { rankFeedPosts } from '@/services/recommendationEngine';
+import { rankCatalog, rankFeedPosts } from '@/services/recommendationEngine';
+import { genreMatches } from '@/lib/genres';
 
 const FEED_SCROLL_KEY = 'musicinsta:feed-scroll-position';
 
@@ -86,13 +87,28 @@ export default function HomePage() {
   const rankingHistoryRef = useRef(listeningHistory);
   rankingHistoryRef.current = listeningHistory;
   const personalizedPosts = useMemo(() => rankFeedPosts(posts, rankingHistoryRef.current, preferredGenres), [posts, preferredGenres]);
+  const isSignedIn = Boolean(user?.uid);
   const realArtists = [...catalog.map(track => track.artist), ...posts.map(post => post.artist)].filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
   const trendingArtists = realArtists.filter(artist => artist.id !== 'musicinsta-official' && artist.username !== 'musicinsta').slice(0, 8);
-  const realReleases = posts.filter(post => post.track && (post.isNewRelease || post.type === 'audio')).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
-  const newReleases = [...(catalog.length ? catalog : realReleases.filter(track => track.audioUrl))]
-    .filter(track => track.audioUrl)
-    .sort((left, right) => right.plays - left.plays || (right.createdAt?.getTime() || 0) - (left.createdAt?.getTime() || 0))
-    .slice(0, 6);
+  const newReleases = useMemo(() => {
+    const realReleases = posts
+      .filter(post => post.track && (post.isNewRelease || post.type === 'audio'))
+      .map(post => post.track!)
+      .filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
+    const releasePool = catalog.length ? catalog : realReleases;
+    const playable = releasePool.filter(track => track.audioUrl);
+    if (!isSignedIn) {
+      return [...playable]
+        .sort((left, right) => right.plays - left.plays || (right.createdAt?.getTime() || 0) - (left.createdAt?.getTime() || 0))
+        .slice(0, 6);
+    }
+    const ranked = rankCatalog(playable, listeningHistory, null, preferredGenres).map(item => item.track);
+    return ranked
+      .map((track, index) => ({ track, index, preferred: preferredGenres.some(genre => genreMatches(track.genre, genre)) }))
+      .sort((left, right) => Number(right.preferred) - Number(left.preferred) || left.index - right.index)
+      .map(item => item.track)
+      .slice(0, 6);
+  }, [catalog, isSignedIn, listeningHistory, posts, preferredGenres]);
 
   return (
     <div className="min-h-screen pb-36">
