@@ -50,9 +50,12 @@ service cloud.firestore {
     // Users can read all profiles but only write their own
     match /profiles/{userId} {
       allow read: if true;
-      allow create: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow create: if request.auth != null && (
+        (request.auth.uid == userId && (!('ai_studio_access' in request.resource.data) || request.resource.data.ai_studio_access == false)) ||
+        isAdmin()
+      );
       allow update: if request.auth != null && (
-        (request.auth.uid == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['is_admin', 'role', 'roles'])) ||
+        (request.auth.uid == userId && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['is_admin', 'role', 'roles', 'ai_studio_access', 'ai_studio_access_updated_at', 'ai_studio_access_updated_by'])) ||
         (isAdmin() && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['is_admin', 'role', 'roles']) || isSuperAdmin()))
       );
       allow delete: if isSuperAdmin();

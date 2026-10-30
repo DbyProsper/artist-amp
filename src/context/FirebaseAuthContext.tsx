@@ -26,6 +26,7 @@ interface Profile {
   genres: string[];
   onboarding_completed: boolean | null;
   is_admin?: boolean;
+  ai_studio_access?: boolean;
   email: string;
   created_at: Date;
   updated_at: Date;
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           is_verified: data?.is_verified || false,
           genres: Array.isArray(data?.genres) ? data.genres.map(String) : [],
           is_admin: Boolean(data?.is_admin || data?.role === 'admin' || (Array.isArray(data?.roles) && data.roles.includes('admin'))),
+          ai_studio_access: data?.ai_studio_access === true,
           onboarding_completed: data?.onboarding_completed || false,
           email: data?.email || '',
           created_at: data?.created_at || new Date(),
@@ -268,6 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 is_verified: data?.is_verified || false,
                 genres: Array.isArray(data?.genres) ? data.genres.map(String) : [],
                 is_admin: Boolean(data?.is_admin || data?.role === 'admin' || (Array.isArray(data?.roles) && data.roles.includes('admin'))),
+                ai_studio_access: data?.ai_studio_access === true,
                 onboarding_completed: data?.onboarding_completed || false,
                 email: data?.email || user.email || '',
                 created_at: data?.created_at || new Date(),

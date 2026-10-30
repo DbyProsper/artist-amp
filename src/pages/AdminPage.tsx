@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, Users, BadgeCheck, CheckCircle, XCircle, 
-  Clock, Shield, Search, RefreshCw, Flag, FileImage, Trash2, Pencil, Crown, Music2, Link2
+  Clock, Shield, Search, RefreshCw, Flag, FileImage, Trash2, Pencil, Crown, Music2, Link2, Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +42,7 @@ interface Profile {
   is_artist: boolean | null;
   is_verified: boolean | null;
   is_admin?: boolean;
+  ai_studio_access?: boolean;
   email?: string | null;
 }
 interface Report { id: string; type: string; target_id: string; reporter_id: string; reason: string; status: string; created_at: Date }
@@ -50,7 +51,7 @@ interface OfficialPost { id: string; caption: string; image_url?: string; track_
 export default function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { isAdminOrModerator, isSuperAdmin, loading: roleLoading } = useUserRole();
+  const { isAdmin, isAdminOrModerator, isSuperAdmin, loading: roleLoading } = useUserRole();
   const [requests, setRequests] = useState<VerificationRequest[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
@@ -72,6 +73,7 @@ export default function AdminPage() {
   const [editingPostImage, setEditingPostImage] = useState<File | null>(null);
   const [aiToolsEnabled, setAiToolsEnabled] = useState(true);
   const [savingAiTools, setSavingAiTools] = useState(false);
+  const [savingAiAccessId, setSavingAiAccessId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!roleLoading && !isAdminOrModerator) {
@@ -156,12 +158,13 @@ export default function AdminPage() {
   }, [isAdminOrModerator]);
 
   const toggleAiTools = async () => {
+    if (!isAdmin) return;
     setSavingAiTools(true);
     try {
       const next = !aiToolsEnabled;
       await setDoc(doc(db, 'system_settings', 'ai_tools'), { enabled: next, updated_at: serverTimestamp(), updated_by: user?.uid }, { merge: true });
       setAiToolsEnabled(next);
-      toast.success(next ? 'AI tools enabled for all eligible users.' : 'AI tools disabled for free non-admin users.');
+      toast.success(next ? 'AI tools enabled for all eligible users.' : 'AI tools disabled except for administrators and specifically granted users.');
     } catch { toast.error('AI tool availability could not be changed.'); }
     finally { setSavingAiTools(false); }
   };
@@ -245,6 +248,28 @@ export default function AdminPage() {
     } catch (err) {
       console.error('Error updating verification:', err);
       toast.error('Failed to update verification');
+    }
+  };
+
+  const toggleAiStudioAccess = async (profile: Profile) => {
+    if (!isAdmin || profile.is_admin) return;
+    const next = profile.ai_studio_access !== true;
+    setSavingAiAccessId(profile.id);
+    try {
+      await updateDoc(doc(db, 'profiles', profile.id), {
+        ai_studio_access: next,
+        ai_studio_access_updated_at: serverTimestamp(),
+        ai_studio_access_updated_by: user?.uid || null,
+      });
+      setProfiles(current => current.map(item => item.id === profile.id ? { ...item, ai_studio_access: next } : item));
+      toast.success(next
+        ? `AI Studio access granted to ${profile.name || profile.username || 'this user'}.`
+        : `AI Studio access revoked for ${profile.name || profile.username || 'this user'}.`);
+    } catch (err) {
+      console.error('Error updating AI Studio access:', err);
+      toast.error('AI Studio access could not be changed.');
+    } finally {
+      setSavingAiAccessId(null);
     }
   };
 
@@ -333,7 +358,7 @@ export default function AdminPage() {
       </header>
 
       <div className="p-4">
-        <section className="mb-5 flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">AI tool availability</h2><p className="text-sm text-muted-foreground">One-click emergency control for free, non-admin accounts. Administrators retain access.</p></div><Button disabled={savingAiTools} variant={aiToolsEnabled ? 'destructive' : 'default'} onClick={() => void toggleAiTools()}>{savingAiTools ? 'Saving…' : aiToolsEnabled ? 'Disable AI tools' : 'Enable AI tools'}</Button></section>
+        <section className="mb-5 flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">AI tool availability</h2><p className="text-sm text-muted-foreground">One-click emergency control for general access. Administrators and users granted access below remain enabled.</p></div><Button disabled={savingAiTools || !isAdmin} variant={aiToolsEnabled ? 'destructive' : 'default'} onClick={() => void toggleAiTools()}>{savingAiTools ? 'Saving…' : aiToolsEnabled ? 'Disable AI tools' : 'Enable AI tools'}</Button></section>
         <section className="mb-5 space-y-3 rounded-2xl border border-border bg-card p-4">
           <div className="flex items-center gap-3"><img src="/musicinsta-default-cover.webp" alt="MusicInsta" className="h-10 w-10 rounded-full object-cover" /><div><h2 className="font-bold">Post as MusicInsta</h2><p className="text-xs text-muted-foreground">Publish an announcement, image, or playable track as the official account.</p></div></div>
           <Textarea value={officialCaption} onChange={event => setOfficialCaption(event.target.value)} placeholder="Official announcement or community update..." className="min-h-24" />
@@ -451,7 +476,7 @@ export default function AdminPage() {
               {filteredProfiles.map((profile) => (
                 <div
                   key={profile.id}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-muted/30"
+                  className="flex flex-col gap-3 p-3 rounded-xl bg-muted/30 sm:flex-row sm:items-center"
                 >
                   <img
                     src={profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'}
@@ -467,7 +492,7 @@ export default function AdminPage() {
                     </div>
                     <p className="text-xs text-muted-foreground">@{profile.username || 'user'}</p>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex w-full flex-wrap gap-1 sm:w-auto sm:justify-end">
                     <Button
                       size="sm"
                       variant={profile.is_artist ? 'default' : 'outline'}
@@ -477,6 +502,19 @@ export default function AdminPage() {
                       Artist
                     </Button>
                     {isSuperAdmin && <Button size="sm" variant={profile.is_admin ? 'default' : 'outline'} className="h-7 px-2 text-xs" onClick={() => void toggleAdmin(profile)}><Crown className="mr-1 h-3 w-3" />Admin</Button>}
+                    {isAdmin && (
+                      <Button
+                        size="sm"
+                        variant={(profile.is_admin || profile.ai_studio_access) ? 'default' : 'outline'}
+                        className="h-7 px-2 text-xs"
+                        disabled={profile.is_admin || savingAiAccessId === profile.id}
+                        title={profile.is_admin ? 'Administrators always have unlimited AI Studio access.' : undefined}
+                        onClick={() => void toggleAiStudioAccess(profile)}
+                      >
+                        <Sparkles className="mr-1 h-3 w-3" />
+                        {savingAiAccessId === profile.id ? 'Saving…' : profile.is_admin ? 'AI unlimited' : profile.ai_studio_access ? 'AI granted' : 'Grant AI'}
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant={profile.is_verified ? 'default' : 'outline'}
