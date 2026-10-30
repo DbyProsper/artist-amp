@@ -12,6 +12,9 @@ export interface GeneratedAudioItem {
   mode?: string;
   improved_prompt?: string;
   plan?: string;
+  lyrics?: string;
+  genre?: string;
+  is_public?: boolean;
 }
 
 /**
@@ -80,7 +83,7 @@ export async function checkDuplicateTrack(profileId: string, title: string): Pro
 /**
  * Save generated audio as a track and add to AI Generated Music playlist
  */
-export async function saveGeneratedAudio(profileId: string, item: GeneratedAudioItem) {
+export async function saveGeneratedAudio(profileId: string, item: GeneratedAudioItem, options: { addToStudioPlaylist?: boolean } = {}) {
   try {
     // Validate required fields
     if (!profileId || !item.title || !item.audio_url) {
@@ -90,26 +93,31 @@ export async function saveGeneratedAudio(profileId: string, item: GeneratedAudio
     console.log('[AI Music] Saving generated audio:', item.title);
 
     // Get or create the AI Generated Music playlist
-    const playlist = await getOrCreateAIPlaylist(profileId);
+    const addToStudioPlaylist = options.addToStudioPlaylist ?? true;
+    const playlist = addToStudioPlaylist ? await getOrCreateAIPlaylist(profileId) : null;
 
     // Create the track data
-    const trackData: any = {
+    const trackData: Record<string, unknown> = {
       profile_id: profileId,
       title: item.title,
       audio_url: item.audio_url,
       cover_url: item.cover_url || null,
       duration: item.duration || null,
-      is_public: false,
+      is_public: item.is_public ?? false,
       created_at: new Date(),
       updated_at: new Date(),
     };
 
+    if (item.lyrics) trackData.lyrics = item.lyrics;
+    if (item.genre) trackData.genre = item.genre;
+
     // Add metadata if provided (only non-undefined values)
     if (item.mode || item.improved_prompt || item.plan) {
-      trackData.metadata = {};
-      if (item.mode !== undefined) trackData.metadata.mode = item.mode;
-      if (item.improved_prompt !== undefined) trackData.metadata.improved_prompt = item.improved_prompt;
-      if (item.plan !== undefined) trackData.metadata.plan = item.plan;
+      const metadata: Record<string, string> = {};
+      if (item.mode !== undefined) metadata.mode = item.mode;
+      if (item.improved_prompt !== undefined) metadata.improved_prompt = item.improved_prompt;
+      if (item.plan !== undefined) metadata.plan = item.plan;
+      trackData.metadata = metadata;
     }
 
     // Add track to Firestore
@@ -119,13 +127,14 @@ export async function saveGeneratedAudio(profileId: string, item: GeneratedAudio
     console.log('[AI Music] Track created:', track.id);
 
     // Update the playlist to include this track
-    const playlistRef = doc(db, 'playlists', playlist.id);
-    await updateDoc(playlistRef, {
-      tracks: arrayUnion(track.id),
-      updated_at: new Date()
-    });
-
-    console.log('[AI Music] Track added to playlist');
+    if (playlist) {
+      const playlistRef = doc(db, 'playlists', playlist.id);
+      await updateDoc(playlistRef, {
+        tracks: arrayUnion(track.id),
+        updated_at: new Date()
+      });
+      console.log('[AI Music] Track added to playlist');
+    }
     return { track, playlist };
   } catch (error) {
     console.error('[AI Music] Error saving generated audio:', error);
@@ -155,7 +164,7 @@ export async function saveGeneratedLyrics(profileId: string, item: GeneratedLyri
     const playlist = await getOrCreateAIPlaylist(profileId);
 
     // Create the track data
-    const trackData: any = {
+    const trackData: Record<string, unknown> = {
       profile_id: profileId,
       title: item.title,
       audio_url: null, // No audio for lyrics

@@ -24,6 +24,7 @@ import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { storeDawAudio } from '@/lib/dawTransfer';
+import { useAiToolsAvailability } from '@/hooks/useAiToolsAvailability';
 
 // Import for genre mapping
 const GENRE_PRESETS = {
@@ -57,7 +58,8 @@ interface GeneratedItem {
 export default function StudioPage() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
-  const { openInMainPlayer, duration: playerDuration } = usePlayer();
+  const { openInMainPlayer, duration: playerDuration, refreshCatalog } = usePlayer();
+  const { enabled: aiToolsEnabled, checking: aiToolsChecking, message: aiUnavailableMessage } = useAiToolsAvailability();
 
   // ==================== FLOW STATE ====================
   const [showEntry, setShowEntry] = useState(() => {
@@ -91,6 +93,7 @@ export default function StudioPage() {
   const [generatedLyrics, setGeneratedLyrics] = useState<string | null>(null);
   const [generatedTitle, setGeneratedTitle] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingToProfile, setIsSavingToProfile] = useState(false);
 
   // ==================== HISTORY STATE ====================
   const [history, setHistory] = useState<GeneratedItem[]>([]);
@@ -217,6 +220,13 @@ export default function StudioPage() {
    * Generate track for current feature
    */
   const handleGenerate = async () => {
+    if (aiToolsChecking || !aiToolsEnabled) {
+      const message = aiToolsChecking ? 'Checking AI tool availability…' : aiUnavailableMessage;
+      setGenerationError(message);
+      toast.error(message);
+      return;
+    }
+
     if (!prompt.trim()) {
       setGenerationError('Please describe what you want to create');
       return;
@@ -427,6 +437,8 @@ export default function StudioPage() {
         audio_url: generatedAudioUrl,
         cover_url: generatedImageUrl,
         duration: playerDuration || undefined,
+        lyrics: generatedLyrics || undefined,
+        genre: selectedGenre,
       });
 
       toast.success('💾 Saved to library!');
@@ -440,6 +452,45 @@ export default function StudioPage() {
       return undefined;
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveToProfile = async () => {
+    if (!generatedAudioUrl || !user?.uid || !profile?.id) {
+      toast.error(user ? 'Generate audio before saving it to your profile.' : 'Please sign in to save tracks.');
+      return;
+    }
+
+    setIsSavingToProfile(true);
+    try {
+      if (savedTrackId) {
+        await updateDoc(doc(db, 'tracks', savedTrackId), {
+          is_public: true,
+          title: generatedTitle || prompt || 'Generated Track',
+          cover_url: generatedImageUrl || null,
+          lyrics: generatedLyrics || null,
+          genre: selectedGenre,
+          updated_at: new Date(),
+        });
+      } else {
+        const { track } = await saveGeneratedAudio(profile.id, {
+          title: generatedTitle || prompt || `${currentFeature} - ${new Date().toLocaleString()}`,
+          audio_url: generatedAudioUrl,
+          cover_url: generatedImageUrl || undefined,
+          duration: playerDuration || undefined,
+          lyrics: generatedLyrics || undefined,
+          genre: selectedGenre,
+          is_public: true,
+          mode: generationMode,
+        }, { addToStudioPlaylist: false });
+        setSavedTrackId(track.id);
+      }
+      await refreshCatalog();
+      toast.success('Saved to the Tracks section of your profile.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The track could not be saved to your profile.');
+    } finally {
+      setIsSavingToProfile(false);
     }
   };
 
@@ -651,8 +702,13 @@ export default function StudioPage() {
               }}
               onDownload={handleDownloadTrack}
               onSave={handleSaveTrack}
+              onSaveToProfile={() => void handleSaveToProfile()}
               onSaveToPlaylist={openPlaylistPicker}
               isSaving={isSaving}
+              isSavingToProfile={isSavingToProfile}
+              aiToolsEnabled={aiToolsEnabled}
+              aiToolsChecking={aiToolsChecking}
+              aiUnavailableMessage={aiUnavailableMessage}
               history={history.filter((h) => h.feature === currentFeature)}
               onHistorySelect={(item) => {
                 if (item.audioUrl) {
@@ -693,6 +749,9 @@ export default function StudioPage() {
           setChatExpanded(!chatExpanded);
           setChatOpen(true); // Keep chat open when toggling
         }}
+        aiToolsEnabled={aiToolsEnabled}
+        aiToolsChecking={aiToolsChecking}
+        aiUnavailableMessage={aiUnavailableMessage}
       />
 
       {/* Result Display Modal */}
@@ -713,6 +772,7 @@ export default function StudioPage() {
         onEditImage={handleOpenImageEditor}
         onCreatePost={() => void transferGeneratedContent('post')}
         onSendToDaw={resultModalData.audioUrl ? () => void transferGeneratedContent('daw') : undefined}
+        onSaveToProfile={resultModalData.audioUrl ? () => void handleSaveToProfile() : undefined}
         title={`${currentFeature} - ${resultModalData.prompt}`}
       />
 

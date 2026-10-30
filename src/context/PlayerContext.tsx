@@ -44,6 +44,7 @@ interface PlayerContextType {
   openMiniPlayer: () => void;
   openInMainPlayer: (track: Track, queueSource?: Track[]) => void;
   refreshCatalog: () => Promise<void>;
+  clearPlayer: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -84,17 +85,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => { repeatRef.current = repeatMode; }, [repeatMode]);
   useEffect(() => { userIdRef.current = user?.uid ?? null; }, [user?.uid]);
 
+  const clearPlayer = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+    }
+    currentTrackRef.current = null;
+    queueRef.current = [];
+    setCurrentTrack(null);
+    setQueueState([]);
+    setIsPlaying(false);
+    setIsExpanded(false);
+    setIsMiniPlayerVisible(false);
+    setProgress(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setPlaybackError(null);
+    setShowLyrics(false);
+    if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
+  }, []);
+
   useEffect(() => {
     const previous = previousUserIdRef.current;
-    if (previous && !user?.uid) {
-      const audio = audioRef.current;
-      if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
-      currentTrackRef.current = null; queueRef.current = [];
-      setCurrentTrack(null); setQueueState([]); setIsPlaying(false); setIsExpanded(false); setIsMiniPlayerVisible(false);
-      setProgress(0); setCurrentTime(0); setDuration(0); setPlaybackError(null); setShowLyrics(false);
-    }
+    if (previous && !user?.uid) clearPlayer();
     previousUserIdRef.current = user?.uid ?? null;
-  }, [user?.uid]);
+  }, [clearPlayer, user?.uid]);
 
   const setQueue = useCallback((tracks: Track[]) => {
     const playable = tracks.filter((track, index, items) => Boolean(track.audioUrl) && items.findIndex(item => item.id === track.id) === index);
@@ -179,7 +196,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [setQueue, updateHistory]);
 
   const playTrack = useCallback((track: Track, queueSource?: Track[]) => {
-    selectTrack(track, chooseQueue(track, queueSource));
+    // An explicit queue (profile Play All or a manually reordered Up Next)
+    // must retain the user's chosen order. With no explicit queue, build the
+    // personalized recommendation sequence as usual.
+    selectTrack(track, queueSource?.length ? queueSource : chooseQueue(track));
   }, [chooseQueue, selectTrack]);
 
   const advance = useCallback((reason: 'ended' | 'skip') => {
@@ -374,7 +394,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setProgress: handleSetProgress, setVolume, toggleShuffle, toggleRepeat,
       toggleLyrics: () => setShowLyrics(current => !current), addToQueue, setQueue, startRadio, likeTrack, setSleepTimer,
       closeMiniPlayer: () => setIsMiniPlayerVisible(false), openMiniPlayer: () => setIsMiniPlayerVisible(true),
-      openInMainPlayer, refreshCatalog,
+      openInMainPlayer, refreshCatalog, clearPlayer,
     }}>
       {children}
     </PlayerContext.Provider>

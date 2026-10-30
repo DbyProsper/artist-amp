@@ -12,6 +12,8 @@ interface Props {
   onExport: () => void;
   onPreviewExport: () => void;
   hasPreview: boolean;
+  unavailable?: boolean;
+  unavailableMessage?: string;
 }
 
 const STAGE_LABELS: Record<ProcessingStage, { label: string; icon: React.ReactNode }> = {
@@ -33,6 +35,8 @@ export default function ExportActions({
   onExport,
   onPreviewExport,
   hasPreview,
+  unavailable = false,
+  unavailableMessage,
 }: Props) {
   const stageInfo = STAGE_LABELS[stage];
   const showSuccess = stage === 'done' && !isProcessing;
@@ -70,7 +74,7 @@ export default function ExportActions({
           <Download size={16} /> Download preview
         </button>
         <button
-          disabled={!hasFile || isProcessing}
+          disabled={!hasFile || isProcessing || unavailable}
           onClick={onExport}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
         >
@@ -82,6 +86,7 @@ export default function ExportActions({
             : 'Full-quality export'}
         </button>
       </div>
+      {unavailable && unavailableMessage && <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center text-sm text-amber-300">{unavailableMessage}</p>}
     </div>
   );
 }

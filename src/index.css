@@ -179,12 +179,32 @@
   }
 }
 @media (min-width: 1024px) and (max-height: 900px) {
-  .player-volume-queue {
-    transform: translateY(-1.5rem);
+  .player-artwork-stage {
+    min-height: 0;
+  }
+
+  .player-artwork {
+    width: min(34vh, 22rem);
+    height: min(34vh, 22rem);
+    flex: none;
+  }
+
+  .player-track-info {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+  }
+
+  .player-main-controls {
+    padding-top: 0.5rem;
     padding-bottom: 0.5rem;
   }
 
+  .player-volume-queue {
+    transform: none;
+    padding-bottom: 1rem;
+  }
+
   .player-up-next {
-    bottom: 1.5rem;
+    bottom: 0;
   }
 }

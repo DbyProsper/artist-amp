@@ -20,6 +20,7 @@ import { Post } from '@/types';
 import { toast } from 'sonner';
 import { VideoThumbnail } from '@/components/media/VideoThumbnail';
 import { useUserRole } from '@/hooks/useUserRole';
+import { usePlayer } from '@/context/PlayerContext';
 
 function formatCount(num: number): string {
   if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -36,6 +37,7 @@ export default function ProfilePage() {
   const { user, profile, signOut, isOfficialIdentity, switchIdentity } = useAuth();
   const navigate = useNavigate();
   const { isAdmin } = useUserRole();
+  const { openInMainPlayer } = usePlayer();
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [socialLinks, setSocialLinks] = useState<SocialLinks>({});
@@ -142,6 +144,15 @@ export default function ProfilePage() {
   const handlePostClick = (index: number) => {
     setSelectedPostIndex(index);
     setPostDetailOpen(true);
+  };
+
+  const playableTracks = tracks.filter(track => Boolean(track.audioUrl));
+  const handlePlayAll = () => {
+    if (!playableTracks.length) {
+      toast.error('There are no playable tracks on this profile yet.');
+      return;
+    }
+    openInMainPlayer(playableTracks[0], playableTracks);
   };
 
   return (
@@ -290,13 +301,13 @@ export default function ProfilePage() {
             <div className="py-12 text-center text-muted-foreground">Loading...</div>
           ) : tracks.length > 0 ? (
             <>
-              <motion.button whileTap={{ scale: 0.98 }} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-primary via-accent to-secondary mb-4">
+              <motion.button type="button" onClick={handlePlayAll} whileTap={{ scale: 0.98 }} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-primary via-accent to-secondary mb-4">
                 <Play className="w-5 h-5 text-white" fill="currentColor" />
                 <span className="font-semibold text-white">Play All</span>
               </motion.button>
               <div className="space-y-1">
                 {tracks.map((track, index) => (
-                  <div key={track.id} className="flex items-center gap-1"><div className="min-w-0 flex-1"><TrackRow track={track} index={index + 1} showIndex /></div><Button size="icon" variant="ghost" title="Post this track to the feed" onClick={() => navigate(`/upload?existingTrack=${encodeURIComponent(track.id)}`)}><Share2 className="h-4 w-4" /></Button></div>
+                  <div key={track.id} className="flex items-center gap-1"><div className="min-w-0 flex-1"><TrackRow track={track} queue={playableTracks} index={index + 1} showIndex /></div><Button size="icon" variant="ghost" title="Post this track to the feed" onClick={() => navigate(`/upload?existingTrack=${encodeURIComponent(track.id)}`)}><Share2 className="h-4 w-4" /></Button></div>
                 ))}
               </div>
             </>

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useQuotaGate } from '@/hooks/useQuotaGate';
 import QuotaGuard from '@/components/QuotaGuard';
 import type { QuotaKey } from '@/lib/planLimits';
+import { toast } from 'sonner';
 
 interface PromptBoxProps {
   value: string;
@@ -16,6 +17,8 @@ interface PromptBoxProps {
   disabled?: boolean;
   buttonText?: string;
   quotaKey?: QuotaKey;
+  submissionDisabled?: boolean;
+  disabledMessage?: string;
 }
 
 export function PromptBox({
@@ -28,6 +31,8 @@ export function PromptBox({
   disabled = false,
   buttonText = 'Create Track',
   quotaKey,
+  submissionDisabled = false,
+  disabledMessage,
 }: PromptBoxProps) {
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -46,6 +51,11 @@ export function PromptBox({
   const remainingWords = maxWords - wordCount;
 
   const handleSubmit = () => {
+    if (submissionDisabled) {
+      if (disabledMessage) toast.error(disabledMessage);
+      return;
+    }
+
     if (disabled || loading || wordCount === 0) {
       return;
     }
@@ -58,6 +68,14 @@ export function PromptBox({
     }
 
     onSubmit();
+  };
+
+  const submitAfterQuotaCheck = () => {
+    if (submissionDisabled) {
+      if (disabledMessage) toast.error(disabledMessage);
+      return;
+    }
+    if (!disabled && !loading && wordCount > 0) onSubmit();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -129,9 +147,9 @@ export function PromptBox({
               </motion.span>
 
               {quotaKey ? (
-                <QuotaGuard quotaKey={quotaKey} onAllowed={onSubmit}>
+                <QuotaGuard quotaKey={quotaKey} onAllowed={submitAfterQuotaCheck}>
                   <Button
-                    disabled={disabled || loading || wordCount === 0}
+                    disabled={disabled || loading || submissionDisabled || wordCount === 0}
                     size="lg"
                     className="gap-2 rounded-full font-semibold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40"
                   >
@@ -151,7 +169,7 @@ export function PromptBox({
               ) : (
                 <Button
                   onClick={handleSubmit}
-                  disabled={disabled || loading || wordCount === 0}
+                  disabled={disabled || loading || submissionDisabled || wordCount === 0}
                   size="lg"
                   className="gap-2 rounded-full font-semibold shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40"
                 >
@@ -171,6 +189,12 @@ export function PromptBox({
             </div>
           </div>
         </div>
+
+        {submissionDisabled && disabledMessage && (
+          <p role="alert" className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center text-sm text-amber-200">
+            {disabledMessage}
+          </p>
+        )}
 
         {/* Helpful text */}
         <motion.div

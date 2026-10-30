@@ -4,7 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { PlayerProvider } from "@/context/PlayerContext";
+import { PlayerProvider, usePlayer } from "@/context/PlayerContext";
 import { AuthProvider, useAuth } from "@/context/FirebaseAuthContext";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { MiniPlayer, FullPlayer } from "@/components/player/MusicPlayer";
@@ -104,6 +104,18 @@ function PlayerComponents() {
   );
 }
 
+function ClearGuestPlayerOnAuth() {
+  const { user, loading } = useAuth();
+  const { clearPlayer } = usePlayer();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!loading && !user && location.pathname === '/auth') clearPlayer();
+  }, [clearPlayer, loading, location.pathname, user]);
+
+  return null;
+}
+
 // ScrollToTop component
 function ScrollToTop() {
   useScrollToTop();
@@ -136,6 +148,7 @@ const AppRoutes = () => {
   return (
     <div className="min-h-screen bg-background">
       <ScrollToTop />
+      <ClearGuestPlayerOnAuth />
       <GlobalQuotaPrompt />
       <Suspense fallback={routeFallback}>
       <Routes>

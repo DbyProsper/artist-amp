@@ -16,6 +16,8 @@ import { Button } from '@/components/ui/button';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
+import { toast } from 'sonner';
+import { useAiToolsAvailability } from '@/hooks/useAiToolsAvailability';
 
 interface GeneratedTrack {
   id: string;
@@ -33,6 +35,7 @@ interface AudioEnhancementPageProps {
 export default function AudioEnhancementPage({ onBack, generatedAudioUrl, generatedTracks = [] }: AudioEnhancementPageProps) {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
+  const { enabled: aiToolsEnabled, checking: aiToolsChecking, message: aiUnavailableMessage } = useAiToolsAvailability();
   const [searchParams] = useSearchParams();
   const [state, setState] = useState<any>({
     file: null,
@@ -170,6 +173,10 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
   )), []);
 
   const handleExport = useCallback(()=>{
+    if (aiToolsChecking || !aiToolsEnabled) {
+      toast.error(aiToolsChecking ? 'Checking AI tool availability…' : aiUnavailableMessage);
+      return;
+    }
     if (!state.file) return;
 
     setState((s:any) => ({ ...s, status: 'Processing full-quality export', processingKind: 'export', stage: 'uploading', progress: 0, timings: null }));
@@ -191,7 +198,7 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
       onResult: (blob) => setState((s:any) => ({ ...s, enhancedBlob: blob })),
       onError: (message) => setState((s:any) => ({ ...s, status: 'Error', processingKind: null, stage: 'error', error: message })),
     });
-  }, [state.file, state.settings, enhancement, outputFormat]);
+  }, [aiToolsChecking, aiToolsEnabled, aiUnavailableMessage, state.file, state.settings, enhancement, outputFormat]);
 
   const handlePreviewExport = useCallback(() => {
     if (!state.enhancedBuffer) return;
@@ -346,6 +353,8 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
                   onExport={handleExport}
                   onPreviewExport={handlePreviewExport}
                   hasPreview={Boolean(state.enhancedBuffer)}
+                  unavailable={aiToolsChecking || !aiToolsEnabled}
+                  unavailableMessage={aiToolsChecking ? 'Checking AI tool availability…' : aiUnavailableMessage}
                 />
               </div>
             </div>

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { 
   Play, Pause, SkipBack, SkipForward, 
   Shuffle, Repeat, Repeat1, Volume2, 
   ChevronDown, Heart, Share2, MoreHorizontal,
-  ListMusic, X
+  ListMusic, X, GripVertical
 } from 'lucide-react';
 import { usePlayer } from '@/context/PlayerContext';
 import { cn } from '@/lib/utils';
@@ -12,34 +12,12 @@ import { Slider } from '@/components/ui/slider';
 import { PlayerSettingsModal } from '@/components/modals/PlayerSettingsModal';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/FirebaseAuthContext';
+import { buildTimedLyrics, hasAuthoredTimestamps } from '@/lib/timedLyrics';
 
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function buildTimedLyrics(lyrics: string, duration: number, authoredStart?: number) {
-  const lines = lyrics.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const parsed = lines.map(line => {
-    const match = line.match(/^\[(\d{1,2}):(\d{2}(?:\.\d+)?)\]\s*(.*)$/);
-    return match ? { text: match[3], startTime: Number(match[1]) * 60 + Number(match[2]), endTime: 0 } : null;
-  });
-  if (parsed.every(Boolean)) return parsed.map((line, index) => ({ ...line!, endTime: parsed[index + 1]?.startTime ?? duration }));
-  const intro = authoredStart ?? (duration > 0 ? Math.min(18, Math.max(6, duration * .075)) : 0);
-  const singingEnd = duration > 0 ? Math.max(intro + 1, duration * .92) : intro + lines.length * 3;
-  const weights = lines.map(line => {
-    const isSection = /^\s*[[(](verse|chorus|hook|bridge|intro|outro|pre.?chorus|refrain|instrumental)[^\])]*[\])]\s*$/i.test(line);
-    return isSection ? .65 : Math.max(1.25, line.split(/\s+/).filter(Boolean).length * .42);
-  });
-  const totalWeight = weights.reduce((sum, value) => sum + value, 0) || 1;
-  const available = Math.max(1, singingEnd - intro);
-  let cursor = intro;
-  return lines.map((text, index) => {
-    const startTime = cursor;
-    cursor += (weights[index] / totalWeight) * available;
-    return { text, startTime, endTime: index === lines.length - 1 ? singingEnd : cursor };
-  });
 }
 
 // Extract dominant color from image (simplified - returns theme color)
@@ -176,6 +154,7 @@ export function FullPlayer() {
     setExpanded,
     setProgress,
     setVolume,
+    setQueue,
     toggleShuffle,
     toggleRepeat,
     toggleLyrics,
@@ -188,7 +167,7 @@ export function FullPlayer() {
   const timedLyrics = useMemo(() => currentTrack?.timestampedLyrics?.length
     ? currentTrack.timestampedLyrics
     : buildTimedLyrics(currentTrack?.lyrics || '', duration || currentTrack?.duration || 0, currentTrack?.lyricStartTime), [currentTrack, duration]);
-  const hasTimestampedLyrics = Boolean(currentTrack?.timestampedLyrics?.length || currentTrack?.lyrics?.match(/^\[\d{1,2}:\d{2}/m));
+  const hasTimestampedLyrics = Boolean(currentTrack?.timestampedLyrics?.length || hasAuthoredTimestamps(currentTrack?.lyrics || ''));
   // Authored timestamps remain exact. Untimed lyrics reserve the estimated intro
   // and are compressed into the likely vocal window so they do not drift late.
   const lyricClock = currentTime + (hasTimestampedLyrics ? 0 : 1.5);
@@ -242,7 +221,7 @@ export function FullPlayer() {
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
           transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-          className="fixed inset-0 z-50 flex flex-col overflow-hidden"
+          className="player-full fixed inset-0 z-50 flex flex-col overflow-hidden"
         >
           {/* Dynamic background based on album art */}
           <div className="absolute inset-0 -z-10">
@@ -288,13 +267,13 @@ export function FullPlayer() {
           </div>
 
           {/* Album Art or Lyrics */}
-          <div className="flex-1 flex items-center justify-center px-8">
+          <div className="player-artwork-stage flex min-h-0 flex-1 items-center justify-center px-8">
             {showLyrics && currentTrack?.lyrics ? (
               <motion.div
                 ref={lyricContainerRef}
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="w-full max-w-sm aspect-square bg-gradient-to-br from-primary/20 to-accent/20 rounded-2xl p-6 overflow-y-auto"
+                className="player-artwork aspect-square w-full max-w-sm overflow-y-auto rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 p-6"
               >
                 <div className="w-full space-y-4 pb-40 pt-4 text-center" aria-label="Synchronized lyrics">
                   {timedLyrics.map((line, index) => (
@@ -307,7 +286,7 @@ export function FullPlayer() {
             ) : (
               <motion.div
                 className={cn(
-                  "w-full max-w-sm aspect-square rounded-2xl overflow-hidden shadow-2xl"
+                  "player-artwork w-full max-w-sm aspect-square rounded-2xl overflow-hidden shadow-2xl"
                 )}
                 animate={{ 
                   scale: isPlaying ? 1 : 0.95,
@@ -326,7 +305,7 @@ export function FullPlayer() {
           </div>
 
           {/* Track Info */}
-          <div className="px-8 py-4">
+          <div className="player-track-info px-8 py-4">
             <div className="flex items-center justify-between">
               <div className="min-w-0 flex-1">
                 <h2 className="text-2xl font-bold truncate">{currentTrack.title}</h2>
@@ -371,7 +350,7 @@ export function FullPlayer() {
           </div>
 
           {/* Main Controls */}
-          <div className="flex items-center justify-center gap-6 py-6">
+          <div className="player-main-controls flex items-center justify-center gap-6 py-6">
             <button
               onClick={toggleShuffle}
               aria-label={isShuffled ? 'Turn shuffle off' : 'Shuffle upcoming tracks'}
@@ -466,19 +445,23 @@ export function FullPlayer() {
               <div className="mb-3 flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold">Up next</h3>
-                  <p className="text-xs text-muted-foreground">Played and liked music first, then similar discoveries.</p>
+                  <p className="text-xs text-muted-foreground">Drag tracks to reorder, or select one to play it now.</p>
                 </div>
                 <button onClick={() => setShowQueue(false)} aria-label="Close queue" className="rounded-full p-2 hover:bg-muted"><X className="h-4 w-4" /></button>
               </div>
-              <div className="space-y-1">
+              <Reorder.Group axis="y" values={queue} onReorder={setQueue} className="space-y-1">
                 {queue.map((track, index) => (
-                  <button key={track.id} onClick={() => { playTrack(track, queue); setShowQueue(false); }} className={cn('flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-muted', track.id === currentTrack.id && 'bg-primary/10')}>
-                    <span className="w-6 text-center text-xs text-muted-foreground">{index + 1}</span>
-                    <img src={track.coverArt} alt="" className="h-10 w-10 rounded-md object-cover" />
-                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{track.title}</span><span className="block truncate text-xs text-muted-foreground">{track.artist.name}</span></span>
-                  </button>
+                  <Reorder.Item key={track.id} value={track} className={cn('flex w-full cursor-grab items-center gap-2 rounded-xl p-2 active:cursor-grabbing', track.id === currentTrack.id && 'bg-primary/10')}>
+                    <GripVertical className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <button type="button" onClick={() => { playTrack(track, queue); setShowQueue(false); }} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left hover:bg-muted">
+                      <span className="w-6 text-center text-xs text-muted-foreground">{index + 1}</span>
+                      <img src={track.coverArt} alt="" className="h-10 w-10 rounded-md object-cover" />
+                      <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{track.title}</span><span className="block truncate text-xs text-muted-foreground">{track.artist.name}</span></span>
+                    </button>
+                  </Reorder.Item>
                 ))}
-              </div>
+              </Reorder.Group>
+              {!queue.length && <p className="py-8 text-center text-sm text-muted-foreground">Your queue is empty.</p>}
             </div>
           )}
 

@@ -6,6 +6,7 @@ import { saveGeneratedAudio } from '@/lib/aiMusicStorage';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
 import { downloadStem, separateAudio, type StemSeparationResult } from './api';
+import { useAiToolsAvailability } from '@/hooks/useAiToolsAvailability';
 
 interface StemSeparatorPanelProps {
   initialFile?: File | null;
@@ -15,6 +16,7 @@ interface StemSeparatorPanelProps {
 
 export function StemSeparatorPanel({ initialFile = null, onSendToDaw, compact = false }: StemSeparatorPanelProps) {
   const { user, profile } = useAuth();
+  const { enabled: aiToolsEnabled, checking: aiToolsChecking, message: aiUnavailableMessage } = useAiToolsAvailability();
   const [file, setFile] = useState<File | null>(initialFile);
   const [result, setResult] = useState<StemSeparationResult | null>(null);
   const [progress, setProgress] = useState(0);
@@ -26,6 +28,7 @@ export function StemSeparatorPanel({ initialFile = null, onSendToDaw, compact = 
   useEffect(() => { setFile(initialFile); setResult(null); setProgress(0); setStatus(''); }, [initialFile]);
 
   const run = async () => {
+    if (aiToolsChecking || !aiToolsEnabled) { toast.error(aiToolsChecking ? 'Checking AI tool availability…' : aiUnavailableMessage); return; }
     if (!user) { toast.info('Sign in to use the Stem Separator.'); return; }
     if (!file) { toast.error('Choose an audio file first.'); return; }
     setBusy(true); setResult(null); setProgress(0); setStatus('Preparing audio');
@@ -70,7 +73,8 @@ export function StemSeparatorPanel({ initialFile = null, onSendToDaw, compact = 
       {file && duration > 0 && <span className="mt-1 text-xs text-muted-foreground">Duration: {formatMediaDuration(duration)}</span>}
       <input type="file" accept="audio/*" className="hidden" onChange={event => void chooseFile(event.target.files?.[0] || null)} />
     </label>
-    <Button className="w-full" size="lg" disabled={!file || busy} onClick={() => void run()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Scissors className="mr-2 h-4 w-4" />}{busy ? status : 'Extract vocals and instrumental'}</Button>
+    <Button className="w-full" size="lg" disabled={!file || busy || aiToolsChecking || !aiToolsEnabled} onClick={() => void run()}>{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Scissors className="mr-2 h-4 w-4" />}{busy ? status : 'Extract vocals and instrumental'}</Button>
+    {!aiToolsEnabled && <p role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-center text-sm text-amber-300">{aiUnavailableMessage}</p>}
     {busy && <div><div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>{status}</span><span>{progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full bg-primary transition-all duration-500" style={{ width: `${progress}%` }} /></div><p className="mt-2 text-xs text-muted-foreground">Short clips usually finish first. A full five-minute track can take several minutes because both high-quality stems are rendered before upload.</p></div>}
     {result && <div className="space-y-3">
       <StemPlaylist result={result} />

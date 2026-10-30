@@ -18,6 +18,7 @@ import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { VideoThumbnail } from '@/components/media/VideoThumbnail';
 import { PostDetailModal } from '@/components/profile/PostDetailModal';
+import { usePlayer } from '@/context/PlayerContext';
 
 interface Profile {
   id: string;
@@ -48,6 +49,7 @@ export default function UserProfilePage() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
   const { user, profile: currentProfile } = useAuth();
+  const { openInMainPlayer } = usePlayer();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
@@ -180,6 +182,15 @@ export default function UserProfilePage() {
       return;
     }
     navigate(`/messages?to=${userId}`);
+  };
+
+  const playableTracks = tracks.filter(track => Boolean(track.audioUrl));
+  const handlePlayAll = () => {
+    if (!playableTracks.length) {
+      toast.error('There are no playable tracks on this profile yet.');
+      return;
+    }
+    openInMainPlayer(playableTracks[0], playableTracks);
   };
 
   if (loading) {
@@ -360,6 +371,8 @@ export default function UserProfilePage() {
           ) : tracks.length > 0 ? (
             <>
               <motion.button
+                type="button"
+                onClick={handlePlayAll}
                 whileTap={{ scale: 0.98 }}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-primary via-accent to-secondary mb-4"
               >
@@ -369,7 +382,7 @@ export default function UserProfilePage() {
               
               <div className="space-y-1">
                 {tracks.map((track, index) => (
-                  <TrackRow key={track.id} track={track} index={index + 1} showIndex />
+                  <TrackRow key={track.id} track={track} queue={playableTracks} index={index + 1} showIndex />
                 ))}
               </div>
             </>

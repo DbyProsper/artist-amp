@@ -22,11 +22,21 @@ interface ChatSession {
   updatedAt: Date;
 }
 
+type StoredChatMessage = Omit<ChatMessage, 'timestamp'> & { timestamp: string };
+type StoredChatSession = Omit<ChatSession, 'messages' | 'createdAt' | 'updatedAt'> & {
+  messages: StoredChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 interface StudioAIChatProps {
   isOpen: boolean;
   isFullscreen?: boolean;
   onClose: () => void;
   onToggleFullscreen?: () => void;
+  aiToolsEnabled?: boolean;
+  aiToolsChecking?: boolean;
+  aiUnavailableMessage?: string;
 }
 
 const SESSIONS_KEY = 'studio_chat_sessions';
@@ -36,10 +46,10 @@ function loadSessions(): ChatSession[] {
   try {
     const saved = localStorage.getItem(SESSIONS_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved);
-      return parsed.map((session: any) => ({
+      const parsed = JSON.parse(saved) as StoredChatSession[];
+      return parsed.map((session) => ({
         ...session,
-        messages: session.messages.map((msg: any) => ({
+        messages: session.messages.map((msg) => ({
           ...msg,
           timestamp: new Date(msg.timestamp)
         })),
@@ -95,6 +105,9 @@ export function StudioAIChat({
   isFullscreen = false,
   onClose,
   onToggleFullscreen,
+  aiToolsEnabled = true,
+  aiToolsChecking = false,
+  aiUnavailableMessage = 'AI tools are currently unavailable. Please contact an administrator to use them.',
 }: StudioAIChatProps) {
   const [sessions, setSessions] = useState<ChatSession[]>(loadSessions());
   const [activeSessionId, setActiveSessionId] = useState<string>(sessions[0]?.id || '');
@@ -118,6 +131,10 @@ export function StudioAIChat({
   const messages = activeSession?.messages || [];
 
   const handleSendMessage = async () => {
+    if (aiToolsChecking || !aiToolsEnabled) {
+      toast.error(aiToolsChecking ? 'Checking AI tool availability…' : aiUnavailableMessage);
+      return;
+    }
     if (!input.trim() || !activeSession) return;
 
     // Add user message
@@ -391,6 +408,7 @@ export function StudioAIChat({
 
             {/* Input Section */}
             <div className="flex-shrink-0 p-6 border-t border-border/40 bg-background">
+              {!aiToolsEnabled && <p role="alert" className="mb-3 text-center text-sm text-amber-300">{aiUnavailableMessage}</p>}
               <div className="flex gap-3">
                 <Input
                   value={input}
@@ -398,12 +416,12 @@ export function StudioAIChat({
                   onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                   placeholder="Ask me anything about your music..."
                   className="rounded-lg h-10"
-                  disabled={isLoading}
+                  disabled={isLoading || aiToolsChecking || !aiToolsEnabled}
                   autoFocus
                 />
                 <Button
                   onClick={handleSendMessage}
-                  disabled={!input.trim() || isLoading}
+                  disabled={!input.trim() || isLoading || aiToolsChecking || !aiToolsEnabled}
                   className="rounded-lg px-6"
                   size="sm"
                 >
@@ -492,6 +510,7 @@ export function StudioAIChat({
 
           {/* Input - Always Visible */}
           <div className="flex-shrink-0 p-2 border-t border-border/40 bg-background space-y-2">
+            {!aiToolsEnabled && <p role="alert" className="px-2 text-center text-xs text-amber-300">{aiUnavailableMessage}</p>}
             <div className="flex gap-2">
               <Input
                 value={input}
@@ -499,12 +518,12 @@ export function StudioAIChat({
                 onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                 placeholder="Ask..."
                 className="text-xs h-8"
-                disabled={isLoading}
+                disabled={isLoading || aiToolsChecking || !aiToolsEnabled}
               />
               <Button
                 size="sm"
                 onClick={handleSendMessage}
-                disabled={!input.trim() || isLoading}
+                disabled={!input.trim() || isLoading || aiToolsChecking || !aiToolsEnabled}
                 className="h-8 px-2"
               >
                 <Send className="w-3 h-3" />

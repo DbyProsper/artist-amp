@@ -50,8 +50,13 @@ interface StudioLayoutProps {
   onPlayToggle?: () => void;
   onDownload?: () => void;
   onSave?: () => void;
+  onSaveToProfile?: () => void;
   onSaveToPlaylist?: () => void;
   isSaving?: boolean;
+  isSavingToProfile?: boolean;
+  aiToolsEnabled?: boolean;
+  aiToolsChecking?: boolean;
+  aiUnavailableMessage?: string;
 
   // History
   history?: GeneratedItem[];
@@ -120,8 +125,13 @@ export function StudioLayout({
   onPlayToggle,
   onDownload,
   onSave,
+  onSaveToProfile,
   onSaveToPlaylist,
   isSaving,
+  isSavingToProfile,
+  aiToolsEnabled = true,
+  aiToolsChecking = false,
+  aiUnavailableMessage,
   history = [],
   onHistorySelect,
   onHistoryDelete,
@@ -351,6 +361,8 @@ export function StudioLayout({
                 buttonText={buttonText}
                 placeholder={promptPlaceholder}
                 quotaKey={activeQuotaKey}
+                submissionDisabled={aiToolsChecking || !aiToolsEnabled}
+                disabledMessage={aiToolsChecking ? 'Checking AI tool availability…' : aiUnavailableMessage}
               />
             </div>
 
@@ -407,8 +419,11 @@ export function StudioLayout({
                   </Button>
                 </div>
                 <Button onClick={onSaveToPlaylist} variant="secondary" className="w-full">Save to another playlist</Button>
+                <Button onClick={onSaveToProfile} disabled={isSavingToProfile} variant="outline" className="w-full">
+                  {isSavingToProfile ? 'Saving to profile...' : 'Save to profile'}
+                </Button>
                 <p className="text-xs text-muted-foreground text-center pt-2">
-                  💡 Save to Library if you want to play this outside the studio
+                  Save privately to your library, or publish it to the Tracks section of your profile.
                 </p>
               </motion.div>
             )}
