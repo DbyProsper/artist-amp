@@ -11,6 +11,7 @@ import { EmojiPicker } from './EmojiPicker';
 import { collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
+import { GifStickerPicker, SocialAttachment, type SocialMediaAttachment } from '@/components/social/GifStickerPicker';
 
 interface Message {
   id: string;
@@ -19,6 +20,7 @@ interface Message {
   timestamp: Date;
   isOwn: boolean;
   edited: boolean;
+  attachment?: SocialMediaAttachment;
 }
 
 interface ChatWindowProps {
@@ -33,6 +35,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
   const [sending, setSending] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
+  const [attachment, setAttachment] = useState<SocialMediaAttachment | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -47,7 +50,8 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
     return onSnapshot(query(collection(db, 'messages'), where('conversation_id', '==', conversationId)), snapshot => {
       const next = snapshot.docs.map(item => {
         const value = item.data();
-        return { id: item.id, content: value.content || '', senderId: value.sender_id, timestamp: value.created_at?.toDate?.() || new Date(), isOwn: value.sender_id === identityId, edited: Boolean(value.edited_at) };
+        const mediaType = value.media_type === 'gif' || value.media_type === 'sticker' ? value.media_type : undefined;
+        return { id: item.id, content: value.content || '', senderId: value.sender_id, timestamp: value.created_at?.toDate?.() || new Date(), isOwn: value.sender_id === identityId, edited: Boolean(value.edited_at), attachment: mediaType ? { type: mediaType, url: value.media_url || undefined, sticker: value.sticker || undefined } : undefined };
       }).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
       setMessages(next);
       const unread = snapshot.docs.filter(item => item.data().recipient_id === identityId && !item.data().read);
@@ -56,18 +60,18 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
   }, [profile?.id, recipient.id, user]);
 
   const handleSend = async () => {
-    if (!newMessage.trim() || !user || !profile) return;
+    if ((!newMessage.trim() && !attachment) || !user || !profile) return;
 
-    const content = newMessage.trim(); setNewMessage(''); setSending(true);
+    const content = newMessage.trim(); const selectedAttachment = attachment; setNewMessage(''); setAttachment(null); setSending(true);
     try {
       const identityId = profile.id || user.uid;
       const conversationId = [identityId, recipient.id].sort().join('_');
       const batch = writeBatch(db);
-      batch.set(doc(collection(db, 'messages')), { conversation_id: conversationId, sender_id: identityId, actor_uid: user.uid, recipient_id: recipient.id, content, created_at: serverTimestamp(), read: false });
-      batch.set(doc(db, 'conversations', conversationId), { participant_ids: [identityId, recipient.id], actor_uids: [user.uid], last_message: content, last_sender_id: identityId, updated_at: serverTimestamp() }, { merge: true });
+      batch.set(doc(collection(db, 'messages')), { conversation_id: conversationId, sender_id: identityId, actor_uid: user.uid, recipient_id: recipient.id, content, media_type: selectedAttachment?.type || null, media_url: selectedAttachment?.url || null, sticker: selectedAttachment?.sticker || null, created_at: serverTimestamp(), read: false });
+      batch.set(doc(db, 'conversations', conversationId), { participant_ids: [identityId, recipient.id], actor_uids: [user.uid], last_message: content || (selectedAttachment?.type === 'gif' ? 'Sent a GIF' : 'Sent a sticker'), last_sender_id: identityId, updated_at: serverTimestamp() }, { merge: true });
       batch.set(doc(collection(db, 'notifications')), { profile_id: recipient.id, from_profile_id: profile.id, type: 'message', message: 'sent you a message', read: false, created_at: serverTimestamp() });
       await batch.commit();
-    } catch { setNewMessage(content); toast.error('Message could not be sent.'); }
+    } catch { setNewMessage(content); setAttachment(selectedAttachment); toast.error('Message could not be sent.'); }
     finally { setSending(false); }
   };
 
@@ -134,11 +138,12 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
                   : 'bg-muted rounded-bl-md'
               }`}
             >
-              {editingId === message.id ? <div className="flex items-center gap-1"><Input value={editingText} onChange={event => setEditingText(event.target.value)} className="h-8 min-w-48 bg-background text-foreground" autoFocus /><button aria-label="Save message" onClick={() => void saveEdit()}><Check className="h-4 w-4" /></button><button aria-label="Cancel editing" onClick={() => setEditingId(null)}><X className="h-4 w-4" /></button></div> : <p className="text-sm">{message.content}</p>}
+              {message.attachment && <SocialAttachment attachment={message.attachment} className={message.content ? 'mb-2' : ''} />}
+              {editingId === message.id ? <div className="flex items-center gap-1"><Input value={editingText} onChange={event => setEditingText(event.target.value)} className="h-8 min-w-48 bg-background text-foreground" autoFocus /><button aria-label="Save message" onClick={() => void saveEdit()}><Check className="h-4 w-4" /></button><button aria-label="Cancel editing" onClick={() => setEditingId(null)}><X className="h-4 w-4" /></button></div> : message.content ? <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p> : null}
               <p className={`text-[10px] mt-1 ${message.isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                 {formatDistanceToNow(message.timestamp, { addSuffix: true })}{message.edited ? ' · edited' : ''}
               </p>
-              {message.isOwn && editingId !== message.id && <div className="mt-1 flex justify-end gap-2 opacity-70"><button aria-label="Edit message" onClick={() => { setEditingId(message.id); setEditingText(message.content); }}><Pencil className="h-3.5 w-3.5" /></button><button aria-label="Delete message" onClick={() => void removeMessage(message.id)}><Trash2 className="h-3.5 w-3.5" /></button></div>}
+              {message.isOwn && editingId !== message.id && <div className="mt-1 flex justify-end gap-2 opacity-70">{message.content && <button aria-label="Edit message" onClick={() => { setEditingId(message.id); setEditingText(message.content); }}><Pencil className="h-3.5 w-3.5" /></button>}<button aria-label="Delete message" onClick={() => void removeMessage(message.id)}><Trash2 className="h-3.5 w-3.5" /></button></div>}
             </div>
           </motion.div>
         ))}
@@ -147,6 +152,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
 
       {/* Input */}
       <div className="p-4 border-t border-border bg-card safe-bottom">
+        {attachment && <div className="mb-2 flex items-end gap-2 rounded-xl bg-muted/60 p-2"><SocialAttachment attachment={attachment} /><button type="button" aria-label="Remove attachment" onClick={() => setAttachment(null)} className="rounded-full bg-background p-1"><X className="h-4 w-4" /></button></div>}
         <div className="flex items-center gap-2">
           <Input
             ref={inputRef}
@@ -157,10 +163,11 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
             className="flex-1 bg-muted border-none"
           />
           <EmojiPicker onEmojiSelect={handleEmojiSelect} />
+          <GifStickerPicker onSelect={setAttachment} disabled={sending} />
           <Button
             size="icon"
             onClick={() => void handleSend()}
-            disabled={!newMessage.trim() || sending}
+            disabled={(!newMessage.trim() && !attachment) || sending}
           >
             <Send className="w-4 h-4" />
           </Button>

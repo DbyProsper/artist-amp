@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { EmojiPicker } from '@/components/chat/EmojiPicker';
 import { createPortal } from 'react-dom';
+import { GifStickerPicker, SocialAttachment, type SocialMediaAttachment } from '@/components/social/GifStickerPicker';
 
 interface CommentItem {
   id: string;
@@ -19,6 +20,7 @@ interface CommentItem {
   likedBy: string[];
   parentId?: string;
   replyToName?: string;
+  attachment?: SocialMediaAttachment;
 }
 interface Props {
   postId: string;
@@ -33,6 +35,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [text, setText] = useState('');
   const [replyingTo, setReplyingTo] = useState<CommentItem | null>(null);
+  const [attachment, setAttachment] = useState<SocialMediaAttachment | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -48,6 +51,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
           authorId: data.author_id || '', likes: Number(data.likes) || 0,
           likedBy: Array.isArray(data.liked_by) ? data.liked_by : [],
           parentId: data.parent_id || undefined, replyToName: data.reply_to_name || undefined,
+          attachment: data.media_type === 'gif' || data.media_type === 'sticker' ? { type: data.media_type, url: data.media_url || undefined, sticker: data.sticker || undefined } : undefined,
         };
       }));
     }, () => toast.error('Comments could not be loaded.'));
@@ -55,14 +59,16 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!user || !text.trim()) return;
+    if (!user || (!text.trim() && !attachment)) return;
     const cleanText = text.trim();
-    setText('');
+    const selectedAttachment = attachment;
+    setText(''); setAttachment(null);
     await addDoc(collection(db, 'posts', postId, 'comments'), {
       text: cleanText,
       author_id: profile?.id || user.uid,
       author_name: profile?.name || user.displayName || 'MusicInsta user',
       avatar_url: profile?.avatar_url || user.photoURL || '/musicinsta-default-cover.webp',
+      media_type: selectedAttachment?.type || null, media_url: selectedAttachment?.url || null, sticker: selectedAttachment?.sticker || null,
       created_at: serverTimestamp(),
       likes: 0, liked_by: [], parent_id: replyingTo?.id || null, reply_to_name: replyingTo?.authorName || null,
     });
@@ -72,7 +78,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
         from_profile_id: profile?.id || user.uid,
         post_id: postId,
         type: 'comment',
-        message: `commented: “${cleanText.slice(0, 80)}”`,
+        message: cleanText ? `commented: “${cleanText.slice(0, 80)}”` : selectedAttachment?.type === 'gif' ? 'commented with a GIF' : 'commented with a sticker',
         read: false,
         created_at: serverTimestamp(),
       });
@@ -98,7 +104,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
     const actor = profile?.id || user?.uid || '';
     return <div key={comment.id} className={`flex gap-3 ${nested ? 'ml-10 border-l border-border pl-3' : ''}`}>
       <img src={comment.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
-      <div className="min-w-0 flex-1"><div className="rounded-2xl bg-muted px-3 py-2 text-sm"><strong>{comment.authorName}</strong>{comment.replyToName && <span className="ml-1 text-xs text-primary">replying to @{comment.replyToName}</span>}<p className="whitespace-pre-wrap break-words">{comment.text}</p></div><div className="mt-1 flex items-center gap-3 px-2 text-xs text-muted-foreground"><button onClick={() => void toggleLike(comment)} className={comment.likedBy.includes(actor) ? 'text-red-500' : ''}><Heart className={`mr-1 inline h-3.5 w-3.5 ${comment.likedBy.includes(actor) ? 'fill-current' : ''}`} />{comment.likes || 'Like'}</button><button onClick={() => { setReplyingTo(comment); setText(current => current || `@${comment.authorName} `); }}><Reply className="mr-1 inline h-3.5 w-3.5" />Reply</button>{user && (comment.authorId === actor || ownerId === actor) && <button onClick={() => void removeComment(comment)} className="text-destructive"><Trash2 className="mr-1 inline h-3.5 w-3.5" />Delete</button>}</div></div>
+      <div className="min-w-0 flex-1"><div className="rounded-2xl bg-muted px-3 py-2 text-sm"><strong>{comment.authorName}</strong>{comment.replyToName && <span className="ml-1 text-xs text-primary">replying to @{comment.replyToName}</span>}{comment.attachment && <SocialAttachment attachment={comment.attachment} className="mt-2" />}{comment.text && <p className="mt-1 whitespace-pre-wrap break-words">{comment.text}</p>}</div><div className="mt-1 flex items-center gap-3 px-2 text-xs text-muted-foreground"><button onClick={() => void toggleLike(comment)} className={comment.likedBy.includes(actor) ? 'text-red-500' : ''}><Heart className={`mr-1 inline h-3.5 w-3.5 ${comment.likedBy.includes(actor) ? 'fill-current' : ''}`} />{comment.likes || 'Like'}</button><button onClick={() => { setReplyingTo(comment); setText(current => current || `@${comment.authorName} `); }}><Reply className="mr-1 inline h-3.5 w-3.5" />Reply</button>{user && (comment.authorId === actor || ownerId === actor) && <button onClick={() => void removeComment(comment)} className="text-destructive"><Trash2 className="mr-1 inline h-3.5 w-3.5" />Delete</button>}</div></div>
     </div>;
   };
 
@@ -115,10 +121,12 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
           {comments.filter(comment => !comment.parentId).map(comment => <div key={comment.id} className="space-y-3">{renderComment(comment)}{comments.filter(reply => reply.parentId === comment.id).map(reply => renderComment(reply, true))}</div>)}
         </div>
         {replyingTo && <div className="flex items-center justify-between border-t border-border bg-muted/40 px-4 py-2 text-xs"><span>Replying to {replyingTo.authorName}</span><button onClick={() => setReplyingTo(null)}><X className="h-3.5 w-3.5" /></button></div>}
+        {attachment && <div className="flex items-end gap-2 border-t border-border px-4 pt-3"><SocialAttachment attachment={attachment} /><button type="button" aria-label="Remove attachment" onClick={() => setAttachment(null)} className="rounded-full bg-muted p-1"><X className="h-4 w-4" /></button></div>}
         <form onSubmit={submit} className="flex gap-2 border-t border-border p-4">
           <Input value={text} onChange={event => setText(event.target.value)} placeholder={user ? 'Add a comment…' : 'Sign in to comment'} disabled={!user} />
           <EmojiPicker onEmojiSelect={emoji => setText(current => current + emoji)} />
-          <Button type="submit" disabled={!user || !text.trim()}>Post</Button>
+          <GifStickerPicker onSelect={setAttachment} disabled={!user} />
+          <Button type="submit" disabled={!user || (!text.trim() && !attachment)}>Post</Button>
         </form>
       </section>
     </div>,

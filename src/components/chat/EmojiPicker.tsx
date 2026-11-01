@@ -24,7 +24,7 @@ export function EmojiPicker({ onEmojiSelect }: EmojiPickerProps) {
       <PopoverContent 
         side="top" 
         align="end" 
-        className="w-auto p-0 border-border bg-card"
+        className="z-[260] w-auto p-0 border-border bg-card"
       >
         <EmojiPickerReact
           theme={Theme.DARK}

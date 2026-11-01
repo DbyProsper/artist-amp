@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useFeedPosts } from '@/hooks/useFeedPosts';
 import { usePlayer } from '@/context/PlayerContext';
-import { rankCatalog } from '@/services/recommendationEngine';
+import { rankArtists, rankCatalog, trackMatchesGenres } from '@/services/recommendationEngine';
 import type { Track } from '@/types';
 import { DISCOVER_GENRES, canonicalGenre, genreMatches } from '@/lib/genres';
 import { useAuth } from '@/context/FirebaseAuthContext';
@@ -49,6 +49,7 @@ export default function DiscoverPage() {
   const genres = [...new Set([...DISCOVER_GENRES, ...catalogTracks.flatMap(track => [track.genre, ...track.artist.genres]).filter(Boolean).map(value => canonicalGenre(String(value)))])];
   const liveTrackIds = new Set(liveTracks.map(track => track.id));
   const personalizedTracks = useMemo(() => rankCatalog(catalogTracks, listeningHistory, currentTrack, preferredGenres).map(item => item.track), [catalogTracks, listeningHistory, currentTrack, preferredGenres]);
+  const personalizedTrackOrder = useMemo(() => new Map(personalizedTracks.map((track, index) => [track.id, index])), [personalizedTracks]);
 
   useEffect(() => {
     getDocs(collection(db, 'follows')).then(snapshot => {
@@ -109,18 +110,29 @@ export default function DiscoverPage() {
   const rankedFilteredIds = new Set(rankedFilteredTracks.map(track => track.id));
   const personalizedGenreTracks = [...rankedFilteredTracks, ...filteredTracks.filter(track => !rankedFilteredIds.has(track.id))];
   const fallbackTracks = selectedGenre ? personalizedTracks.filter(track => !genreMatches(track.genre, selectedGenre)).slice(0, 6) : [];
-  const visibleArtists = selectedGenre ? filteredArtists : catalogArtists;
+  const visibleArtists = rankArtists(
+    selectedGenre ? filteredArtists : catalogArtists,
+    catalogTracks,
+    listeningHistory,
+    preferredGenres,
+  );
   const followedArtists = visibleArtists.filter(artist => followingIds.has(artist.id));
   const suggestedArtists = visibleArtists.filter(artist => artist.id !== profile?.id && !followingIds.has(artist.id));
 
   const sortTracks = (tracks: Track[]) => {
+    const compareTaste = (left: Track, right: Track) => {
+      if (!user || selectedGenre) return 0;
+      const preferredDifference = Number(trackMatchesGenres(right, preferredGenres)) - Number(trackMatchesGenres(left, preferredGenres));
+      if (preferredDifference) return preferredDifference;
+      return (personalizedTrackOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (personalizedTrackOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER);
+    };
     switch (sortBy) {
       case 'trending':
-        return [...tracks].sort((a, b) => (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.plays - a.plays);
+        return [...tracks].sort((a, b) => compareTaste(a, b) || (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.plays - a.plays);
       case 'newest':
-        return [...tracks].sort((a, b) => Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id)));
+        return [...tracks].sort((a, b) => compareTaste(a, b) || Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id)));
       case 'popular':
-        return [...tracks].sort((a, b) => (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.likes - a.likes);
+        return [...tracks].sort((a, b) => compareTaste(a, b) || (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.likes - a.likes);
       default:
         return tracks;
     }

@@ -3,7 +3,7 @@ import type { Track } from '@/types';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { buildPersonalizedQueue, shuffleUpcoming, type ListeningHistoryEntry } from '@/services/recommendationEngine';
 import { loadListeningHistory, loadMusicCatalog, recordListeningInteraction, syncLikedTrack } from '@/services/musicCatalogService';
-import { doc, getDoc, increment, updateDoc } from 'firebase/firestore';
+import { doc, increment, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 interface PlayerContextType {
@@ -113,6 +113,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     previousUserIdRef.current = user?.uid ?? null;
   }, [clearPlayer, user?.uid]);
 
+  useEffect(() => {
+    if (!user?.uid) {
+      setPreferredGenres([]);
+      return;
+    }
+    const profileGenres = profile?.genres || [];
+    setPreferredGenres(profileGenres);
+    return onSnapshot(
+      doc(db, 'user_preferences', user.uid),
+      snapshot => {
+        const stored = snapshot.exists() && Array.isArray(snapshot.data().favorite_genres)
+          ? snapshot.data().favorite_genres.map(String)
+          : profileGenres;
+        setPreferredGenres([...new Set(stored.filter(Boolean))]);
+      },
+      () => setPreferredGenres(profileGenres),
+    );
+  }, [profile?.genres, user?.uid]);
+
   const setQueue = useCallback((tracks: Track[]) => {
     const playable = tracks.filter((track, index, items) => Boolean(track.audioUrl) && items.findIndex(item => item.id === track.id) === index);
     queueRef.current = playable;
@@ -123,20 +142,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCatalogLoading(true);
     try {
       const userId = user?.uid;
-      const [nextCatalog, nextHistory, preferences, profileSnapshot] = await Promise.all([
+      const [nextCatalog, nextHistory] = await Promise.all([
         loadMusicCatalog(userId),
         userId ? loadListeningHistory(userId) : Promise.resolve([]),
-        userId ? getDoc(doc(db, 'user_preferences', userId)).catch(() => null) : Promise.resolve(null),
-        userId ? getDoc(doc(db, 'profiles', userId)).catch(() => null) : Promise.resolve(null),
       ]);
-      const preferred = preferences?.exists() && Array.isArray(preferences.data().favorite_genres)
-        ? preferences.data().favorite_genres.map(String)
-        : profileSnapshot?.exists() && Array.isArray(profileSnapshot.data().genres) ? profileSnapshot.data().genres.map(String) : [];
       catalogRef.current = nextCatalog;
       historyRef.current = nextHistory;
       setCatalog(nextCatalog);
       setListeningHistory(nextHistory);
-      setPreferredGenres(preferred);
     } finally {
       setCatalogLoading(false);
     }
@@ -340,10 +353,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const active = currentTrackRef.current;
       if (!active) return !current;
       if (!current) setQueue(shuffleUpcoming(queueRef.current, active.id));
-      else setQueue(buildPersonalizedQueue(active, catalogRef.current, historyRef.current));
+      else setQueue(buildPersonalizedQueue(active, catalogRef.current, historyRef.current, 100, preferredGenres));
       return !current;
     });
-  }, [setQueue]);
+  }, [preferredGenres, setQueue]);
 
   const toggleRepeat = useCallback(() => {
     const modes: Array<'off' | 'all' | 'one'> = ['off', 'all', 'one'];
@@ -357,8 +370,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const startRadio = useCallback((track = currentTrackRef.current ?? undefined) => {
     if (!track) return;
-    selectTrack(track, buildPersonalizedQueue(track, catalogRef.current, historyRef.current));
-  }, [selectTrack]);
+    selectTrack(track, buildPersonalizedQueue(track, catalogRef.current, historyRef.current, 100, preferredGenres));
+  }, [preferredGenres, selectTrack]);
 
   const likeTrack = useCallback((track: Track, liked: boolean) => {
     const wasLiked = Boolean(historyRef.current.find(entry => entry.trackId === track.id)?.liked);

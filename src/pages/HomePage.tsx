@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Music2, Bell, MessageCircle, Plus, TrendingUp, Disc, Sparkles, Wand2, Zap, SlidersHorizontal, ArrowRight, X } from 'lucide-react';
 import { StoriesRow } from '@/components/feed/StoriesRow';
@@ -16,8 +16,7 @@ import { clearUploadProgress, readUploadProgress, UPLOAD_PROGRESS_EVENT, type Up
 import { useStories } from '@/hooks/useStories';
 import { useRealTimeNotifications } from '@/hooks/useRealTimeNotifications';
 import { usePlayer } from '@/context/PlayerContext';
-import { rankCatalog, rankFeedPosts } from '@/services/recommendationEngine';
-import { genreMatches } from '@/lib/genres';
+import { rankArtists, rankCatalog, rankFeedPosts } from '@/services/recommendationEngine';
 
 const FEED_SCROLL_KEY = 'musicinsta:feed-scroll-position';
 
@@ -84,12 +83,15 @@ export default function HomePage() {
     navigate('/studio');
   };
 
-  const rankingHistoryRef = useRef(listeningHistory);
-  rankingHistoryRef.current = listeningHistory;
-  const personalizedPosts = useMemo(() => rankFeedPosts(posts, rankingHistoryRef.current, preferredGenres), [posts, preferredGenres]);
+  const personalizedPosts = useMemo(() => rankFeedPosts(posts, listeningHistory, preferredGenres), [listeningHistory, posts, preferredGenres]);
   const isSignedIn = Boolean(user?.uid);
-  const realArtists = [...catalog.map(track => track.artist), ...posts.map(post => post.artist)].filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
-  const trendingArtists = realArtists.filter(artist => artist.id !== 'musicinsta-official' && artist.username !== 'musicinsta').slice(0, 8);
+  const realArtists = useMemo(() => [...catalog.map(track => track.artist), ...posts.map(post => post.artist)].filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index), [catalog, posts]);
+  const trendingArtists = useMemo(() => rankArtists(
+    realArtists.filter(artist => artist.id !== 'musicinsta-official' && artist.username !== 'musicinsta'),
+    catalog,
+    listeningHistory,
+    preferredGenres,
+  ).slice(0, 8), [catalog, listeningHistory, preferredGenres, realArtists]);
   const newReleases = useMemo(() => {
     const realReleases = posts
       .filter(post => post.track && (post.isNewRelease || post.type === 'audio'))
@@ -102,12 +104,7 @@ export default function HomePage() {
         .sort((left, right) => right.plays - left.plays || (right.createdAt?.getTime() || 0) - (left.createdAt?.getTime() || 0))
         .slice(0, 6);
     }
-    const ranked = rankCatalog(playable, listeningHistory, null, preferredGenres).map(item => item.track);
-    return ranked
-      .map((track, index) => ({ track, index, preferred: preferredGenres.some(genre => genreMatches(track.genre, genre)) }))
-      .sort((left, right) => Number(right.preferred) - Number(left.preferred) || left.index - right.index)
-      .map(item => item.track)
-      .slice(0, 6);
+    return rankCatalog(playable, listeningHistory, null, preferredGenres).map(item => item.track).slice(0, 6);
   }, [catalog, isSignedIn, listeningHistory, posts, preferredGenres]);
 
   return (

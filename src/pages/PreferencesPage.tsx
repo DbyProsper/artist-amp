@@ -4,7 +4,7 @@ import { ArrowLeft, Music2, Save, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useNavigate } from 'react-router-dom';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { MUSIC_GENRES as genres } from '@/lib/genres';
@@ -16,8 +16,14 @@ export default function PreferencesPage() {
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
 
   useEffect(() => {
-    // Could fetch from user_preferences table
-  }, [profile]);
+    if (!profile?.id) return;
+    void getDoc(doc(db, 'user_preferences', profile.id)).then(snapshot => {
+      const saved = snapshot.exists() && Array.isArray(snapshot.data().favorite_genres)
+        ? snapshot.data().favorite_genres.map(String)
+        : profile.genres || [];
+      setSelectedGenres(saved);
+    }).catch(() => setSelectedGenres(profile.genres || []));
+  }, [profile?.genres, profile?.id]);
 
   if (!user) {
     navigate('/auth');

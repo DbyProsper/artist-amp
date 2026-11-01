@@ -1,4 +1,5 @@
-import type { Post, Track } from '@/types';
+import type { Artist, Post, Track } from '@/types';
+import { canonicalGenre } from '@/lib/genres';
 
 export interface ListeningHistoryEntry {
   trackId: string;
@@ -23,6 +24,19 @@ const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'this', 'that',
 
 function clean(value: unknown): string {
   return String(value ?? '').trim().toLowerCase();
+}
+
+function cleanGenre(value: unknown): string {
+  return canonicalGenre(String(value ?? '')).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function trackGenres(track: Track): string[] {
+  return [...new Set([track.genre, ...track.artist.genres].filter(Boolean).map(cleanGenre).filter(Boolean))];
+}
+
+export function trackMatchesGenres(track: Track, genres: string[]): boolean {
+  const requested = new Set(genres.map(cleanGenre).filter(Boolean));
+  return trackGenres(track).some(genre => requested.has(genre));
 }
 
 function addTokens(vector: Map<string, number>, value: unknown, weight: number) {
@@ -104,6 +118,16 @@ function preferenceSimilarity(candidate: Track, profile: Array<{ track: Track; w
   return total ? weighted / total : 0;
 }
 
+function learnedGenreProfile(profile: Array<{ track: Track; weight: number }>): Map<string, number> {
+  const weights = new Map<string, number>();
+  for (const item of profile) {
+    for (const genre of trackGenres(item.track)) weights.set(genre, (weights.get(genre) ?? 0) + item.weight);
+  }
+  const maximum = Math.max(0, ...weights.values());
+  if (maximum > 0) weights.forEach((value, genre) => weights.set(genre, value / maximum));
+  return weights;
+}
+
 function uniquePlayable(tracks: Track[]): Track[] {
   const seen = new Set<string>();
   return tracks.filter(track => {
@@ -124,7 +148,8 @@ export function rankCatalog(
   const byHistory = historyMap(history);
   const profile = historyProfile(playable, history);
   const familiarArtists = new Set(profile.map(item => item.track.artist.id));
-  const preferred = new Set(preferredGenres.map(clean));
+  const preferred = new Set(preferredGenres.map(cleanGenre).filter(Boolean));
+  const learnedGenres = learnedGenreProfile(profile);
 
   return playable
     .filter(track => track.id !== seed?.id)
@@ -134,10 +159,13 @@ export function rankCatalog(
       const seedScore = seed ? contentSimilarity(seed, track) : 0;
       const preferenceScore = preferenceSimilarity(track, profile);
       const affinity = historyAffinity(entry);
-      const candidateGenres = [track.genre, ...track.artist.genres].filter(Boolean).map(clean);
+      const candidateGenres = trackGenres(track);
       const onboardingAffinity = candidateGenres.some(genre => preferred.has(genre)) ? 1 : 0;
+      const learnedGenreAffinity = Math.max(0, ...candidateGenres.map(genre => learnedGenres.get(genre) ?? 0));
       const discoveryBoost = familiarArtists.has(track.artist.id) ? 0 : 0.08;
-      const score = seedScore * 0.38 + preferenceScore * 0.28 + affinity * 0.16 + onboardingAffinity * 0.28 + discoveryBoost;
+      // Explicit onboarding choices dominate cold-start results. Listening and
+      // likes then refine the order without permanently hiding other genres.
+      const score = onboardingAffinity * 1.4 + learnedGenreAffinity * 0.72 + seedScore * 0.32 + preferenceScore * 0.24 + affinity * 0.14 + discoveryBoost;
       const reason = familiar
         ? entry?.liked ? 'liked before' : 'played before'
         : onboardingAffinity ? 'matches your preferred genres' : seedScore >= preferenceScore && seed ? `similar to ${seed.title}` : 'a new genre to explore';
@@ -176,14 +204,53 @@ export function buildPersonalizedQueue(
 export function rankFeedPosts(posts: Post[], history: ListeningHistoryEntry[], preferredGenres: string[] = []): Post[] {
   const audioTracks = posts.flatMap(post => post.track?.audioUrl ? [post.track] : []);
   const scoreById = new Map(rankCatalog(audioTracks, history, null, preferredGenres).map((item, index) => [item.track.id, item.score - index * 0.00001]));
+  const artistScores = new Map<string, number>();
+  posts.forEach(post => {
+    if (!post.track) return;
+    artistScores.set(post.artist.id, Math.max(artistScores.get(post.artist.id) ?? 0, scoreById.get(post.track.id) ?? 0));
+  });
+  const preferred = new Set(preferredGenres.map(cleanGenre).filter(Boolean));
   const newestCutoff = Date.now() - 48 * 60 * 60 * 1000;
-  const newest = posts.filter(post => post.createdAt.getTime() >= newestCutoff).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-  const ranked = posts.filter(post => post.createdAt.getTime() < newestCutoff).sort((left, right) => {
-    const leftScore = left.track ? scoreById.get(left.track.id) ?? 0 : 0;
-    const rightScore = right.track ? scoreById.get(right.track.id) ?? 0 : 0;
+  const scorePost = (post: Post) => {
+    if (post.track) return scoreById.get(post.track.id) ?? 0;
+    const explicitArtistMatch = post.artist.genres.some(genre => preferred.has(cleanGenre(genre))) ? 1.4 : 0;
+    return explicitArtistMatch + (artistScores.get(post.artist.id) ?? 0);
+  };
+  const comparePersonalized = (left: Post, right: Post) => {
+    const leftScore = scorePost(left);
+    const rightScore = scorePost(right);
     return rightScore - leftScore || right.createdAt.getTime() - left.createdAt.getTime();
+  };
+  const newest = posts.filter(post => post.createdAt.getTime() >= newestCutoff).sort(comparePersonalized);
+  const ranked = posts.filter(post => post.createdAt.getTime() < newestCutoff).sort((left, right) => {
+    return comparePersonalized(left, right);
   });
   return [...newest, ...ranked];
+}
+
+export function rankArtists(
+  artists: Artist[],
+  catalog: Track[],
+  history: ListeningHistoryEntry[],
+  preferredGenres: string[] = [],
+): Artist[] {
+  const rankedTracks = rankCatalog(catalog, history, null, preferredGenres);
+  const trackScores = new Map(rankedTracks.map(item => [item.track.id, item.score]));
+  const artistScores = new Map<string, number>();
+  for (const track of catalog) {
+    const taste = trackScores.get(track.id) ?? 0;
+    const popularity = Math.log1p(Math.max(0, track.plays)) * 0.012 + Math.log1p(Math.max(0, track.likes)) * 0.02;
+    artistScores.set(track.artist.id, Math.max(artistScores.get(track.artist.id) ?? 0, taste + popularity));
+  }
+  const preferred = new Set(preferredGenres.map(cleanGenre).filter(Boolean));
+  return [...artists].sort((left, right) => {
+    const leftExplicit = left.genres.some(genre => preferred.has(cleanGenre(genre))) ? 1 : 0;
+    const rightExplicit = right.genres.some(genre => preferred.has(cleanGenre(genre))) ? 1 : 0;
+    return rightExplicit - leftExplicit
+      || (artistScores.get(right.id) ?? 0) - (artistScores.get(left.id) ?? 0)
+      || right.followers - left.followers
+      || left.name.localeCompare(right.name);
+  });
 }
 
 export function shuffleUpcoming(queue: Track[], currentTrackId: string): Track[] {
