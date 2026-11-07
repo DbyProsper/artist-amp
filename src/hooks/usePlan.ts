@@ -33,6 +33,7 @@ export interface PlanState {
   payfastEmail: string | null;
   stripeCustomerId: string | null;
   loading: boolean;
+  promotionalCredits: { images: number; beats: number; fullSongs: number };
 }
 
 const EMPTY_QUOTA: UserQuota = {
@@ -64,6 +65,7 @@ const INITIAL_STATE: PlanState = {
   payfastEmail: null,
   stripeCustomerId: null,
   loading: true,
+  promotionalCredits: { images: 0, beats: 0, fullSongs: 0 },
 };
 
 export function usePlan(): PlanState {
@@ -99,6 +101,7 @@ export function usePlan(): PlanState {
           payfastEmail: d.payfastEmail ?? null,
           stripeCustomerId: d.stripeCustomerId ?? null,
           loading: false,
+          promotionalCredits: { images: 0, beats: 0, fullSongs: 0, ...(d.promotionalCredits ?? {}) },
         });
       }, () => setState(current => ({ ...current, loading: false })));
     });

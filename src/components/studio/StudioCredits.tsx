@@ -30,7 +30,7 @@ interface StudioCreditsProps {
 
 export function StudioCredits({ compact = false }: StudioCreditsProps) {
   const [showPlans, setShowPlans] = useState(false);
-  const { plan, quota, quotaDaily, quotaMonth, quotaDay, loading: planLoading } = usePlan();
+  const { plan, quota, quotaDaily, quotaMonth, quotaDay, promotionalCredits, loading: planLoading } = usePlan();
   const { isAdmin, loading: roleLoading } = useUserRole();
   const periods = currentPeriods();
 
@@ -84,6 +84,7 @@ export function StudioCredits({ compact = false }: StudioCreditsProps) {
           );
         })}
       </div>
+      {(promotionalCredits.images + promotionalCredits.beats + promotionalCredits.fullSongs) > 0 && <div className="mt-4 rounded-xl border border-primary/30 bg-primary/5 p-3"><p className="text-xs font-semibold uppercase tracking-wider text-primary">Games promotional rewards</p><div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs"><div><b className="block text-base">{promotionalCredits.images}</b>Images</div><div><b className="block text-base">{promotionalCredits.beats}</b>Beats</div><div><b className="block text-base">{promotionalCredits.fullSongs}</b>Full songs</div></div><p className="mt-2 text-[11px] text-muted-foreground">Typed rewards are consumed only by the matching AI tool.</p></div>}
       {showPlans && <UpgradeModal reason="upgrade_options" quotaKey="fullSongs" onClose={() => setShowPlans(false)} />}
     </section>
   );

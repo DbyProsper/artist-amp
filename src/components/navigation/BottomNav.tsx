@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Home, Compass, PlusSquare, Library, User } from 'lucide-react';
+import { Home, Compass, Gamepad2, PlusSquare, Library, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/FirebaseAuthContext';
@@ -8,6 +8,7 @@ import { usePlayer } from '@/context/PlayerContext';
 const navItems = [
   { path: '/', icon: Home, label: 'Home' },
   { path: '/discover', icon: Compass, label: 'Search' },
+  { path: '/games', icon: Gamepad2, label: 'Games' },
   { path: '/upload', icon: PlusSquare, label: 'Upload' },
   { path: '/library', icon: Library, label: 'Library' },
   { path: '/profile', icon: User, label: 'Profile' },

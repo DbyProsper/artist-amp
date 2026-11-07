@@ -42,6 +42,7 @@ const StemSeparationPage = lazy(() => import('./features/stem-separation/StemSep
 const UpgradeModal = lazy(() => import('@/components/UpgradeModal'));
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
+const GamesPage = lazy(() => import('./pages/GamesPage'));
 
 const queryClient = new QueryClient();
 
@@ -164,6 +165,7 @@ const AppRoutes = () => {
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/games" element={authenticatedPage(<GamesPage />)} />
         <Route path="/upload" element={authenticatedPage(<UploadPage />)} />
         <Route path="/messages" element={authenticatedPage(<MessagesPage />)} />
         <Route path="/profile" element={authenticatedPage(<ProfilePage />)} />
