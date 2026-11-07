@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, User, Bell, Mail, Music2, Info, LogOut, 
-  BadgeCheck, ChevronRight, Shield, BarChart3, MessageSquare, Lock, X
+  AlertTriangle, BadgeCheck, ChevronRight, Shield, BarChart3, MessageSquare, Lock, Trash2, UserX, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -10,10 +10,10 @@ import { BackButton } from '@/components/ui/BackButton';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
-import { EmailAuthProvider, linkWithCredential, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import { deleteUser, EmailAuthProvider, GoogleAuthProvider, linkWithCredential, reauthenticateWithCredential, reauthenticateWithPopup, updatePassword } from 'firebase/auth';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -29,6 +29,11 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [accountActionOpen, setAccountActionOpen] = useState(false);
+  const [accountAction, setAccountAction] = useState<'deactivate' | 'delete' | null>(null);
+  const [accountConfirmation, setAccountConfirmation] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
+  const [accountProcessing, setAccountProcessing] = useState(false);
   const hasPasswordProvider = user?.providerData.some(provider => provider.providerId === 'password') ?? false;
 
   const handlePasswordSave = async () => {
@@ -97,6 +102,58 @@ export default function SettingsPage() {
     }
   };
 
+  const closeAccountAction = () => {
+    if (accountProcessing) return;
+    setAccountActionOpen(false); setAccountAction(null); setAccountConfirmation(''); setAccountPassword('');
+  };
+
+  const handleAccountAction = async () => {
+    if (!user || !accountAction) return;
+    if (accountAction === 'delete' && accountConfirmation.trim().toUpperCase() !== 'DELETE') { toast.error('Type DELETE to confirm permanent account deletion.'); return; }
+    setAccountProcessing(true);
+    try {
+      if (accountAction === 'deactivate') {
+        await updateDoc(doc(db, 'profiles', user.uid), { account_status: 'deactivated', is_deactivated: true, deactivated_at: serverTimestamp() });
+        await signOut();
+        toast.success('Your account has been deactivated. Sign in again whenever you want to reactivate it.');
+        navigate('/landing', { replace: true });
+        return;
+      }
+
+      if (hasPasswordProvider) {
+        if (!user.email || !accountPassword) throw new Error('Enter your current password to continue.');
+        await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, accountPassword));
+      } else if (user.providerData.some(provider => provider.providerId === 'google.com')) {
+        await reauthenticateWithPopup(user, new GoogleAuthProvider());
+      } else {
+        throw new Error('Please sign out, sign in again, and retry account deletion.');
+      }
+
+      await updateDoc(doc(db, 'profiles', user.uid), {
+        account_status: 'deleted', is_deactivated: false, deleted_at: serverTimestamp(),
+        name: 'Deleted account', username: `deleted-${user.uid.slice(0, 8)}`, email: '', bio: null,
+        avatar_url: null, cover_url: null, location: null, genres: [], is_artist: false, is_verified: false,
+      });
+      await Promise.allSettled([
+        deleteDoc(doc(db, 'users', user.uid)),
+        deleteDoc(doc(db, 'user_preferences', user.uid)),
+        deleteDoc(doc(db, 'social_links', user.uid)),
+        deleteDoc(doc(db, 'studio_states', user.uid)),
+        deleteDoc(doc(db, 'studio_sessions', user.uid)),
+      ]);
+      await deleteUser(user);
+      sessionStorage.removeItem('musicinsta_identity');
+      localStorage.removeItem('musicinsta_active_daw_project');
+      toast.success('Your account has been permanently deleted.');
+      navigate('/landing', { replace: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('Firebase: ', '') : 'The account action could not be completed.';
+      toast.error(message);
+    } finally {
+      setAccountProcessing(false);
+    }
+  };
+
   if (!user) {
     navigate('/auth');
     return null;
@@ -117,6 +174,12 @@ export default function SettingsPage() {
           label: hasPasswordProvider ? 'Change Password' : 'Set a Password',
           description: hasPasswordProvider ? 'Update your sign-in password' : 'Also sign in with email and password',
           onClick: () => setPasswordOpen(true),
+        },
+        {
+          icon: UserX,
+          label: 'Deactivate or Delete Account',
+          description: 'Temporarily pause or permanently remove your account',
+          onClick: () => setAccountActionOpen(true),
         },
         ...(profile?.is_artist ? [{
           icon: BarChart3,
@@ -179,6 +242,12 @@ export default function SettingsPage() {
           label: 'Contact Admin',
           description: 'Get help or report issues',
           onClick: () => navigate('/messages?contact=admin'),
+        },
+        {
+          icon: Mail,
+          label: 'Email Support',
+          description: 'mthabisisebata113@gmail.com',
+          onClick: () => { window.location.href = 'mailto:mthabisisebata113@gmail.com?subject=MusicInsta%20Support'; },
         },
         {
           icon: Info,
@@ -303,6 +372,12 @@ export default function SettingsPage() {
             <div><Label htmlFor="confirm-password">Confirm new password</Label><Input id="confirm-password" className="mt-2" type="password" autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></div>
             <Button className="w-full" disabled={passwordSaving} onClick={handlePasswordSave}>{passwordSaving ? 'Saving…' : hasPasswordProvider ? 'Update password' : 'Set password'}</Button>
           </div>
+        </div>
+      </div>}
+      {accountActionOpen && <div className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto bg-black/75 p-4" onClick={event => event.target === event.currentTarget && closeAccountAction()}>
+        <div role="dialog" aria-modal="true" aria-labelledby="account-action-title" className="my-6 w-full max-w-lg rounded-2xl border border-border bg-background p-5 shadow-2xl">
+          <div className="flex items-start justify-between gap-4"><div><h2 id="account-action-title" className="text-xl font-bold">Manage your account</h2><p className="mt-1 text-sm text-muted-foreground">Choose whether to take a break or permanently delete your personal MusicInsta account.</p></div><button aria-label="Close" disabled={accountProcessing} onClick={closeAccountAction} className="rounded-full p-2 hover:bg-muted disabled:opacity-50"><X className="h-4 w-4" /></button></div>
+          {!accountAction ? <div className="mt-5 space-y-3"><button onClick={() => setAccountAction('deactivate')} className="flex w-full items-start gap-3 rounded-xl border border-border p-4 text-left transition hover:border-primary"><UserX className="mt-0.5 h-5 w-5 text-primary"/><span><span className="block font-semibold">Deactivate account</span><span className="mt-1 block text-sm text-muted-foreground">Your account is paused and you are signed out. Your profile, music and posts are retained. Signing in again reactivates it.</span></span></button><button onClick={() => setAccountAction('delete')} className="flex w-full items-start gap-3 rounded-xl border border-destructive/40 p-4 text-left transition hover:bg-destructive/5"><Trash2 className="mt-0.5 h-5 w-5 text-destructive"/><span><span className="block font-semibold text-destructive">Permanently delete account</span><span className="mt-1 block text-sm text-muted-foreground">Your sign-in account and identifying profile details are removed. This cannot be undone.</span></span></button></div> : <div className="mt-5 space-y-4"><div className={`rounded-xl border p-4 ${accountAction === 'delete' ? 'border-destructive/40 bg-destructive/5' : 'border-primary/30 bg-primary/5'}`}><div className="flex gap-3"><AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${accountAction === 'delete' ? 'text-destructive' : 'text-primary'}`}/><div><p className="font-semibold">Are you sure you want to {accountAction} your account?</p><p className="mt-1 text-sm text-muted-foreground">{accountAction === 'delete' ? 'Deletion is permanent. Content already shared with other people may remain in anonymised form where needed for conversations, legal obligations, safety or platform integrity.' : 'You will be signed out immediately. You can restore the account simply by signing in again.'}</p></div></div></div>{accountAction === 'delete' && <><div><Label htmlFor="delete-confirmation">Type DELETE to confirm</Label><Input id="delete-confirmation" className="mt-2" autoComplete="off" value={accountConfirmation} onChange={event => setAccountConfirmation(event.target.value)} placeholder="DELETE" /></div>{hasPasswordProvider && <div><Label htmlFor="delete-password">Current password</Label><Input id="delete-password" className="mt-2" type="password" autoComplete="current-password" value={accountPassword} onChange={event => setAccountPassword(event.target.value)} /></div>}</>}<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button variant="outline" disabled={accountProcessing} onClick={() => { setAccountAction(null); setAccountConfirmation(''); setAccountPassword(''); }}>Back</Button><Button variant={accountAction === 'delete' ? 'destructive' : 'default'} disabled={accountProcessing || (accountAction === 'delete' && accountConfirmation.trim().toUpperCase() !== 'DELETE')} onClick={() => void handleAccountAction()}>{accountProcessing ? 'Please wait…' : accountAction === 'delete' ? 'Permanently delete account' : 'Deactivate account'}</Button></div></div>}
         </div>
       </div>}
     </div>

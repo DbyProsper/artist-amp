@@ -29,6 +29,7 @@ service cloud.firestore {
         && !('is_admin' in request.resource.data)
         && !('role' in request.resource.data)
         && !('roles' in request.resource.data));
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
     // One-off payment enhance tokens — readable by owner, managed by backend only

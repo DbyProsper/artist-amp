@@ -30,6 +30,8 @@ interface Profile {
   email: string;
   created_at: Date;
   updated_at: Date;
+  account_status?: 'active' | 'deactivated' | 'deleted';
+  is_deactivated?: boolean;
 }
 
 interface AuthContextType {
@@ -78,6 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: data?.email || '',
           created_at: data?.created_at || new Date(),
           updated_at: data?.updated_at || new Date(),
+          account_status: data?.account_status || 'active',
+          is_deactivated: data?.is_deactivated === true,
         } as Profile;
       }
       return null;
@@ -159,7 +163,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
-      const profile = await fetchProfile(user.uid);
+      let profile = await fetchProfile(user.uid);
+      if (profile?.account_status === 'deactivated') {
+        await updateDoc(doc(db, 'profiles', user.uid), { account_status: 'active', is_deactivated: false, deactivated_at: null, reactivated_at: new Date() });
+        profile = { ...profile, account_status: 'active', is_deactivated: false };
+      }
       return { error: null, profile: profile || null };
     } catch (error) {
       console.error('Sign in error:', error);
@@ -174,12 +182,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const user = result.user;
 
       // Check if profile exists, create if not
-      const existingProfile = await fetchProfile(user.uid);
+      let existingProfile = await fetchProfile(user.uid);
       if (!existingProfile) {
         const profile = await createProfile(user);
         return { error: null, profile, isNew: true };
       }
 
+      if (existingProfile.account_status === 'deactivated') {
+        await updateDoc(doc(db, 'profiles', user.uid), { account_status: 'active', is_deactivated: false, deactivated_at: null, reactivated_at: new Date() });
+        existingProfile = { ...existingProfile, account_status: 'active', is_deactivated: false };
+      }
       return { error: null, profile: existingProfile, isNew: false };
     } catch (error) {
       console.error('Google sign in error:', error);
@@ -275,6 +287,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 email: data?.email || user.email || '',
                 created_at: data?.created_at || new Date(),
                 updated_at: data?.updated_at || new Date(),
+                account_status: data?.account_status || 'active',
+                is_deactivated: data?.is_deactivated === true,
               };
               console.log('Profile updated (real-time):', profileData);
               setProfile(profileData);
