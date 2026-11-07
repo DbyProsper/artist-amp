@@ -23,7 +23,7 @@ export function StoryViewer({ stories, initialIndex, onClose }: StoryViewerProps
   const [showComments, setShowComments] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const musicRef = useRef<HTMLAudioElement>(null);
-  const clipEndRef = useRef(MAX_VIDEO_STORY_DURATION);
+  const clipEndRef = useRef(MAX_STORY_DURATION);
   const { user } = useAuth();
   const currentStory = stories[currentIndex];
   const musicStart = Math.max(0, Number(currentStory?.attachedMusicData?.clipStart) || 0);
