@@ -40,6 +40,8 @@ const AlbumDetailPage = lazy(() => import('./pages/AlbumDetailPage'));
 const AlbumUploadPage = lazy(() => import('./pages/AlbumUploadPage'));
 const StemSeparationPage = lazy(() => import('./features/stem-separation/StemSeparationPage'));
 const UpgradeModal = lazy(() => import('@/components/UpgradeModal'));
+const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage'));
+const AboutPage = lazy(() => import('./pages/AboutPage'));
 
 const queryClient = new QueryClient();
 
@@ -160,6 +162,8 @@ const AppRoutes = () => {
         {/* Main app routes */}
         <Route path="/" element={<FirstVisitHome />} />
         <Route path="/discover" element={<DiscoverPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/about" element={<AboutPage />} />
         <Route path="/upload" element={authenticatedPage(<UploadPage />)} />
         <Route path="/messages" element={authenticatedPage(<MessagesPage />)} />
         <Route path="/profile" element={authenticatedPage(<ProfilePage />)} />

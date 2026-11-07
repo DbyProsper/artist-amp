@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowUp, Download, FolderOpen, Loader2, Mic, Pause, Play, Plus, Redo2, Save, Scissors, Send, SlidersHorizontal, Sparkles, Square, Trash2, Undo2, Upload, X, ZoomIn } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Download, FolderOpen, Loader2, Mic, Pause, Play, Plus, Redo2, Save, Scissors, Send, SlidersHorizontal, Sparkles, Square, Trash2, Undo2, Upload, UserMinus, UserPlus, Users, X, ZoomIn } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -28,7 +28,8 @@ interface DawTrack {
   eqEnabled?: boolean; delayEnabled?: boolean; reverbEnabled?: boolean; compressorEnabled?: boolean;
   compressorAmount?: number; pitchEnabled?: boolean; pitchKey?: string; pitchScale?: string; pitchAmount?: number;
 }
-interface ProjectSummary { id: string; name: string; updatedAt: string; trackCount: number }
+interface ProjectSummary { id: string; name: string; updatedAt: string; trackCount: number; ownerId: string; editorIds: string[] }
+interface CollaboratorProfile { id: string; name: string; username: string; avatarUrl: string }
 interface ActiveNodes { source: AudioBufferSourceNode; harmonySource?: AudioBufferSourceNode; gain: GainNode; pan: StereoPannerNode; eq: BiquadFilterNode[]; compressor: DynamicsCompressorNode; compressorWet: GainNode; delay: DelayNode; delayWet: GainNode; delayFeedback: GainNode; reverbWet: GainNode }
 
 const TRACK_COLORS = ['#ec4899', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444'];
@@ -53,6 +54,13 @@ function projectTimestamp(value: unknown): string {
   if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') return value.toDate().toISOString();
   if (typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Date(value).toISOString();
   return new Date(0).toISOString();
+}
+
+function projectStateSignature(tracks: DawTrack[], name: string, masterGain: number, compression: number, masterDelay: number, zoom: number) {
+  return JSON.stringify({
+    name, masterGain, compression, masterDelay, zoom,
+    tracks: tracks.map(({ buffer: _buffer, sourceBlob: _sourceBlob, ...track }) => withoutUndefined(track)),
+  });
 }
 
 function Waveform({ buffer, color }: { buffer: AudioBuffer; color: string }) {
@@ -113,13 +121,19 @@ function schedulePitchCorrection(source: AudioBufferSourceNode, track: DawTrack,
 export default function StudioDawPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const ownerId = user?.uid || 'local';
   const [tracks, setTracks] = useState<DawTrack[]>([]);
   const [projectId, setProjectId] = useState(() => localStorage.getItem('musicinsta_active_daw_project') || crypto.randomUUID());
   const [projectName, setProjectName] = useState('Untitled MusicInsta Session');
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [projectOwnerId, setProjectOwnerId] = useState(ownerId);
+  const [editorIds, setEditorIds] = useState<string[]>([]);
+  const [collaboratorsOpen, setCollaboratorsOpen] = useState(false);
+  const [collaboratorSearch, setCollaboratorSearch] = useState('');
+  const [collaboratorProfiles, setCollaboratorProfiles] = useState<CollaboratorProfile[]>([]);
+  const [hasUserChanges, setHasUserChanges] = useState(false);
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -168,9 +182,14 @@ export default function StudioDawPage() {
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(zoom);
   const cloudSaveWarningRef = useRef(false);
+  const baselineSignatureRef = useRef<string | null>(null);
+  const baselineProjectIdRef = useRef<string | null>(null);
+  const lastRemoteUpdatedRef = useRef(new Date(0).toISOString());
+  const applyingRemoteRef = useRef(false);
 
   const getContext = () => contextRef.current ||= new AudioContext();
   const timelineDuration = useMemo(() => Math.max(30, ...tracks.map(track => track.offset + track.length)), [tracks]);
+  const currentProjectSignature = useMemo(() => projectStateSignature(tracks, projectName, masterGain, compression, masterDelay, zoom), [tracks, projectName, masterGain, compression, masterDelay, zoom]);
   const timelineWidth = Math.max(900, timelineDuration * zoom);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
   useEffect(() => { playheadRef.current = playhead; }, [playhead]);
@@ -219,15 +238,17 @@ export default function StudioDawPage() {
 
   const refreshProjects = useCallback(async () => {
     const local = await listDawProjects(ownerId);
-    const summaries = new Map(local.map(project => [project.id, { id: project.id, name: project.name, updatedAt: project.updatedAt, trackCount: project.tracks.length }]));
+    const summaries = new Map<string, ProjectSummary>(local.map(project => [project.id, { id: project.id, name: project.name, updatedAt: project.updatedAt, trackCount: project.tracks.length, ownerId: project.cloudOwnerId || project.ownerId, editorIds: project.editorIds || [] }]));
     if (user) {
       try {
-        const remote = await getDocs(query(collection(db, 'studio_projects'), where('owner_id', '==', user.uid)));
-        remote.docs.forEach(item => {
+        const [owned, shared] = await Promise.all([
+          getDocs(query(collection(db, 'studio_projects'), where('owner_id', '==', user.uid))),
+          getDocs(query(collection(db, 'studio_projects'), where('editor_ids', 'array-contains', user.uid))),
+        ]);
+        [...owned.docs, ...shared.docs].forEach(item => {
           const value = item.data();
           const updatedAt = projectTimestamp(value.updated_at || value.updatedAt);
-          const current = summaries.get(item.id);
-          if (!current || updatedAt > current.updatedAt) summaries.set(item.id, { id: item.id, name: value.name || 'Untitled project', updatedAt, trackCount: value.tracks?.length || 0 });
+          summaries.set(item.id, { id: item.id, name: value.name || 'Untitled project', updatedAt, trackCount: value.tracks?.length || 0, ownerId: String(value.owner_id || ''), editorIds: Array.isArray(value.editor_ids) ? value.editor_ids.map(String) : [] });
         });
       } catch (error) { console.warn('Could not list cloud DAW projects', error); }
     }
@@ -239,8 +260,10 @@ export default function StudioDawPage() {
     const id = String(saved.id);
     const name = String(saved.name || 'Untitled MusicInsta Session');
     const updatedAt = projectTimestamp(saved.updatedAt || saved.updated_at) === new Date(0).toISOString() ? new Date().toISOString() : projectTimestamp(saved.updatedAt || saved.updated_at);
+    const restoredOwnerId = String(saved.owner_id || saved.cloudOwnerId || saved.ownerId || ownerId);
+    const restoredEditors = Array.isArray(saved.editor_ids) ? saved.editor_ids.map(String) : Array.isArray(saved.editorIds) ? saved.editorIds.map(String) : [];
     const localCopy: StoredDawProject = {
-      id, ownerId, name,
+      id, ownerId, cloudOwnerId: restoredOwnerId, editorIds: restoredEditors, name,
       masterGain: Number(saved.masterGain ?? 90), compression: Number(saved.compression ?? 18),
       masterDelay: Number(saved.masterDelay ?? saved.delay ?? 0), zoom: Number(saved.zoom ?? 75),
       tracks: restored.map(({ buffer: _buffer, sourceBlob, ...track }) => ({ ...track, blob: sourceBlob })),
@@ -249,9 +272,14 @@ export default function StudioDawPage() {
     };
     await saveDawProject(localCopy);
     setProjectId(id); setProjectName(name);
+    setProjectOwnerId(restoredOwnerId); setEditorIds(restoredEditors);
     setMasterGain(localCopy.masterGain); setCompression(localCopy.compression);
     setMasterDelay(localCopy.masterDelay); setZoom(localCopy.zoom);
     setTracks(restored); setSelectedTrackIds(new Set()); setPlayhead(0); playbackAnchorRef.current = 0; undoRef.current = []; redoRef.current = []; setCanUndo(false); setCanRedo(false);
+    baselineProjectIdRef.current = id;
+    baselineSignatureRef.current = projectStateSignature(restored, name, localCopy.masterGain, localCopy.compression, localCopy.masterDelay, localCopy.zoom);
+    lastRemoteUpdatedRef.current = updatedAt;
+    setHasUserChanges(false);
     localStorage.setItem('musicinsta_active_daw_project', id);
   }, [ownerId, projectToTracks]);
 
@@ -269,7 +297,7 @@ export default function StudioDawPage() {
         user ? getDoc(doc(db, 'studio_projects', id)) : Promise.resolve(null),
       ]);
       const remote = remoteSnapshot?.exists() ? { id: remoteSnapshot.id, ...remoteSnapshot.data(), updatedAt: projectTimestamp(remoteSnapshot.data().updated_at || remoteSnapshot.data().updatedAt) } : null;
-      const saved = remote && (!local || projectTimestamp(remote.updatedAt) > projectTimestamp(local.updatedAt)) ? remote : local;
+      const saved = remote && (!local || projectTimestamp(remote.updatedAt) >= projectTimestamp(local.updatedAt)) ? remote : local;
       if (saved) await applyProject(saved);
       else toast.error('This project could not be found locally or in the cloud.');
     } catch (error) {
@@ -286,7 +314,7 @@ export default function StudioDawPage() {
           user ? getDoc(doc(db, 'studio_projects', projectId)) : Promise.resolve(null),
         ]);
         const remote = remoteSnapshot?.exists() ? { id: remoteSnapshot.id, ...remoteSnapshot.data(), updatedAt: projectTimestamp(remoteSnapshot.data().updated_at || remoteSnapshot.data().updatedAt) } : null;
-        const newest = remote && (!existing || projectTimestamp(remote.updatedAt) > projectTimestamp(existing.updatedAt)) ? remote : existing;
+        const newest = remote && (!existing || projectTimestamp(remote.updatedAt) >= projectTimestamp(existing.updatedAt)) ? remote : existing;
         if (newest) await applyProject(newest);
         else {
           const legacyRemote = user ? await getDoc(doc(db, 'studio_sessions', user.uid)) : null;
@@ -299,15 +327,28 @@ export default function StudioDawPage() {
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
+    // Run once per signed-in identity; explicit project changes use loadProject.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || applyingRemoteRef.current) return;
+    if (baselineProjectIdRef.current !== projectId || baselineSignatureRef.current === null) {
+      baselineProjectIdRef.current = projectId;
+      baselineSignatureRef.current = currentProjectSignature;
+      setHasUserChanges(false);
+      return;
+    }
+    setHasUserChanges(currentProjectSignature !== baselineSignatureRef.current);
+  }, [currentProjectSignature, loaded, projectId]);
+
+  useEffect(() => {
+    if (!loaded || !hasUserChanges || applyingRemoteRef.current) return;
     const timer = window.setTimeout(async () => {
       setSaving(true);
       const now = new Date().toISOString();
       const project: StoredDawProject = {
-        id: projectId, ownerId, name: projectName, masterGain, compression, masterDelay, zoom,
+        id: projectId, ownerId, cloudOwnerId: projectOwnerId, editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
         tracks: tracks.map(({ buffer: _buffer, sourceBlob, ...track }) => ({ ...track, blob: sourceBlob })),
         createdAt: projects.find(item => item.id === projectId)?.updatedAt || now, updatedAt: now,
       };
@@ -325,11 +366,20 @@ export default function StudioDawPage() {
           if (addedCloudUrls) setTracks(current => current.map(track => cloudReadyTracks.find(item => item.id === track.id) || track));
           const cloudTracks = withoutUndefined(cloudReadyTracks.map(({ buffer: _buffer, sourceBlob: _blob, ...track }) => track));
           await setDoc(doc(db, 'studio_projects', projectId), {
-            owner_id: user.uid, name: projectName, masterGain, compression, masterDelay, zoom,
+            owner_id: projectOwnerId, editor_ids: editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
             tracks: cloudTracks, track_count: cloudTracks.length, version: 2,
-            created_at: projects.find(item => item.id === projectId)?.updatedAt || serverTimestamp(), updated_at: serverTimestamp(),
+            created_at: projects.find(item => item.id === projectId)?.updatedAt || serverTimestamp(), updated_at: serverTimestamp(), updated_by: user.uid,
           }, { merge: true });
+          const savedSignature = projectStateSignature(cloudReadyTracks, projectName, masterGain, compression, masterDelay, zoom);
+          baselineProjectIdRef.current = projectId;
+          baselineSignatureRef.current = savedSignature;
+          lastRemoteUpdatedRef.current = now;
+          setHasUserChanges(false);
           cloudSaveWarningRef.current = false;
+        } else {
+          baselineProjectIdRef.current = projectId;
+          baselineSignatureRef.current = currentProjectSignature;
+          setHasUserChanges(false);
         }
         await refreshProjects();
       } catch (error) {
@@ -339,7 +389,50 @@ export default function StudioDawPage() {
       setSaving(false);
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [tracks, projectId, projectName, masterGain, compression, masterDelay, zoom, loaded, ownerId, user]);
+  }, [tracks, projectId, projectName, masterGain, compression, masterDelay, zoom, loaded, hasUserChanges, ownerId, user, projectOwnerId, editorIds, currentProjectSignature, refreshProjects, projects]);
+
+  useEffect(() => {
+    if (!user || !loaded || !projectId) return;
+    return onSnapshot(doc(db, 'studio_projects', projectId), snapshot => {
+      if (!snapshot.exists()) return;
+      const value = snapshot.data();
+      const remoteUpdated = projectTimestamp(value.updated_at || value.updatedAt);
+      const canAccess = value.owner_id === user.uid || (Array.isArray(value.editor_ids) && value.editor_ids.includes(user.uid));
+      if (!canAccess || value.updated_by === user.uid || remoteUpdated <= lastRemoteUpdatedRef.current || hasUserChanges) return;
+      applyingRemoteRef.current = true;
+      setLoaded(false);
+      void applyProject({ id: snapshot.id, ...value, updatedAt: remoteUpdated })
+        .then(() => toast.success('Project updated by a collaborator.'))
+        .catch(error => { console.warn('Realtime DAW update could not be applied', error); toast.error('A collaborator update could not be loaded safely.'); })
+        .finally(() => { applyingRemoteRef.current = false; setLoaded(true); });
+    }, error => console.warn('Realtime DAW sync unavailable', error));
+  }, [applyProject, hasUserChanges, loaded, projectId, user]);
+
+  useEffect(() => {
+    if (!collaboratorsOpen || !user) return;
+    void getDocs(collection(db, 'profiles')).then(snapshot => setCollaboratorProfiles(snapshot.docs.filter(item => item.id !== user.uid).map(item => {
+      const value = item.data();
+      return { id: item.id, name: String(value.name || value.username || 'MusicInsta user'), username: String(value.username || ''), avatarUrl: String(value.avatar_url || '') };
+    }))).catch(() => toast.error('Users could not be loaded.'));
+  }, [collaboratorsOpen, user]);
+
+  const inviteCollaborator = async (collaborator: CollaboratorProfile) => {
+    if (!user || projectOwnerId !== user.uid) return;
+    const projectRef = doc(db, 'studio_projects', projectId);
+    const snapshot = await getDoc(projectRef);
+    if (!snapshot.exists()) { toast.error('Make one change and wait for this project to save before inviting an editor.'); return; }
+    await setDoc(projectRef, { editor_ids: arrayUnion(collaborator.id), updated_at: serverTimestamp(), updated_by: user.uid }, { merge: true });
+    setEditorIds(current => current.includes(collaborator.id) ? current : [...current, collaborator.id]);
+    await setDoc(doc(collection(db, 'notifications')), { profile_id: collaborator.id, from_profile_id: user.uid, type: 'daw_collaboration', message: `${profile?.name || user.displayName || 'A MusicInsta artist'} invited you to edit “${projectName}”.`, project_id: projectId, read: false, created_at: serverTimestamp() });
+    toast.success(`${collaborator.name} can now edit this project.`);
+  };
+
+  const removeCollaborator = async (collaboratorId: string) => {
+    if (!user || projectOwnerId !== user.uid) return;
+    await setDoc(doc(db, 'studio_projects', projectId), { editor_ids: arrayRemove(collaboratorId), updated_at: serverTimestamp(), updated_by: user.uid }, { merge: true });
+    setEditorIds(current => current.filter(id => id !== collaboratorId));
+    toast.success('Editor access removed.');
+  };
 
   const addDecodedTrack = useCallback(async (buffer: AudioBuffer, blob: Blob, name: string, offset = 0) => {
     undoRef.current = [...undoRef.current.slice(-49), tracksRef.current]; redoRef.current = []; setCanUndo(true); setCanRedo(false);
@@ -746,8 +839,21 @@ export default function StudioDawPage() {
     setTracks(current => current.map(track => track.id === separatedSource.id ? { ...track, muted: true } : track));
     setSeparatorOpen(false); toast.success('Vocals and instrumental added to the playlist. The source track was muted.');
   };
-  const newProject = () => { stopSources(); const id = crypto.randomUUID(); setProjectId(id); setProjectName('Untitled MusicInsta Session'); setTracks([]); setSelectedTrackIds(new Set()); setPlayhead(0); setMasterGain(90); setCompression(18); setMasterDelay(0); localStorage.setItem('musicinsta_active_daw_project', id); setProjectsOpen(false); toast.success('New project created.'); };
-  const removeProject = async (id: string) => { await deleteDawProject(id); if (user) await deleteDoc(doc(db, 'studio_projects', id)).catch(() => undefined); await refreshProjects(); if (id === projectId) newProject(); };
+  const newProject = () => {
+    stopSources(); const id = crypto.randomUUID(); const name = 'Untitled MusicInsta Session';
+    setProjectId(id); setProjectName(name); setProjectOwnerId(ownerId); setEditorIds([]); setTracks([]); setSelectedTrackIds(new Set()); setPlayhead(0); setMasterGain(90); setCompression(18); setMasterDelay(0); setZoom(75);
+    baselineProjectIdRef.current = id; baselineSignatureRef.current = projectStateSignature([], name, 90, 18, 0, 75); setHasUserChanges(false); lastRemoteUpdatedRef.current = new Date(0).toISOString();
+    localStorage.setItem('musicinsta_active_daw_project', id); setProjectsOpen(false); toast.success('New project created. Add or change something when you are ready to save it.');
+  };
+  const removeProject = async (project: ProjectSummary) => {
+    await deleteDawProject(project.id);
+    if (user && project.ownerId === user.uid) await deleteDoc(doc(db, 'studio_projects', project.id)).catch(() => undefined);
+    await refreshProjects(); if (project.id === projectId) newProject();
+  };
+  const visibleCollaborators = collaboratorProfiles.filter(item => {
+    const needle = collaboratorSearch.trim().toLowerCase();
+    return !needle || `${item.name} ${item.username}`.toLowerCase().includes(needle);
+  }).slice(0, 30);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -756,8 +862,9 @@ export default function StudioDawPage() {
           <Button variant="ghost" size="icon" onClick={() => navigate('/studio')}><ArrowLeft className="h-5 w-5" /></Button>
           <img src="/MusicInsta_Logo.png" alt="MusicInsta" className="h-8 w-auto" />
           <Input aria-label="Project name" value={projectName} onChange={event => setProjectName(event.target.value)} className="min-w-[190px] flex-1 sm:max-w-sm" />
-          <span className="flex items-center gap-1 text-xs text-muted-foreground"><Save className="h-3.5 w-3.5" />{saving ? 'Saving…' : user ? 'Saved locally and in the cloud' : 'Saved on this device'}</span>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground"><Save className="h-3.5 w-3.5" />{!loaded ? 'Loading project…' : saving ? 'Saving…' : hasUserChanges ? 'Unsaved changes' : user ? 'Saved locally and in the cloud' : 'Saved on this device'}</span>
           <Button variant="outline" onClick={() => setProjectsOpen(true)}><FolderOpen className="mr-2 h-4 w-4" />Projects</Button>
+          {user && projectOwnerId === user.uid && <Button variant="outline" onClick={() => setCollaboratorsOpen(true)}><Users className="mr-2 h-4 w-4" />Collaborators</Button>}
           <Button variant="outline" onClick={() => { setBeatOpen(value => !value); setBeatMode('choice'); }}><Sparkles className="mr-2 h-4 w-4" />Beat maker</Button>
           <Button variant="outline" onClick={() => void createPostFromMix()} disabled={!tracks.length}><Send className="mr-2 h-4 w-4" />New post</Button>
           <Button onClick={() => void exportMix('wav')} disabled={!tracks.length || Boolean(exportState)}>{exportState?.format === 'wav' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}{exportState?.format === 'wav' ? `${exportState.progress}%` : 'WAV'}</Button>
@@ -766,7 +873,9 @@ export default function StudioDawPage() {
         {exportState && <div className="mx-auto mt-2 max-w-[1600px]"><div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>{exportState.label}</span><span>{exportState.progress}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${exportState.progress}%` }} /></div></div>}
       </header>
 
-      {projectsOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setProjectsOpen(false)}><div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex items-center justify-between"><div><h2 className="text-xl font-bold">DAW projects</h2><p className="text-sm text-muted-foreground">Recent projects retain uploaded audio, recordings and mixer settings.</p></div><Button onClick={newProject}><Plus className="mr-2 h-4 w-4" />New project</Button></div><div className="space-y-2">{projects.map(project => <div key={project.id} className={`flex items-center gap-3 rounded-xl border p-3 ${project.id === projectId ? 'border-primary bg-primary/5' : 'border-border'}`}><button className="min-w-0 flex-1 text-left" onClick={() => void loadProject(project.id)}><p className="truncate font-semibold">{project.name}</p><p className="text-xs text-muted-foreground">{project.trackCount} tracks · {new Date(project.updatedAt).toLocaleString()}</p></button><Button variant="ghost" size="icon" onClick={() => void removeProject(project.id)}><Trash2 className="h-4 w-4" /></Button></div>)}{!projects.length && <p className="py-8 text-center text-muted-foreground">No saved projects yet.</p>}</div></div></div>}
+      {projectsOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setProjectsOpen(false)}><div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex items-center justify-between"><div><h2 className="text-xl font-bold">DAW projects</h2><p className="text-sm text-muted-foreground">Your projects and projects shared with you stay available across devices.</p></div><Button onClick={newProject}><Plus className="mr-2 h-4 w-4" />New project</Button></div><div className="space-y-2">{projects.map(project => <div key={project.id} className={`flex items-center gap-3 rounded-xl border p-3 ${project.id === projectId ? 'border-primary bg-primary/5' : 'border-border'}`}><button className="min-w-0 flex-1 text-left" onClick={() => void loadProject(project.id)}><p className="truncate font-semibold">{project.name}</p><p className="text-xs text-muted-foreground">{project.trackCount} tracks · {new Date(project.updatedAt).toLocaleString()}{user && project.ownerId !== user.uid ? ' · Shared with you' : ''}</p></button>{!user || project.ownerId === user.uid ? <Button variant="ghost" size="icon" aria-label={`Delete ${project.name}`} onClick={() => void removeProject(project)}><Trash2 className="h-4 w-4" /></Button> : null}</div>)}{!projects.length && <p className="py-8 text-center text-muted-foreground">No saved projects yet.</p>}</div></div></div>}
+
+      {collaboratorsOpen && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4" onClick={() => setCollaboratorsOpen(false)}><div className="max-h-[82vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">Project collaborators</h2><p className="text-sm text-muted-foreground">Invite MusicInsta users to edit this project. Changes synchronize in real time.</p></div><Button variant="ghost" size="icon" onClick={() => setCollaboratorsOpen(false)}><X className="h-4 w-4" /></Button></div><Input value={collaboratorSearch} onChange={event => setCollaboratorSearch(event.target.value)} placeholder="Search users by name or username" /><div className="mt-4 space-y-2">{visibleCollaborators.map(person => { const invited = editorIds.includes(person.id); return <div key={person.id} className="flex items-center gap-3 rounded-xl border border-border p-3"><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-muted">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <Users className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><p className="truncate font-medium">{person.name}</p><p className="truncate text-xs text-muted-foreground">{person.username ? `@${person.username.replace(/^@/, '')}` : 'MusicInsta user'}</p></div><Button size="sm" variant={invited ? 'outline' : 'default'} onClick={() => void (invited ? removeCollaborator(person.id) : inviteCollaborator(person))}>{invited ? <UserMinus className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}{invited ? 'Remove' : 'Invite'}</Button></div>; })}</div></div></div>}
 
       {beatOpen && <section className="mx-auto mt-4 max-w-[1550px] rounded-2xl border border-border bg-card p-4">
         {beatMode === 'choice' && <div><h2 className="text-lg font-bold">Create a beat</h2><p className="mt-1 text-sm text-muted-foreground">Build the rhythm and melody yourself, or describe a beat for MusicInsta AI.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><button onClick={() => setBeatMode('manual')} className="rounded-2xl border border-border p-5 text-left transition hover:border-primary"><SlidersHorizontal className="mb-3 h-6 w-6 text-primary" /><p className="font-semibold">Manual beat maker</p><p className="mt-1 text-sm text-muted-foreground">Program drums and a five-note melody on the 16-step sequencer.</p></button><button onClick={() => setBeatMode('ai')} className="rounded-2xl border border-border p-5 text-left transition hover:border-primary"><Sparkles className="mb-3 h-6 w-6 text-primary" /><p className="font-semibold">Generate with AI</p><p className="mt-1 text-sm text-muted-foreground">Use the same MusicInsta beat generator, preview here, then send the result to the playlist.</p></button></div></div>}

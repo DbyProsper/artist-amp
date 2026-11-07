@@ -3,6 +3,7 @@ import { collection, query, orderBy, limit, getDocs, getDoc, doc, onSnapshot, ty
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track, Album } from '@/types';
 import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
+import { useAuth } from '@/context/FirebaseAuthContext';
 
 interface DatabasePost {
   id: string;
@@ -62,6 +63,7 @@ async function cachedDocument(collectionName: string, id: string, cache: Map<str
 }
 
 export function useFeedPosts() {
+  const { user, profile } = useAuth();
   const [posts, setPosts] = useState<Post[]>(() => feedPostsCache);
   const [loading, setLoading] = useState(() => !feedCacheReady);
   const [error, setError] = useState<string | null>(null);
@@ -220,6 +222,11 @@ export function useFeedPosts() {
           ctaTarget: post.cta_target || undefined,
           hideLikes: post.hide_likes === true,
           hidePlayCount: post.hide_play_count === true,
+          excludedUserIds: Array.isArray(post.excluded_user_ids) ? post.excluded_user_ids.map(String) : [],
+          aspectRatio: post.aspect_ratio || undefined,
+          mediaOverlays: Array.isArray(post.media_overlays) ? post.media_overlays : [],
+          drawingOverlay: post.drawing_overlay || undefined,
+          visualAdjustments: post.visual_adjustments || undefined,
         });
       }
 
@@ -259,5 +266,7 @@ export function useFeedPosts() {
     };
   }, []);
 
-  return { posts, loading, error, refetch: fetchPosts };
+  const identityIds = new Set([user?.uid, profile?.id].filter(Boolean));
+  const visiblePosts = posts.filter(post => post.artist.id === profile?.id || !post.excludedUserIds?.some(id => identityIds.has(id)));
+  return { posts: visiblePosts, loading, error, refetch: fetchPosts };
 }

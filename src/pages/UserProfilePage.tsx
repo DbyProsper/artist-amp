@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { VideoThumbnail } from '@/components/media/VideoThumbnail';
 import { PostDetailModal } from '@/components/profile/PostDetailModal';
 import { usePlayer } from '@/context/PlayerContext';
+import { FullScreenAvatar } from '@/components/profile/FullScreenAvatar';
 
 interface Profile {
   id: string;
@@ -59,6 +60,8 @@ export default function UserProfilePage() {
   const [loading, setLoading] = useState(true);
   const [selectedPostIndex, setSelectedPostIndex] = useState(0);
   const [postDetailOpen, setPostDetailOpen] = useState(false);
+  const [fullScreenAvatarOpen, setFullScreenAvatarOpen] = useState(false);
+  const [fullScreenCoverOpen, setFullScreenCoverOpen] = useState(false);
 
   const { posts, tracks, loading: postsLoading } = useProfilePosts(userId);
 
@@ -220,25 +223,25 @@ export default function UserProfilePage() {
       </header>
 
       {/* Cover Image */}
-      <div className="relative h-40">
+      <button type="button" aria-label="View cover image" onClick={() => setFullScreenCoverOpen(true)} className="relative block h-40 w-full cursor-zoom-in text-left">
         <img
           src={profile.cover_url || '/musicinsta-default-cover.webp'}
           alt="Cover"
           className="w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent" />
-      </div>
+      </button>
 
       {/* Profile Info */}
       <div className="px-4 -mt-16 relative z-10">
         <div className="flex items-end gap-4 mb-4">
-          <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-background gradient-border">
+          <button type="button" aria-label="View profile picture" onClick={() => setFullScreenAvatarOpen(true)} className="w-24 h-24 rounded-full overflow-hidden border-4 border-background gradient-border cursor-zoom-in">
             <img
               src={profile.avatar_url || '/musicinsta-default-cover.webp'}
               alt={profile.name || 'User'}
               className="w-full h-full object-cover"
             />
-          </div>
+          </button>
           <div className="flex-1 mb-2">
             <div className="flex items-center gap-2">
               <h2 className="font-display font-bold text-xl">{profile.name || 'User'}</h2>
@@ -419,6 +422,8 @@ export default function UserProfilePage() {
         />
       )}
       <PostDetailModal posts={posts} initialIndex={selectedPostIndex} isOpen={postDetailOpen} onClose={() => setPostDetailOpen(false)} />
+      <FullScreenAvatar imageUrl={profile.avatar_url || '/musicinsta-default-cover.webp'} alt={profile.name || 'Profile picture'} isOpen={fullScreenAvatarOpen} onClose={() => setFullScreenAvatarOpen(false)} />
+      <FullScreenAvatar imageUrl={profile.cover_url || '/musicinsta-default-cover.webp'} alt={`${profile.name || 'User'} cover`} isOpen={fullScreenCoverOpen} onClose={() => setFullScreenCoverOpen(false)} />
     </div>
   );
 }

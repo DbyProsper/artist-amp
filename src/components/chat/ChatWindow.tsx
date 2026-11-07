@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Send, BadgeCheck, Pencil, Trash2, Check, X } from 'lucide-react';
+import { ArrowLeft, Send, BadgeCheck, Pencil, Trash2, Check, X, Phone, Video } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Artist } from '@/types';
@@ -12,6 +12,8 @@ import { collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, updateD
 import { db } from '@/lib/firebase';
 import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
 import { GifStickerPicker, SocialAttachment, type SocialMediaAttachment } from '@/components/social/GifStickerPicker';
+import { CallDialog } from './CallDialog';
+import { useNavigate } from 'react-router-dom';
 
 interface Message {
   id: string;
@@ -21,6 +23,12 @@ interface Message {
   isOwn: boolean;
   edited: boolean;
   attachment?: SocialMediaAttachment;
+  call?: { kind: 'voice' | 'video'; status: 'ringing' | 'active' | 'ended' | 'declined' | 'missed'; duration: number };
+}
+
+function formatCallDuration(seconds: number) {
+  const minutes = Math.floor(seconds / 60); const remaining = seconds % 60;
+  return `${minutes}:${remaining.toString().padStart(2, '0')}`;
 }
 
 interface ChatWindowProps {
@@ -29,6 +37,7 @@ interface ChatWindowProps {
 }
 
 export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
+  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -36,6 +45,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [attachment, setAttachment] = useState<SocialMediaAttachment | null>(null);
+  const [callKind, setCallKind] = useState<'voice' | 'video' | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -51,7 +61,8 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
       const next = snapshot.docs.map(item => {
         const value = item.data();
         const mediaType = value.media_type === 'gif' || value.media_type === 'sticker' ? value.media_type : undefined;
-        return { id: item.id, content: value.content || '', senderId: value.sender_id, timestamp: value.created_at?.toDate?.() || new Date(), isOwn: value.sender_id === identityId, edited: Boolean(value.edited_at), attachment: mediaType ? { type: mediaType, url: value.media_url || undefined, sticker: value.sticker || undefined } : undefined };
+        const callStatus = ['ringing', 'active', 'ended', 'declined', 'missed'].includes(value.call_status) ? value.call_status : 'ended';
+        return { id: item.id, content: value.content || '', senderId: value.sender_id, timestamp: value.created_at?.toDate?.() || new Date(), isOwn: value.sender_id === identityId, edited: Boolean(value.edited_at), attachment: mediaType ? { type: mediaType, url: value.media_url || undefined, sticker: value.sticker || undefined } : undefined, call: value.media_type === 'call' ? { kind: value.call_kind === 'video' ? 'video' : 'voice', status: callStatus, duration: Number(value.call_duration_seconds) || 0 } : undefined };
       }).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
       setMessages(next);
       const unread = snapshot.docs.filter(item => item.data().recipient_id === identityId && !item.data().read);
@@ -101,7 +112,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div className="flex items-center gap-3 flex-1">
+        <button type="button" onClick={() => navigate(`/user/${recipient.id}`)} className="flex flex-1 items-center gap-3 rounded-xl text-left hover:bg-muted/60">
           <div className="w-10 h-10 rounded-full overflow-hidden">
             <img
               src={recipient.avatar || DEFAULT_MEDIA_IMAGE}
@@ -118,7 +129,9 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
             </div>
             <span className="text-xs text-muted-foreground">Active now</span>
           </div>
-        </div>
+        </button>
+        <button aria-label="Start voice call" onClick={() => setCallKind('voice')} className="rounded-full p-2 hover:bg-muted"><Phone className="h-5 w-5"/></button>
+        <button aria-label="Start video call" onClick={() => setCallKind('video')} className="rounded-full p-2 hover:bg-muted"><Video className="h-5 w-5"/></button>
       </div>
 
       {/* Messages */}
@@ -139,11 +152,11 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
               }`}
             >
               {message.attachment && <SocialAttachment attachment={message.attachment} className={message.content ? 'mb-2' : ''} />}
-              {editingId === message.id ? <div className="flex items-center gap-1"><Input value={editingText} onChange={event => setEditingText(event.target.value)} className="h-8 min-w-48 bg-background text-foreground" autoFocus /><button aria-label="Save message" onClick={() => void saveEdit()}><Check className="h-4 w-4" /></button><button aria-label="Cancel editing" onClick={() => setEditingId(null)}><X className="h-4 w-4" /></button></div> : message.content ? <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p> : null}
+              {message.call ? <div className="flex min-w-48 items-center gap-3 py-1"><span className={`grid h-10 w-10 place-items-center rounded-full ${message.call.status === 'missed' || message.call.status === 'declined' ? 'bg-red-500/20' : 'bg-background/20'}`}>{message.call.kind === 'video' ? <Video className="h-5 w-5"/> : <Phone className="h-5 w-5"/>}</span><div><p className="text-sm font-semibold">{message.call.kind === 'video' ? 'Video call' : 'Voice call'}</p><p className="text-xs opacity-75">{message.call.status === 'ringing' ? (message.isOwn ? 'Outgoing call' : 'Incoming call') : message.call.status === 'active' ? 'Ongoing call' : message.call.status === 'declined' ? 'Declined' : message.call.status === 'missed' ? 'Missed call' : message.call.duration ? `Ended · ${formatCallDuration(message.call.duration)}` : 'Ended'}</p></div></div> : editingId === message.id ? <div className="flex items-center gap-1"><Input value={editingText} onChange={event => setEditingText(event.target.value)} className="h-8 min-w-48 bg-background text-foreground" autoFocus /><button aria-label="Save message" onClick={() => void saveEdit()}><Check className="h-4 w-4" /></button><button aria-label="Cancel editing" onClick={() => setEditingId(null)}><X className="h-4 w-4" /></button></div> : message.content ? <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p> : null}
               <p className={`text-[10px] mt-1 ${message.isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                 {formatDistanceToNow(message.timestamp, { addSuffix: true })}{message.edited ? ' · edited' : ''}
               </p>
-              {message.isOwn && editingId !== message.id && <div className="mt-1 flex justify-end gap-2 opacity-70">{message.content && <button aria-label="Edit message" onClick={() => { setEditingId(message.id); setEditingText(message.content); }}><Pencil className="h-3.5 w-3.5" /></button>}<button aria-label="Delete message" onClick={() => void removeMessage(message.id)}><Trash2 className="h-3.5 w-3.5" /></button></div>}
+              {message.isOwn && editingId !== message.id && <div className="mt-1 flex justify-end gap-2 opacity-70">{message.content && !message.call && <button aria-label="Edit message" onClick={() => { setEditingId(message.id); setEditingText(message.content); }}><Pencil className="h-3.5 w-3.5" /></button>}<button aria-label="Delete message" onClick={() => void removeMessage(message.id)}><Trash2 className="h-3.5 w-3.5" /></button></div>}
             </div>
           </motion.div>
         ))}
@@ -173,6 +186,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
           </Button>
         </div>
       </div>
+      <CallDialog recipient={recipient} requestedKind={callKind} onRequestHandled={() => setCallKind(null)} />
     </div>
   );
 }

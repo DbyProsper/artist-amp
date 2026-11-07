@@ -193,7 +193,7 @@ export default function HomePage() {
             <h2 className="font-display font-bold text-lg">Trending Artists</h2>
           </div>
           <button 
-            onClick={() => navigate('/discover')}
+            onClick={() => navigate('/discover?tab=trending#trending-artists')}
             className="text-sm text-primary hover:underline"
           >
             See all

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, increment, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, getDocs, increment, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { Heart, Reply, Trash2, X } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { EmojiPicker } from '@/components/chat/EmojiPicker';
 import { createPortal } from 'react-dom';
 import { GifStickerPicker, SocialAttachment, type SocialMediaAttachment } from '@/components/social/GifStickerPicker';
+import { useNavigate } from 'react-router-dom';
 
 interface CommentItem {
   id: string;
@@ -31,11 +32,18 @@ interface Props {
 }
 
 export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: Props) {
+  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [text, setText] = useState('');
   const [replyingTo, setReplyingTo] = useState<CommentItem | null>(null);
   const [attachment, setAttachment] = useState<SocialMediaAttachment | null>(null);
+  const [mentionProfiles, setMentionProfiles] = useState<Array<{ id: string; username: string; name: string }>>([]);
+
+  useEffect(() => { if (open) void getDocs(collection(db, 'profiles')).then(snapshot => setMentionProfiles(snapshot.docs.map(item => ({ id: item.id, username: item.data().username || 'user', name: item.data().name || 'MusicInsta user' })))); }, [open]);
+  const mentionToken = text.match(/(?:^|\s)@([\w.-]*)$/)?.[1]?.toLowerCase();
+  const mentionSuggestions = mentionToken == null ? [] : mentionProfiles.filter(item => item.username.toLowerCase().includes(mentionToken)).slice(0, 6);
+  const chooseMention = (username: string) => setText(current => current.replace(/@([\w.-]*)$/, `@${username} `));
 
   useEffect(() => {
     if (!open) return;
@@ -83,6 +91,9 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
         created_at: serverTimestamp(),
       });
     }
+    const mentionedNames = [...new Set((cleanText.match(/@[\w.-]+/g) || []).map(value => value.slice(1).toLowerCase()))];
+    const mentioned = mentionProfiles.filter(item => mentionedNames.includes(item.username.toLowerCase()) && item.id !== (profile?.id || user.uid));
+    await Promise.all(mentioned.map(item => addDoc(collection(db, 'notifications'), { profile_id: item.id, from_profile_id: profile?.id || user.uid, post_id: postId, type: 'mention', message: `${profile?.name || user.displayName || 'Someone'} mentioned you in a comment`, read: false, created_at: serverTimestamp() })));
     onAdded?.();
     setReplyingTo(null);
   };
@@ -104,7 +115,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
     const actor = profile?.id || user?.uid || '';
     return <div key={comment.id} className={`flex gap-3 ${nested ? 'ml-10 border-l border-border pl-3' : ''}`}>
       <img src={comment.avatar} alt="" className="h-9 w-9 rounded-full object-cover" />
-      <div className="min-w-0 flex-1"><div className="rounded-2xl bg-muted px-3 py-2 text-sm"><strong>{comment.authorName}</strong>{comment.replyToName && <span className="ml-1 text-xs text-primary">replying to @{comment.replyToName}</span>}{comment.attachment && <SocialAttachment attachment={comment.attachment} className="mt-2" />}{comment.text && <p className="mt-1 whitespace-pre-wrap break-words">{comment.text}</p>}</div><div className="mt-1 flex items-center gap-3 px-2 text-xs text-muted-foreground"><button onClick={() => void toggleLike(comment)} className={comment.likedBy.includes(actor) ? 'text-red-500' : ''}><Heart className={`mr-1 inline h-3.5 w-3.5 ${comment.likedBy.includes(actor) ? 'fill-current' : ''}`} />{comment.likes || 'Like'}</button><button onClick={() => { setReplyingTo(comment); setText(current => current || `@${comment.authorName} `); }}><Reply className="mr-1 inline h-3.5 w-3.5" />Reply</button>{user && (comment.authorId === actor || ownerId === actor) && <button onClick={() => void removeComment(comment)} className="text-destructive"><Trash2 className="mr-1 inline h-3.5 w-3.5" />Delete</button>}</div></div>
+      <div className="min-w-0 flex-1"><div className="rounded-2xl bg-muted px-3 py-2 text-sm"><strong>{comment.authorName}</strong>{comment.replyToName && <span className="ml-1 text-xs text-primary">replying to @{comment.replyToName}</span>}{comment.attachment && <SocialAttachment attachment={comment.attachment} className="mt-2" />}{comment.text && <p className="mt-1 whitespace-pre-wrap break-words">{comment.text.split(/(@[\w.-]+)/g).map((part,index) => part.startsWith('@') ? <button key={`${part}-${index}`} type="button" onClick={() => { const person = mentionProfiles.find(item => item.username.toLowerCase() === part.slice(1).toLowerCase()); if (person) { onClose(); navigate(`/user/${person.id}`); } }} className="text-primary hover:underline">{part}</button> : <span key={index}>{part}</span>)}</p>}</div><div className="mt-1 flex items-center gap-3 px-2 text-xs text-muted-foreground"><button onClick={() => void toggleLike(comment)} className={comment.likedBy.includes(actor) ? 'text-red-500' : ''}><Heart className={`mr-1 inline h-3.5 w-3.5 ${comment.likedBy.includes(actor) ? 'fill-current' : ''}`} />{comment.likes || 'Like'}</button><button onClick={() => { setReplyingTo(comment); const username = mentionProfiles.find(item => item.id === comment.authorId)?.username || comment.authorName.replace(/\s+/g, ''); setText(current => current || `@${username} `); }}><Reply className="mr-1 inline h-3.5 w-3.5" />Reply</button>{user && (comment.authorId === actor || ownerId === actor) && <button onClick={() => void removeComment(comment)} className="text-destructive"><Trash2 className="mr-1 inline h-3.5 w-3.5" />Delete</button>}</div></div>
     </div>;
   };
 
@@ -122,8 +133,9 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
         </div>
         {replyingTo && <div className="flex items-center justify-between border-t border-border bg-muted/40 px-4 py-2 text-xs"><span>Replying to {replyingTo.authorName}</span><button onClick={() => setReplyingTo(null)}><X className="h-3.5 w-3.5" /></button></div>}
         {attachment && <div className="flex items-end gap-2 border-t border-border px-4 pt-3"><SocialAttachment attachment={attachment} /><button type="button" aria-label="Remove attachment" onClick={() => setAttachment(null)} className="rounded-full bg-muted p-1"><X className="h-4 w-4" /></button></div>}
-        <form onSubmit={submit} className="flex gap-2 border-t border-border p-4">
-          <Input value={text} onChange={event => setText(event.target.value)} placeholder={user ? 'Add a comment…' : 'Sign in to comment'} disabled={!user} />
+        <form onSubmit={submit} className="relative flex gap-2 border-t border-border p-4">
+          {mentionSuggestions.length > 0 && <div className="absolute bottom-full left-4 right-4 z-10 max-h-48 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-xl">{mentionSuggestions.map(item => <button key={item.id} type="button" onClick={() => chooseMention(item.username)} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-muted"><span className="text-sm font-medium">@{item.username}</span><span className="text-xs text-muted-foreground">{item.name}</span></button>)}</div>}
+          <Input value={text} onChange={event => setText(event.target.value)} placeholder={user ? 'Add a comment… Use @ to mention' : 'Sign in to comment'} disabled={!user} />
           <EmojiPicker onEmojiSelect={emoji => setText(current => current + emoji)} />
           <GifStickerPicker onSelect={setAttachment} disabled={!user} />
           <Button type="submit" disabled={!user || (!text.trim() && !attachment)}>Post</Button>

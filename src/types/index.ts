@@ -105,6 +105,11 @@ export interface Post {
   ctaTarget?: string;
   hideLikes?: boolean;
   hidePlayCount?: boolean;
+  excludedUserIds?: string[];
+  aspectRatio?: string;
+  mediaOverlays?: import('./socialEditor').SocialOverlay[];
+  drawingOverlay?: string;
+  visualAdjustments?: import('./socialEditor').SocialAdjustments;
 }
 
 export interface Story {
@@ -118,6 +123,12 @@ export interface Story {
   createdAt?: Date;
   clipStart?: number;
   clipEnd?: number;
+  excludedUserIds?: string[];
+  aspectRatio?: string;
+  mediaOverlays?: import('./socialEditor').SocialOverlay[];
+  drawingOverlay?: string;
+  visualAdjustments?: import('./socialEditor').SocialAdjustments;
+  attachedMusicData?: import('./socialEditor').AttachedPlatformMusic;
 }
 
 export interface Playlist {

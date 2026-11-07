@@ -42,7 +42,7 @@ function InteractiveImage({ src, alt, className = '', priority = false }: { src:
   const reset = () => { pointerX.set(0); pointerY.set(0); };
 
   return <motion.figure onMouseMove={move} onMouseLeave={reset} style={reduceMotion ? undefined : { rotateX, rotateY, transformPerspective: 1000 }} className="group relative overflow-hidden rounded-3xl bg-muted shadow-2xl">
-    <motion.img src={src} alt={alt} className={`w-full object-cover ${className}`} loading={priority ? 'eager' : 'lazy'} fetchPriority={priority ? 'high' : 'auto'} whileHover={reduceMotion ? undefined : { scale: 1.045 }} transition={{ duration: 0.65, ease }} />
+    <motion.img src={src} alt={alt} className={`w-full object-cover ${className}`} loading={priority ? 'eager' : 'lazy'} whileHover={reduceMotion ? undefined : { scale: 1.045 }} transition={{ duration: 0.65, ease }} />
     <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-primary/15 via-transparent to-white/10 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
   </motion.figure>;
 }
@@ -80,7 +80,7 @@ export default function LandingPage() {
     <main className="pt-16">
       <section className="relative min-h-[88vh] overflow-hidden">
         <div className="absolute inset-0 overflow-hidden">
-          <motion.img src="/landing/live-concert.webp" alt="MusicInsta artists performing live" className="absolute inset-0 block h-full w-full max-w-none object-cover object-center" fetchPriority="high" initial={{ scale: 1.14 }} animate={{ scale: 1.08 }} style={reduceMotion ? undefined : { x: heroX, y: heroY }} transition={{ duration: 1.5, ease }} />
+          <motion.img src="/landing/live-concert.webp" alt="MusicInsta artists performing live" className="absolute inset-0 block h-full w-full max-w-none object-cover object-center" loading="eager" initial={{ scale: 1.14 }} animate={{ scale: 1.08 }} style={reduceMotion ? undefined : { x: heroX, y: heroY }} transition={{ duration: 1.5, ease }} />
         </div>
         <div className="absolute inset-0 bg-gradient-to-r from-black via-black/75 to-black/20" />
         <div className="relative mx-auto flex min-h-[88vh] max-w-7xl items-center px-5 py-20 sm:px-6">

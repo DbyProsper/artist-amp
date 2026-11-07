@@ -34,11 +34,16 @@ export default function DiscoverPage() {
   const { catalog, listeningHistory, preferredGenres, currentTrack, catalogLoading } = usePlayer();
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('for-you');
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') === 'trending' ? 'trending' : 'for-you');
   const [sortBy, setSortBy] = useState<SortOption>('trending');
   const { posts } = useFeedPosts();
   const [followerCounts, setFollowerCounts] = useState<Record<string, number>>({});
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (searchParams.get('tab') !== 'trending') return;
+    setActiveTab('trending');
+    window.setTimeout(() => document.getElementById('trending-artists')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+  }, [searchParams]);
   const liveTracks = posts.filter(post => post.track?.audioUrl).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
   const liveArtists = posts.map(post => post.artist).filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
   const catalogTracks = catalog.length ? catalog : liveTracks;
@@ -395,7 +400,7 @@ export default function DiscoverPage() {
                 </section>
 
                 {/* Trending Artists */}
-                <section>
+                <section id="trending-artists" className="scroll-mt-20">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <Users className="w-5 h-5 text-accent" />

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Heart, MessageCircle, Share2, Bookmark, 
-  Play, Pause, MoreHorizontal, BadgeCheck, ListPlus, X, GalleryVerticalEnd, ArrowRight
+  Play, Pause, MoreHorizontal, BadgeCheck, ListPlus, X, GalleryVerticalEnd, ArrowRight, Edit2
 } from 'lucide-react';
 import { Post } from '@/types';
 import { usePlayer } from '@/context/PlayerContext';
@@ -22,6 +22,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MUSIC_GENRES, canonicalGenre } from '@/lib/genres';
+import { SharePostDialog } from '@/components/social/SharePostDialog';
+import { SocialMediaEditor } from '@/components/social/SocialMediaEditor';
+import { EMPTY_SOCIAL_EDIT_STATE, aspectRatioValue, socialFilter, type SocialEditState } from '@/types/socialEditor';
+import { renderSocialImage } from '@/lib/socialMediaEditor';
 
 interface FeedPostProps {
   post: Post;
@@ -77,6 +81,12 @@ export function FeedPost({ post }: FeedPostProps) {
   const [editArtwork, setEditArtwork] = useState<File | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [showMediaEditor, setShowMediaEditor] = useState(false);
+  const [editExcludedIds, setEditExcludedIds] = useState<string[]>(post.excludedUserIds || []);
+  const [privacyPeople, setPrivacyPeople] = useState<Array<{ id: string; name: string; username: string }>>([]);
+  const [privacySearch, setPrivacySearch] = useState('');
+  const [mediaEditState, setMediaEditState] = useState<SocialEditState>({ ...EMPTY_SOCIAL_EDIT_STATE, aspectRatio: (post.aspectRatio as SocialEditState['aspectRatio']) || 'original', adjustments: post.visualAdjustments || EMPTY_SOCIAL_EDIT_STATE.adjustments, overlays: post.mediaOverlays || [], drawingDataUrl: post.drawingOverlay });
   const lastTapRef = useRef(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playCountedRef = useRef(false);
@@ -84,6 +94,11 @@ export function FeedPost({ post }: FeedPostProps) {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
   const actorId = profile?.id || user?.uid || '';
+
+  useEffect(() => {
+    if (!editingPost) return;
+    void getDocs(collection(db, 'profiles')).then(snapshot => setPrivacyPeople(snapshot.docs.map(item => ({ id: item.id, name: item.data().name || 'MusicInsta user', username: item.data().username || 'user' })).filter(item => item.id !== actorId)));
+  }, [actorId, editingPost]);
 
   const requireSignIn = (action: string) => {
     if (user) return false;
@@ -210,13 +225,7 @@ export function FeedPost({ post }: FeedPostProps) {
     navigate(`/user/${post.artist.id}`);
   };
 
-  const handleShare = async () => {
-    const shareData = { title: post.track?.title || `${post.artist.name} on MusicInsta`, text: post.caption || `Listen to ${post.artist.name} on MusicInsta`, url: `${window.location.origin}/?post=${post.id}` };
-    try {
-      if (navigator.share) await navigator.share(shareData);
-      else { await navigator.clipboard.writeText(shareData.url); toast.success('Link copied. Paste it into WhatsApp, Instagram, Facebook, X, or any messaging app.'); }
-    } catch (error) { if ((error as DOMException)?.name !== 'AbortError') toast.error('This post could not be shared.'); }
-  };
+  const handleShare = () => { if (requireSignIn('share posts')) return; setShowShare(true); };
 
   const handleSave = async () => {
     if (requireSignIn('save posts')) return;
@@ -241,19 +250,9 @@ export function FeedPost({ post }: FeedPostProps) {
     setShowComments(true);
   };
 
-  const addPostToStory = async () => {
+  const addPostToStory = () => {
     if (requireSignIn('add posts to your story') || !profile) return;
-    try {
-      const now = new Date();
-      await addDoc(collection(db, 'posts'), {
-        profile_id: profile.id, type: post.videoUrl ? 'video' : 'image',
-        image_url: displayImage || postImage || DEFAULT_MEDIA_IMAGE, video_url: post.videoUrl || null,
-        caption: displayCaption, attached_music: post.track?.title || post.attachedMusic || null,
-        source_post_id: post.id, is_story: true, likes: 0, comments: 0, shares: 0,
-        created_at: serverTimestamp(), expires_at: new Date(now.getTime() + 24 * 60 * 60 * 1000),
-      });
-      toast.success('Added to your story for 24 hours.');
-    } catch { toast.error('The post could not be added to your story.'); }
+    navigate('/upload?type=story', { state: { sourcePost: { id: post.id, imageUrl: displayImage || postImage, videoUrl: post.videoUrl, caption: displayCaption, track: post.track ? { id: post.track.id, title: displayTrackTitle, audioUrl: post.track.audioUrl, coverArt: post.track.coverArt, artist: { name: post.artist.name } } : undefined } } });
   };
 
   // Determine the display image for the post
@@ -282,11 +281,24 @@ export function FeedPost({ post }: FeedPostProps) {
       }
       const list = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
       const credits = post.track ? { primaryArtist: editCredits.primaryArtist.trim() || post.artist.name, writers: list(editCredits.writers), composers: list(editCredits.composers), producers: list(editCredits.producers), engineers: list(editCredits.engineers), label: editCredits.label.trim() } : undefined;
-      await updateDoc(doc(db, 'posts', post.id), { caption: editCaption.trim(), image_url: imageUrl || null, hide_likes: hideLikes, hide_play_count: hidePlayCount, ...(credits ? { credits } : {}), updated_at: serverTimestamp() });
+      const mentionNames = [...new Set((editCaption.match(/@[\w.-]+/g) || []).map(value => value.slice(1).toLowerCase()))];
+      const mentionedIds = privacyPeople.filter(person => mentionNames.includes(person.username.toLowerCase())).map(person => person.id);
+      await updateDoc(doc(db, 'posts', post.id), { caption: editCaption.trim(), image_url: imageUrl || null, hide_likes: hideLikes, hide_play_count: hidePlayCount, excluded_user_ids: editExcludedIds, mentions: mentionedIds, ...(credits ? { credits } : {}), updated_at: serverTimestamp() });
+      await Promise.all(mentionedIds.filter(id => id !== actorId).map(id => addDoc(collection(db, 'notifications'), { profile_id: id, from_profile_id: actorId, post_id: post.id, type: 'mention', message: `${profile?.name || 'Someone'} tagged you in an edited post`, read: false, created_at: serverTimestamp() })));
       if (post.track) await updateDoc(doc(db, 'tracks', post.track.id), { title: editTrackTitle.trim() || post.track.title, genre: canonicalGenre(editGenre), ...(imageUrl ? { cover_url: imageUrl } : {}), credits, updated_at: serverTimestamp() });
       setDisplayCaption(editCaption.trim()); setDisplayImage(imageUrl); setDisplayTrackTitle(editTrackTitle.trim() || post.track?.title || ''); setDisplayGenre(canonicalGenre(editGenre)); setDisplayCredits(credits || displayCredits); setEditingPost(false); setEditArtwork(null); toast.success('Post and music metadata updated.');
     } catch { toast.error('The post could not be updated.'); }
     finally { setSavingEdit(false); }
+  };
+
+  const applyMediaEdit = async (next: SocialEditState) => {
+    setMediaEditState(next);
+    if (post.type !== 'video' && displayImage) {
+      try { const file = await renderSocialImage(displayImage, next); setEditArtwork(file); setDisplayImage(URL.createObjectURL(file)); }
+      catch { toast.error('The preview could not be flattened, but your editable settings were preserved.'); }
+    }
+    await updateDoc(doc(db, 'posts', post.id), { aspect_ratio: next.aspectRatio, visual_adjustments: next.adjustments, media_overlays: next.overlays, drawing_overlay: next.drawingDataUrl || null, attached_music: next.attachedMusic?.title || post.attachedMusic || null, attached_music_data: next.attachedMusic || null, updated_at: serverTimestamp() });
+    setShowMediaEditor(false); toast.success('Media edits saved.');
   };
 
   const removePost = async () => {
@@ -343,16 +355,21 @@ export function FeedPost({ post }: FeedPostProps) {
         {postImage && (
           <div
             className={cn('relative overflow-hidden bg-black group', post.type === 'image' ? '' : 'aspect-[4/5] sm:aspect-square', post.type === 'album' && 'cursor-pointer')}
+            style={mediaEditState.aspectRatio !== 'original' ? { aspectRatio: aspectRatioValue(mediaEditState.aspectRatio) } : undefined}
             onClick={post.type === 'album' && post.album ? () => navigate(`/albums/${post.album!.id}`) : undefined}
             onDoubleClick={likeFromMedia}
             onPointerUp={handleMediaPointerUp}
             onContextMenu={post.type === 'video' ? event => event.preventDefault() : undefined}
           >
             {post.type === 'video' && post.videoUrl ? (
-              <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="none" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; void updateDoc(doc(db, 'posts', post.id), { plays: increment(1) }).catch(() => undefined); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
+              <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="none" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; void updateDoc(doc(db, 'posts', post.id), { plays: increment(1) }).catch(() => undefined); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
             ) : (
-              <img src={postImage} alt={post.track?.title || post.caption || 'Post'} loading="lazy" decoding="async" fetchPriority="low" style={{ filter: post.visualFilter }} className={cn('w-full object-contain', post.type === 'image' ? 'h-auto max-h-[82vh]' : 'h-full')} />
+              <img src={postImage} alt={post.track?.title || post.caption || 'Post'} loading="lazy" decoding="async" style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} className={cn('w-full object-contain', mediaEditState.aspectRatio === 'original' && post.type === 'image' ? 'h-auto max-h-[82vh]' : 'h-full')} />
             )}
+            {mediaEditState.drawingDataUrl && <img src={mediaEditState.drawingDataUrl} alt="" className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain" />}
+            {mediaEditState.adjustments.vignette > 0 && <div className="pointer-events-none absolute inset-0 z-10" style={{ boxShadow: `inset 0 0 ${30 + mediaEditState.adjustments.vignette * 1.4}px rgba(0,0,0,${mediaEditState.adjustments.vignette / 130})` }} />}
+            {mediaEditState.adjustments.tiltShift > 0 && <div className="pointer-events-none absolute inset-0 z-10 backdrop-blur-sm" style={{ clipPath: `polygon(0 0,100% 0,100% ${Math.max(5, 45 - mediaEditState.adjustments.tiltShift / 3)}%,0 ${Math.max(5, 45 - mediaEditState.adjustments.tiltShift / 3)}%,0 ${Math.min(95, 55 + mediaEditState.adjustments.tiltShift / 3)}%,100% ${Math.min(95, 55 + mediaEditState.adjustments.tiltShift / 3)}%,100% 100%,0 100%)` }} />}
+            {mediaEditState.overlays.map(overlay => <div key={overlay.id} className="pointer-events-none absolute z-20 whitespace-pre-wrap text-center font-bold drop-shadow-lg" style={{ left: `${overlay.x}%`, top: `${overlay.y}%`, transform: `translate(-50%, -50%) rotate(${overlay.rotation}deg) scale(${overlay.scale})`, color: overlay.color, fontSize: overlay.type === 'sticker' ? 42 : 24 }}>{overlay.content}</div>)}
             
             {/* Overlay */}
             {post.type !== 'video' && <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />}
@@ -504,7 +521,9 @@ export function FeedPost({ post }: FeedPostProps) {
         updateDoc(doc(db, 'posts', post.id), { comments: increment(1) }).catch(() => undefined);
       }} />
       {showPlaylistPicker && <div className="fixed inset-0 z-[110] grid place-items-center bg-black/70 p-4" onClick={() => setShowPlaylistPicker(false)}><div className="w-full max-w-sm rounded-2xl border border-border bg-card p-4" onClick={event => event.stopPropagation()}><div className="mb-3 flex items-center justify-between"><h3 className="font-bold">Add to playlist</h3><button onClick={() => setShowPlaylistPicker(false)}><X className="h-4 w-4" /></button></div><div className="space-y-2">{playlists.map(playlist => <button key={playlist.id} onClick={() => void addToPlaylist(playlist.id)} className="w-full rounded-xl bg-muted p-3 text-left text-sm font-medium hover:bg-muted/70">{playlist.name}</button>)}{!playlists.length && <button onClick={() => navigate('/library')} className="w-full rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">Create a playlist in your library first</button>}</div></div></div>}
-      {editingPost && <div className="fixed inset-0 z-[120] grid place-items-center overflow-y-auto bg-black/70 p-4" onClick={() => setEditingPost(false)}><section className="my-6 w-full max-w-lg space-y-4 rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between"><div><h2 className="font-bold">Edit post</h2><p className="text-xs text-muted-foreground">The uploaded audio cannot be replaced, but its title, genre, credits and artwork can be updated.</p></div><button onClick={() => setEditingPost(false)}><X className="h-5 w-5" /></button></div><div><Label>Caption</Label><Textarea value={editCaption} onChange={event => setEditCaption(event.target.value)} className="mt-2 min-h-28" /></div>{post.track && <div className="grid gap-3 sm:grid-cols-2"><div><Label>Track title</Label><Input className="mt-1" value={editTrackTitle} onChange={event => setEditTrackTitle(event.target.value)} /></div><div><Label>Genre</Label><select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={editGenre} onChange={event => setEditGenre(event.target.value)}>{MUSIC_GENRES.map(genre => <option key={genre} value={genre}>{genre}</option>)}</select></div><div><Label>Primary artist</Label><Input className="mt-1" value={editCredits.primaryArtist} onChange={event => setEditCredits(current => ({ ...current, primaryArtist: event.target.value }))} /></div><div><Label>Label</Label><Input className="mt-1" value={editCredits.label} onChange={event => setEditCredits(current => ({ ...current, label: event.target.value }))} /></div>{(['writers', 'composers', 'producers', 'engineers'] as const).map(field => <div key={field}><Label className="capitalize">{field}</Label><Input className="mt-1" value={editCredits[field]} onChange={event => setEditCredits(current => ({ ...current, [field]: event.target.value }))} placeholder="Separate names with commas" /></div>)}</div>}<div className="grid gap-2 text-sm sm:grid-cols-2"><label className="flex items-center gap-2"><input type="checkbox" checked={hideLikes} onChange={event => setHideLikes(event.target.checked)} /> Hide like count</label><label className="flex items-center gap-2"><input type="checkbox" checked={hidePlayCount} onChange={event => setHidePlayCount(event.target.checked)} /> Hide play count</label></div><label className="block rounded-xl border border-dashed border-border p-4 text-center text-sm">Choose replacement artwork<input className="hidden" type="file" accept="image/*" onChange={event => setEditArtwork(event.target.files?.[0] || null)} /></label>{editArtwork && <p className="text-xs text-muted-foreground">{editArtwork.name}</p>}<Button className="w-full" disabled={savingEdit} onClick={() => void savePostEdit()}>{savingEdit ? 'Saving…' : 'Save changes'}</Button></section></div>}
+      {editingPost && <div className="fixed inset-0 z-[120] grid place-items-center overflow-y-auto bg-black/70 p-4" onClick={() => setEditingPost(false)}><section className="my-6 w-full max-w-lg space-y-4 rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="flex items-center justify-between"><div><h2 className="font-bold">Edit post</h2><p className="text-xs text-muted-foreground">The uploaded audio cannot be replaced, but its title, genre, credits, artwork and visual presentation can be updated.</p></div><button onClick={() => setEditingPost(false)}><X className="h-5 w-5" /></button></div><div><Label>Caption</Label><Textarea value={editCaption} onChange={event => setEditCaption(event.target.value)} className="mt-2 min-h-28" /></div>{post.track && <div className="grid gap-3 sm:grid-cols-2"><div><Label>Track title</Label><Input className="mt-1" value={editTrackTitle} onChange={event => setEditTrackTitle(event.target.value)} /></div><div><Label>Genre</Label><select className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={editGenre} onChange={event => setEditGenre(event.target.value)}>{MUSIC_GENRES.map(genre => <option key={genre} value={genre}>{genre}</option>)}</select></div><div><Label>Primary artist</Label><Input className="mt-1" value={editCredits.primaryArtist} onChange={event => setEditCredits(current => ({ ...current, primaryArtist: event.target.value }))} /></div><div><Label>Label</Label><Input className="mt-1" value={editCredits.label} onChange={event => setEditCredits(current => ({ ...current, label: event.target.value }))} /></div>{(['writers', 'composers', 'producers', 'engineers'] as const).map(field => <div key={field}><Label className="capitalize">{field}</Label><Input className="mt-1" value={editCredits[field]} onChange={event => setEditCredits(current => ({ ...current, [field]: event.target.value }))} placeholder="Separate names with commas" /></div>)}</div>}<div className="grid gap-2 text-sm sm:grid-cols-2"><label className="flex items-center gap-2"><input type="checkbox" checked={hideLikes} onChange={event => setHideLikes(event.target.checked)} /> Hide like count</label><label className="flex items-center gap-2"><input type="checkbox" checked={hidePlayCount} onChange={event => setHidePlayCount(event.target.checked)} /> Hide play count</label></div><Button variant="outline" className="w-full" onClick={() => setShowMediaEditor(true)}><Edit2 className="mr-2 h-4 w-4"/>Open visual editor</Button><label className="block rounded-xl border border-dashed border-border p-4 text-center text-sm">Choose replacement artwork<input className="hidden" type="file" accept="image/*" onChange={event => setEditArtwork(event.target.files?.[0] || null)} /></label>{editArtwork && <p className="text-xs text-muted-foreground">{editArtwork.name}</p>}<div className="space-y-2 rounded-xl border border-border p-3"><Label>Hide this post from selected people</Label><Input value={privacySearch} onChange={event => setPrivacySearch(event.target.value)} placeholder="Search people"/>{privacySearch && <div className="max-h-36 overflow-y-auto">{privacyPeople.filter(person => `${person.name} ${person.username}`.toLowerCase().includes(privacySearch.toLowerCase())).slice(0,20).map(person => <label key={person.id} className="flex items-center gap-2 rounded-lg p-2 hover:bg-muted"><input type="checkbox" checked={editExcludedIds.includes(person.id)} onChange={event => setEditExcludedIds(current => event.target.checked ? [...new Set([...current, person.id])] : current.filter(id => id !== person.id))}/><span className="text-sm">{person.name} <span className="text-muted-foreground">@{person.username}</span></span></label>)}</div>}<p className="text-xs text-muted-foreground">{editExcludedIds.length ? `Hidden from ${editExcludedIds.length} people. The music itself remains discoverable.` : 'Visible to everyone.'}</p></div><Button className="w-full" disabled={savingEdit} onClick={() => void savePostEdit()}>{savingEdit ? 'Saving…' : 'Save changes'}</Button></section></div>}
+      <SharePostDialog open={showShare} postId={post.id} title={displayTrackTitle || `${post.artist.name}'s post`} onClose={() => setShowShare(false)} />
+      <SocialMediaEditor open={showMediaEditor} mediaUrl={post.videoUrl || displayImage} mediaType={post.type === 'video' ? 'video' : 'image'} initialState={mediaEditState} onClose={() => setShowMediaEditor(false)} onSave={applyMediaEdit} />
     </>
   );
 }

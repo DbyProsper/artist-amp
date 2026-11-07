@@ -11,6 +11,7 @@ import type { Artist } from '@/types';
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where, type DocumentData } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
+import { CallDialog } from '@/components/chat/CallDialog';
 
 interface Conversation { id: string; artist: Artist; lastMessage: string; timestamp: Date; unread: number }
 
@@ -37,6 +38,17 @@ export default function MessagesPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [people, setPeople] = useState<Artist[]>([]);
   const [loading, setLoading] = useState(true);
+  const [incomingArtist, setIncomingArtist] = useState<Artist | null>(null);
+
+  useEffect(() => {
+    if (!user || selectedArtist) return;
+    const identityId = profile?.id || user.uid;
+    return onSnapshot(query(collection(db, 'calls'), where('recipient_id', '==', identityId)), snapshot => {
+      const ongoing = snapshot.docs.find(item => ['preparing', 'ringing', 'active'].includes(item.data().status));
+      if (!ongoing) { setIncomingArtist(null); return; }
+      void getDoc(doc(db, 'profiles', ongoing.data().caller_id)).then(person => person.exists() && setIncomingArtist(artistFromProfile(person.id, person.data())));
+    });
+  }, [profile?.id, selectedArtist, user]);
 
   useEffect(() => {
     const toId = searchParams.get('to');
@@ -87,6 +99,7 @@ export default function MessagesPage() {
 
   const unread = conversations.reduce((sum, item) => sum + item.unread, 0);
   return <div className="min-h-screen pb-36">
+    {incomingArtist && <CallDialog recipient={incomingArtist} requestedKind={null} onRequestHandled={() => undefined} />}
     <header className="sticky top-0 z-40 glass border-b border-border"><div className="flex items-center justify-between px-4 h-14"><div className="flex items-center gap-3"><BackButton /><h1 className="font-display font-bold text-lg">Messages</h1></div><span className="text-xs text-muted-foreground">{unread ? `${unread} new` : 'All caught up'}</span></div></header>
     <div className="p-4"><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" /><Input placeholder="Search conversations or artists..." value={searchQuery} onChange={event => setSearchQuery(event.target.value)} className="pl-10 bg-muted border-none h-11 rounded-xl" /></div></div>
     <div className="divide-y divide-border">

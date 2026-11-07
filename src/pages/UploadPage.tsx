@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { EmojiPicker } from '@/components/chat/EmojiPicker';
 import { useAuth } from '@/context/FirebaseAuthContext';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { arrayUnion, collection, addDoc, doc, getDoc, getDocs, increment, limit, orderBy, query, setDoc, updateDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
@@ -23,16 +23,23 @@ import { generateImage } from '@/lib/api';
 import { DEFAULT_MEDIA_IMAGE, readMediaDuration } from '@/lib/media';
 import { deletePostDraft, loadPostDraft, savePostDraft } from '@/lib/postDrafts';
 import { MUSIC_GENRES } from '@/lib/genres';
+import { Checkbox } from '@/components/ui/checkbox';
+import { SocialMediaEditor } from '@/components/social/SocialMediaEditor';
+import type { SocialEditState } from '@/types/socialEditor';
+import { EMPTY_SOCIAL_EDIT_STATE, socialFilter } from '@/types/socialEditor';
+import { renderSocialImage } from '@/lib/socialMediaEditor';
 
 type UploadType = 'audio' | 'video' | 'image' | 'story';
 
 export default function UploadPage() {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const studioGenerated = searchParams.get('studioGenerated') === '1';
   const existingTrackId = searchParams.get('existingTrack');
-  const [uploadType, setUploadType] = useState<UploadType | null>(null);
+  const requestedType = searchParams.get('type');
+  const [uploadType, setUploadType] = useState<UploadType | null>(() => requestedType === 'story' ? 'story' : null);
   const [loading, setLoading] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [generatedCoverUrl, setGeneratedCoverUrl] = useState('');
@@ -42,6 +49,10 @@ export default function UploadPage() {
   const [mediaDuration, setMediaDuration] = useState(0);
   const [storyClipStart, setStoryClipStart] = useState(0);
   const [storyClipEnd, setStoryClipEnd] = useState(30);
+  const [showSocialEditor, setShowSocialEditor] = useState(false);
+  const [socialEditState, setSocialEditState] = useState<SocialEditState>(EMPTY_SOCIAL_EDIT_STATE);
+  const [excludedProfileIds, setExcludedProfileIds] = useState<string[]>([]);
+  const [audienceSearch, setAudienceSearch] = useState('');
   const captionRef = useRef<HTMLTextAreaElement>(null);
   const storyVideoRef = useRef<HTMLVideoElement>(null);
   const [formData, setFormData] = useState({
@@ -68,6 +79,18 @@ export default function UploadPage() {
   // Image editor state
   const [showImageEditor, setShowImageEditor] = useState(false);
   const [editingImageType, setEditingImageType] = useState<'main' | 'cover'>('main');
+
+  const sourcePost = (location.state as { sourcePost?: { id: string; imageUrl?: string; videoUrl?: string; caption?: string; track?: { id: string; title: string; audioUrl?: string; coverArt?: string; artist?: { name?: string } } } } | null)?.sourcePost;
+
+  useEffect(() => {
+    if (!sourcePost || requestedType !== 'story') return;
+    const mediaUrl = sourcePost.videoUrl || sourcePost.imageUrl || sourcePost.track?.coverArt || '';
+    if (!mediaUrl) return;
+    const attachedMusic = sourcePost.track?.audioUrl ? { trackId: sourcePost.track.id, title: sourcePost.track.title, artist: sourcePost.track.artist?.name || 'MusicInsta artist', audioUrl: sourcePost.track.audioUrl, coverArt: sourcePost.track.coverArt } : undefined;
+    setUploadType('story');
+    setSocialEditState({ ...EMPTY_SOCIAL_EDIT_STATE, attachedMusic });
+    setFormData(current => ({ ...current, file: null, filePreview: mediaUrl, caption: sourcePost.caption || '', attachedMusic: attachedMusic?.title || '' }));
+  }, [requestedType, sourcePost]);
 
   useEffect(() => {
     const key = searchParams.get('fromDaw');
@@ -207,12 +230,13 @@ export default function UploadPage() {
 
   const handleStoryClipChange = (values: number[]) => {
     let [nextStart, nextEnd] = values;
-    if (nextEnd - nextStart > 30) {
-      if (Math.abs(nextStart - storyClipStart) >= Math.abs(nextEnd - storyClipEnd)) nextEnd = nextStart + 30;
-      else nextStart = nextEnd - 30;
+    const minimumDuration = socialEditState.attachedMusic ? 15 : 5;
+    if (nextEnd - nextStart > 60) {
+      if (Math.abs(nextStart - storyClipStart) >= Math.abs(nextEnd - storyClipEnd)) nextEnd = nextStart + 60;
+      else nextStart = nextEnd - 60;
     }
-    nextStart = Math.max(0, Math.min(nextStart, mediaDuration - 5));
-    nextEnd = Math.min(mediaDuration, Math.max(nextStart + 5, nextEnd));
+    nextStart = Math.max(0, Math.min(nextStart, mediaDuration - minimumDuration));
+    nextEnd = Math.min(mediaDuration, Math.max(nextStart + minimumDuration, nextEnd));
     setStoryClipStart(Number(nextStart.toFixed(1)));
     setStoryClipEnd(Number(nextEnd.toFixed(1)));
     if (storyVideoRef.current) storyVideoRef.current.currentTime = nextStart;
@@ -251,10 +275,10 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async () => {
-    if ((!formData.file && !existingTrackId) || !uploadType) { toast.error('Please select a file to upload'); return; }
+    if ((!formData.file && !existingTrackId && !(uploadType === 'story' && sourcePost && formData.filePreview)) || !uploadType) { toast.error('Please select a file to upload'); return; }
     if (uploadType === 'audio' && !formData.title.trim()) { toast.error('Please enter a title'); return; }
     if (uploadType === 'audio' && !formData.genre) { toast.error('Please select a genre'); return; }
-    if ((uploadType === 'story' || formData.addToStory) && formData.file?.type.startsWith('video/') && storyClipEnd - storyClipStart < 5) { toast.error('Select a story clip between 5 and 30 seconds.'); return; }
+    if ((uploadType === 'story' || formData.addToStory) && formData.file?.type.startsWith('video/') && storyClipEnd - storyClipStart < (socialEditState.attachedMusic ? 15 : 5)) { toast.error(socialEditState.attachedMusic ? 'A story with music must be at least 15 seconds.' : 'Select a story clip between 5 and 60 seconds.'); return; }
 
     setLoading(true);
     publishUploadProgress({ active: true, progress: 1, label: 'Preparing your post' });
@@ -263,6 +287,7 @@ export default function UploadPage() {
       let fileUrl: string | null = null;
       let coverUrl: string | null = null;
       let createdTrackId: string | null = existingTrackId;
+      let createdPostId: string | null = null;
 
       const creatorId = profile?.id || user.uid;
       const hashtags = [...new Set((formData.caption.match(/#[\p{L}\p{N}_-]+/gu) || []).map(value => value.slice(1).toLowerCase()))];
@@ -293,6 +318,9 @@ export default function UploadPage() {
         const fileExt = formData.file.name.split('.').pop();
         const fileName = `uploads/${user.uid}/${Date.now()}.${fileExt}`;
         fileUrl = await uploadFile(formData.file, fileName);
+      } else if (uploadType === 'story' && sourcePost) {
+        fileUrl = sourcePost.videoUrl || sourcePost.imageUrl || sourcePost.track?.coverArt || null;
+        coverUrl = sourcePost.imageUrl || sourcePost.track?.coverArt || null;
       }
       if (!fileUrl) throw new Error('Failed to upload file');
 
@@ -310,7 +338,7 @@ export default function UploadPage() {
 
       if (uploadType === 'audio' && existingTrackId) {
         await updateDoc(doc(db, 'tracks', existingTrackId), { ...(coverUrl && coverUrl !== DEFAULT_MEDIA_IMAGE ? { cover_url: coverUrl } : {}), ...(hashtags.length ? { tags: arrayUnion(...hashtags) } : {}), updated_at: new Date() });
-        await addDoc(collection(db, 'posts'), { profile_id: creatorId, type: 'audio', track_id: existingTrackId, image_url: coverUrl, caption: formData.caption, hashtags, mentions: mentionedProfileIds, is_story: false, expires_at: null, created_at: new Date(), is_new_release: false, is_new_post: true });
+        createdPostId = (await addDoc(collection(db, 'posts'), { profile_id: creatorId, type: 'audio', track_id: existingTrackId, image_url: coverUrl, caption: formData.caption, hashtags, mentions: mentionedProfileIds, excluded_user_ids: excludedProfileIds, is_story: false, expires_at: null, created_at: new Date(), is_new_release: false, is_new_post: true })).id;
       } else if (uploadType === 'audio') {
         // Create track document
         const trackData = {
@@ -344,10 +372,11 @@ export default function UploadPage() {
           credits,
           is_new_release: true,
           hashtags, mentions: mentionedProfileIds,
+          excluded_user_ids: excludedProfileIds,
         };
-        await addDoc(collection(db, 'posts'), postData);
+        createdPostId = (await addDoc(collection(db, 'posts'), postData)).id;
       } else if (uploadType === 'story') {
-        const isVideoStory = formData.file.type.startsWith('video/');
+        const isVideoStory = Boolean(formData.file?.type.startsWith('video/') || sourcePost?.videoUrl);
         const postData = {
           profile_id: creatorId,
           type: isVideoStory ? 'video' : 'image',
@@ -356,12 +385,21 @@ export default function UploadPage() {
           story_start_time: isVideoStory ? storyClipStart : null,
           story_end_time: isVideoStory ? storyClipEnd : null,
           caption: formData.caption,
+          visual_filter: socialFilter(socialEditState.adjustments),
+          visual_adjustments: socialEditState.adjustments,
+          aspect_ratio: socialEditState.aspectRatio,
+          media_overlays: socialEditState.overlays,
+          drawing_overlay: socialEditState.drawingDataUrl || null,
+          attached_music: socialEditState.attachedMusic?.title || formData.attachedMusic || null,
+          attached_music_data: socialEditState.attachedMusic || null,
+          source_post_id: sourcePost?.id || null,
+          excluded_user_ids: excludedProfileIds,
           is_story: true,
           expires_at: new Date(Date.now() + 24*60*60*1000),
           created_at: new Date(),
           hashtags, mentions: mentionedProfileIds,
         };
-        await addDoc(collection(db, 'posts'), postData);
+        createdPostId = (await addDoc(collection(db, 'posts'), postData)).id;
       } else {
         const postData = {
           profile_id: creatorId,
@@ -374,16 +412,22 @@ export default function UploadPage() {
           created_at: new Date(),
           visual_filter: formData.visualFilter,
           attached_music: formData.attachedMusic.trim() || null,
+          attached_music_data: socialEditState.attachedMusic || null,
+          visual_adjustments: socialEditState.adjustments,
+          aspect_ratio: socialEditState.aspectRatio,
+          media_overlays: socialEditState.overlays,
+          drawing_overlay: socialEditState.drawingDataUrl || null,
+          excluded_user_ids: excludedProfileIds,
           credits: uploadType === 'video' ? credits : null,
           is_new_release: false,
           is_new_post: true,
           hashtags, mentions: mentionedProfileIds,
         };
-        await addDoc(collection(db, 'posts'), postData);
+        createdPostId = (await addDoc(collection(db, 'posts'), postData)).id;
       }
 
       await Promise.all(hashtags.map(tag => setDoc(doc(db, 'hashtags', tag), { tag, count: increment(1), updated_at: new Date() }, { merge: true })));
-      await Promise.all(mentionedProfileIds.filter(id => id !== creatorId).map(id => addDoc(collection(db, 'notifications'), { profile_id: id, from_profile_id: creatorId, type: 'mention', message: `${profile?.name || 'Someone'} mentioned you in a post`, read: false, created_at: new Date() })));
+      await Promise.all(mentionedProfileIds.filter(id => id !== creatorId).map(id => addDoc(collection(db, 'notifications'), { profile_id: id, from_profile_id: creatorId, post_id: createdPostId, type: 'mention', message: `${profile?.name || 'Someone'} mentioned you in a post`, read: false, created_at: new Date() })));
 
       if (formData.addToStory && uploadType !== 'story') {
         await addDoc(collection(db, 'posts'), {
@@ -396,6 +440,14 @@ export default function UploadPage() {
           story_end_time: uploadType === 'video' ? storyClipEnd : null,
           caption: formData.caption,
           genre: formData.genre,
+          visual_filter: socialFilter(socialEditState.adjustments),
+          visual_adjustments: socialEditState.adjustments,
+          aspect_ratio: socialEditState.aspectRatio,
+          media_overlays: socialEditState.overlays,
+          drawing_overlay: socialEditState.drawingDataUrl || null,
+          attached_music: socialEditState.attachedMusic?.title || formData.attachedMusic || null,
+          attached_music_data: socialEditState.attachedMusic || null,
+          excluded_user_ids: excludedProfileIds,
           is_story: true,
           expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
           created_at: new Date(),
@@ -422,6 +474,8 @@ export default function UploadPage() {
     setStoryClipStart(0);
     setStoryClipEnd(30);
     setGeneratedCoverUrl('');
+    setSocialEditState(EMPTY_SOCIAL_EDIT_STATE);
+    setExcludedProfileIds([]);
     setFormData({ title: '', caption: '', lyrics: '', addToStory: false, file: null, filePreview: '', coverFile: null, coverPreview: '', releaseType: 'single', featuredArtists: '', writers: '', composers: '', producers: '', engineers: '', label: '', genre: '', visualFilter: 'none', attachedMusic: '' });
   };
 
@@ -454,6 +508,26 @@ export default function UploadPage() {
     }
   };
 
+  const handleSocialEditorSave = async (nextState: SocialEditState) => {
+    const isImage = uploadType === 'image' || (uploadType === 'story' && !formData.file?.type.startsWith('video/') && !sourcePost?.videoUrl);
+    if (isImage && formData.filePreview) {
+      try {
+        const editedFile = await renderSocialImage(formData.filePreview, nextState);
+        const previewUrl = URL.createObjectURL(editedFile);
+        setFormData(current => ({ ...current, file: editedFile, filePreview: previewUrl, visualFilter: 'none', attachedMusic: nextState.attachedMusic?.title || '' }));
+        setSocialEditState({ ...EMPTY_SOCIAL_EDIT_STATE, aspectRatio: nextState.aspectRatio, attachedMusic: nextState.attachedMusic });
+      } catch {
+        setFormData(current => ({ ...current, visualFilter: socialFilter(nextState.adjustments), attachedMusic: nextState.attachedMusic?.title || '' }));
+        setSocialEditState(nextState);
+      }
+    } else {
+      setFormData(current => ({ ...current, visualFilter: socialFilter(nextState.adjustments), attachedMusic: nextState.attachedMusic?.title || '' }));
+      setSocialEditState(nextState);
+    }
+    setShowSocialEditor(false);
+    toast.success('Your media edits are ready to publish.');
+  };
+
   const uploadOptions = [
     { type: 'audio' as UploadType, icon: Music2, label: 'Audio', color: 'text-primary' },
     { type: 'video' as UploadType, icon: Video, label: 'Video', color: 'text-accent' },
@@ -469,7 +543,7 @@ export default function UploadPage() {
             <X className="w-5 h-5" />
           </button>
           <h1 className="font-display font-bold text-lg">{uploadType ? `New ${uploadType === 'story' ? 'Story' : 'Post'}` : 'Create'}</h1>
-          <div className="flex items-center gap-2">{uploadType && <Button size="sm" variant="outline" onClick={() => void saveDraft()} disabled={loading}><Save className="mr-1 h-4 w-4" />Draft</Button>}<Button size="sm" onClick={handleSubmit} disabled={loading || !uploadType || (!formData.file && !existingTrackId)}>
+          <div className="flex items-center gap-2">{uploadType && <Button size="sm" variant="outline" onClick={() => void saveDraft()} disabled={loading}><Save className="mr-1 h-4 w-4" />Draft</Button>}<Button size="sm" onClick={handleSubmit} disabled={loading || !uploadType || (!formData.file && !existingTrackId && !(uploadType === 'story' && sourcePost && formData.filePreview))}>
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Post'}
           </Button></div>
         </div>
@@ -508,41 +582,15 @@ export default function UploadPage() {
                         <p className="text-sm text-muted-foreground">{existingTrackId ? 'Existing profile track selected' : 'Audio file selected'}</p>
                       </div>
                     </div>
-                  ) : uploadType === 'video' || (uploadType === 'story' && formData.file?.type.startsWith('video/')) ? (
+                  ) : uploadType === 'video' || (uploadType === 'story' && (formData.file?.type.startsWith('video/') || sourcePost?.videoUrl)) ? (
                     <>
                       <video ref={storyVideoRef} src={formData.filePreview} style={{ filter: formData.visualFilter }} className="mx-auto max-h-[70vh] w-full rounded-xl bg-black object-contain" controls onTimeUpdate={event => { if ((uploadType === 'story' || formData.addToStory) && event.currentTarget.currentTime >= storyClipEnd) { event.currentTarget.pause(); event.currentTarget.currentTime = storyClipStart; } }} />
-                      {formData.file?.type.startsWith('image/') && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditingImageType('main');
-                            setShowImageEditor(true);
-                          }}
-                          className="absolute top-2 right-12 gap-2"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                          Edit
-                        </Button>
-                      )}
+                      <Button size="sm" variant="outline" onClick={() => setShowSocialEditor(true)} className="absolute top-2 right-12 gap-2"><Edit2 className="w-4 h-4" />Edit</Button>
                     </>
                   ) : (
                     <>
                       <img src={formData.filePreview} alt="Preview" style={{ filter: formData.visualFilter }} className="mx-auto max-h-[70vh] w-full rounded-xl bg-black object-contain" />
-                      {(uploadType === 'image' || uploadType === 'story') && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setEditingImageType('main');
-                            setShowImageEditor(true);
-                          }}
-                          className="absolute top-2 right-12 gap-2"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                          Edit
-                        </Button>
-                      )}
+                      {(uploadType === 'image' || uploadType === 'story') && <Button size="sm" variant="outline" onClick={() => setShowSocialEditor(true)} className="absolute top-2 right-12 gap-2"><Edit2 className="w-4 h-4" />Edit</Button>}
                     </>
                   )}
                   <button onClick={() => { setFormData({ ...formData, file: null, filePreview: '', addToStory: false }); setMediaDuration(0); setStoryClipStart(0); setStoryClipEnd(30); }} className="absolute top-2 right-2 p-1 rounded-full bg-background/80">
@@ -554,7 +602,7 @@ export default function UploadPage() {
                   <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-2" />
                   <p className="font-medium">Tap to upload</p>
                   <p className="text-sm text-muted-foreground">
-                    {uploadType === 'audio' ? 'MP3, WAV, FLAC' : uploadType === 'video' ? 'MP4, MOV, WebM' : uploadType === 'story' ? 'JPG, PNG, GIF, MP4, MOV, WebM · select a 5–30 second video clip' : 'JPG, PNG, GIF'}
+                    {uploadType === 'audio' ? 'MP3, WAV, FLAC' : uploadType === 'video' ? 'MP4, MOV, WebM' : uploadType === 'story' ? 'JPG, PNG, GIF, MP4, MOV, WebM · select a 5–60 second video clip' : 'JPG, PNG, GIF'}
                   </p>
                   <input type="file" accept={uploadType === 'audio' ? 'audio/*' : uploadType === 'video' ? 'video/*' : uploadType === 'story' ? 'image/*,video/*' : 'image/*'} className="hidden" onChange={event => void handleFileChange(event)} />
                 </label>
@@ -563,8 +611,8 @@ export default function UploadPage() {
 
             {formData.file?.type.startsWith('video/') && (uploadType === 'story' || formData.addToStory) && mediaDuration >= 5 && (
               <div className="space-y-4 rounded-2xl border border-border bg-card p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">Choose the story clip</p><p className="text-xs text-muted-foreground">Move either handle to select 5–30 seconds from anywhere in the video.</p></div><span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">{(storyClipEnd - storyClipStart).toFixed(1)}s</span></div>
-                <Slider min={0} max={mediaDuration} step={0.1} minStepsBetween={50} value={[storyClipStart, storyClipEnd]} onValueChange={handleStoryClipChange} />
+                <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">Choose the story clip</p><p className="text-xs text-muted-foreground">Move either handle to select {socialEditState.attachedMusic ? '15–60' : '5–60'} seconds from anywhere in the video.</p></div><span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">{(storyClipEnd - storyClipStart).toFixed(1)}s</span></div>
+                <Slider min={0} max={mediaDuration} step={0.1} minStepsBetween={socialEditState.attachedMusic ? 150 : 50} value={[storyClipStart, storyClipEnd]} onValueChange={handleStoryClipChange} />
                 <div className="flex justify-between text-xs text-muted-foreground"><span>Starts at {storyClipStart.toFixed(1)}s</span><span>Ends at {storyClipEnd.toFixed(1)}s</span><span>Video {mediaDuration.toFixed(1)}s</span></div>
                 <Button type="button" size="sm" variant="outline" onClick={() => { if (!storyVideoRef.current) return; storyVideoRef.current.currentTime = storyClipStart; void storyVideoRef.current.play(); }}>Preview selected clip</Button>
               </div>
@@ -633,9 +681,16 @@ export default function UploadPage() {
             {(uploadType === 'image' || uploadType === 'video' || uploadType === 'story') && (
               <div className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
                 <div className="space-y-2"><Label>Visual effect</Label><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={formData.visualFilter} onChange={e => setFormData({ ...formData, visualFilter: e.target.value })}><option value="none">Original</option><option value="contrast(1.15) saturate(1.2)">Vivid</option><option value="grayscale(1) contrast(1.1)">Mono</option><option value="sepia(.4) saturate(1.1)">Warm film</option><option value="hue-rotate(35deg) saturate(1.3)">Neon shift</option></select></div>
-                <div className="space-y-2"><Label>Music overlay</Label><Input placeholder="Track title or audio URL" value={formData.attachedMusic} onChange={e => setFormData({ ...formData, attachedMusic: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Music overlay</Label><button type="button" onClick={() => setShowSocialEditor(true)} className="flex h-10 w-full items-center rounded-md border border-input px-3 text-left text-sm">{socialEditState.attachedMusic ? `♫ ${socialEditState.attachedMusic.title} — ${socialEditState.attachedMusic.artist}` : 'Search MusicInsta music in the editor'}</button></div>
               </div>
             )}
+
+            <div className="space-y-3 rounded-xl border border-border p-4">
+              <div><p className="font-medium">Audience exclusions</p><p className="text-xs text-muted-foreground">Selected people will not see this {uploadType === 'story' ? 'story' : 'post'} in stories or the feed. Music tracks remain available in MusicInsta's catalogue.</p></div>
+              <Input value={audienceSearch} onChange={event => setAudienceSearch(event.target.value)} placeholder="Search people to exclude" />
+              {audienceSearch.trim().length > 0 && <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg bg-muted/30 p-2">{mentionProfiles.filter(item => item.id !== profile?.id && `${item.name} ${item.username}`.toLowerCase().includes(audienceSearch.toLowerCase())).slice(0, 20).map(item => <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-lg p-2 hover:bg-muted"><Checkbox checked={excludedProfileIds.includes(item.id)} onCheckedChange={checked => setExcludedProfileIds(current => checked ? [...new Set([...current, item.id])] : current.filter(id => id !== item.id))} /><span className="min-w-0"><span className="block truncate text-sm font-medium">{item.name}</span><span className="block truncate text-xs text-muted-foreground">@{item.username}</span></span></label>)}</div>}
+              {excludedProfileIds.length > 0 && <p className="text-xs text-primary">Hidden from {excludedProfileIds.length} {excludedProfileIds.length === 1 ? 'person' : 'people'}.</p>}
+            </div>
 
             {/* Caption with emoji picker */}
             <div className="space-y-2">
@@ -677,6 +732,7 @@ export default function UploadPage() {
         onSaveEdits={handleImageEditorSave}
         title={editingImageType === 'cover' ? 'Edit Cover Art' : 'Edit Image'}
       />
+      <SocialMediaEditor open={showSocialEditor} mediaUrl={formData.filePreview || ''} mediaType={formData.file?.type.startsWith('video/') || Boolean(sourcePost?.videoUrl) ? 'video' : 'image'} initialState={socialEditState} onClose={() => setShowSocialEditor(false)} onSave={handleSocialEditorSave} />
     </div>
   );
 }

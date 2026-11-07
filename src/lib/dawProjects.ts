@@ -33,6 +33,8 @@ export interface StoredDawTrack {
 export interface StoredDawProject {
   id: string;
   ownerId: string;
+  cloudOwnerId?: string;
+  editorIds?: string[];
   name: string;
   masterGain: number;
   compression: number;
