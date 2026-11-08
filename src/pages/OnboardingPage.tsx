@@ -17,6 +17,7 @@ import { db, storage } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { ImageCropper } from '@/components/ui/ImageCropper';
 import { MUSIC_GENRES } from '@/lib/genres';
+import { BrandReveal } from '@/components/branding/BrandReveal';
 
 interface Genre {
   id: string;
@@ -222,11 +223,6 @@ export default function OnboardingPage() {
       setOnboardingComplete(true);
       await refreshProfile();
       toast.success('Profile setup complete!');
-
-      // Navigate after a short delay to show success state
-      setTimeout(() => {
-        navigate('/');
-      }, 1000);
     } catch (error: unknown) {
       console.error('Onboarding error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to complete setup');
@@ -252,26 +248,7 @@ export default function OnboardingPage() {
 
   // Show success screen
   if (onboardingComplete) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className="text-center"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2, type: 'spring' }}
-            className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-primary via-accent to-secondary flex items-center justify-center"
-          >
-            <Check className="w-10 h-10 text-white" />
-          </motion.div>
-          <h2 className="font-display font-bold text-2xl mb-2">You're all set!</h2>
-          <p className="text-muted-foreground">Redirecting to your feed...</p>
-        </motion.div>
-      </div>
-    );
+    return <BrandReveal label="Loading your MusicInsta experience…" onComplete={() => navigate('/', { replace: true })} />;
   }
 
   // Crop Modal Component
@@ -398,10 +375,8 @@ export default function OnboardingPage() {
                   updated_at: new Date(),
                 });
                 await refreshProfile();
-                navigate('/');
-              } else {
-                navigate('/');
               }
+              setOnboardingComplete(true);
             }}
             className="text-muted-foreground"
           >

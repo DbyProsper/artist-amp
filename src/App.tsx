@@ -1,5 +1,5 @@
 import { Toaster } from "@/components/ui/toaster";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -12,6 +12,7 @@ import { FloatingPlayerButton } from "@/components/player/FloatingPlayerButton";
 import { useScrollToTop } from "@/hooks/useScrollToTop";
 import { useUserRole } from "@/hooks/useUserRole";
 import type { QuotaKey } from "@/lib/planLimits";
+import { BrandReveal } from "@/components/branding/BrandReveal";
 
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -138,6 +139,22 @@ function StudioReadOnly({ children }: { children: ReactNode }) {
   return <div className="relative min-h-screen"><div className="pointer-events-none select-none opacity-55" aria-hidden="true">{children}</div><div className="fixed inset-x-4 top-20 z-[100] mx-auto max-w-md rounded-2xl border border-primary/30 bg-background/95 p-5 text-center shadow-2xl backdrop-blur"><h2 className="font-bold">Sign in to use this Studio tool</h2><p className="mt-1 text-sm text-muted-foreground">You can preview MusicInsta Studio, but uploading, editing and generating require an account.</p><a href="/auth" className="mt-4 inline-flex rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground">Sign in or create an account</a></div></div>;
 }
 
+function StudioBrandReveal() {
+  const location = useLocation();
+  const previousPath = useRef(location.pathname);
+  const [visible, setVisible] = useState(() => location.pathname.startsWith('/studio'));
+
+  useEffect(() => {
+    const wasInStudio = previousPath.current.startsWith('/studio');
+    const isInStudio = location.pathname.startsWith('/studio');
+    if (isInStudio && !wasInStudio) setVisible(true);
+    if (!isInStudio) setVisible(false);
+    previousPath.current = location.pathname;
+  }, [location.pathname]);
+
+  return visible ? <BrandReveal onComplete={() => setVisible(false)} /> : null;
+}
+
 const AppRoutes = () => {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -153,6 +170,7 @@ const AppRoutes = () => {
       <ScrollToTop />
       <ClearGuestPlayerOnAuth />
       <GlobalQuotaPrompt />
+      <StudioBrandReveal />
       <Suspense fallback={routeFallback}>
       <Routes>
         {/* Landing page for new users */}
