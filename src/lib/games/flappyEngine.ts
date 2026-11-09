@@ -1,10 +1,12 @@
 export const FLAPPY_RULESET_VERSION = 'flappy-v2';
 export const FLAPPY_WIDTH = 360;
+export const FLAPPY_WIDE_WIDTH = 900;
 export const FLAPPY_HEIGHT = 560;
 export const FLAPPY_STEP = 1 / 120;
 export const FLAPPY_TARGETS = [15, 20, 30, 40, 50, 60, 70, 80, 90, 100] as const;
 
 export type FlappyRunStatus = 'ready' | 'playing' | 'paused' | 'failed' | 'completed';
+export type FlappyLayout = 'portrait' | 'wide';
 
 export interface FlappyDifficulty {
   speed: number;
@@ -34,6 +36,10 @@ export interface FlappyRun {
   rulesetVersion: typeof FLAPPY_RULESET_VERSION;
   seed: string;
   level: number;
+  layout: FlappyLayout;
+  width: number;
+  height: number;
+  playerX: number;
   status: FlappyRunStatus;
   time: number;
   y: number;
@@ -48,9 +54,9 @@ export interface FlappyRun {
   nextId: number;
   lastPickupGate: number;
   flapPulse: number;
+  continuesUsed: number;
 }
 
-const PLAYER_X = 82;
 const PLAYER_RADIUS = 14;
 const OBSTACLE_WIDTH = 58;
 const PICKUP_RADIUS = 13;
@@ -76,11 +82,16 @@ export function difficultyAt(level: number, gatesCleared: number): FlappyDifficu
   };
 }
 
-export function createFlappyRun(seed: string, level: number): FlappyRun {
+export function createFlappyRun(seed: string, level: number, layout: FlappyLayout = 'portrait'): FlappyRun {
+  const width = layout === 'wide' ? FLAPPY_WIDE_WIDTH : FLAPPY_WIDTH;
   const run: FlappyRun = {
     rulesetVersion: FLAPPY_RULESET_VERSION,
     seed,
     level,
+    layout,
+    width,
+    height: FLAPPY_HEIGHT,
+    playerX: layout === 'wide' ? 190 : 82,
     status: 'ready',
     time: 0,
     y: 280,
@@ -95,8 +106,9 @@ export function createFlappyRun(seed: string, level: number): FlappyRun {
     nextId: 1,
     lastPickupGate: -4,
     flapPulse: 0,
+    continuesUsed: 0,
   };
-  spawnObstacle(run, 410, 280);
+  spawnObstacle(run, width + 50, 280);
   return run;
 }
 
@@ -108,6 +120,24 @@ export function flapRun(run: FlappyRun): boolean {
   if (run.status !== 'playing') return false;
   run.velocity = FLAP_IMPULSE;
   run.flapPulse = .12;
+  return true;
+}
+
+export function availableContinues(run: FlappyRun): number {
+  if (run.level < 5) return 0;
+  return Math.max(0, Math.floor(run.bonusScore / 10) - run.continuesUsed);
+}
+
+export function continueFlappyRun(run: FlappyRun): boolean {
+  if (run.status !== 'failed' || availableContinues(run) < 1) return false;
+  run.continuesUsed += 1;
+  run.status = 'paused';
+  run.y = run.height / 2;
+  run.velocity = 0;
+  run.flapPulse = 0;
+  run.obstacles = [];
+  run.pickups = [];
+  spawnObstacle(run, run.width + 80, run.height / 2);
   return true;
 }
 
@@ -126,19 +156,19 @@ export function advanceFlappyRun(run: FlappyRun, dt = FLAPPY_STEP): void {
   for (const pickup of run.pickups) pickup.x -= difficulty.speed * dt;
 
   const last = run.obstacles.at(-1);
-  if (!last || last.x < FLAPPY_WIDTH - difficulty.spacing) {
+  if (!last || last.x < run.width - difficulty.spacing) {
     const previousCenter = last?.gapCenter ?? 280;
     spawnObstacle(run, 410, nextReachableGap(run, previousCenter, difficulty));
   }
 
-  if (run.y - PLAYER_RADIUS <= 0 || run.y + PLAYER_RADIUS >= FLAPPY_HEIGHT || collidesWithObstacle(run, difficulty.gap)) {
+  if (run.y - PLAYER_RADIUS <= 0 || run.y + PLAYER_RADIUS >= run.height || collidesWithObstacle(run, difficulty.gap)) {
     run.status = 'failed';
     return;
   }
 
   for (const pickup of run.pickups) {
     if (pickup.collected) continue;
-    const dx = pickup.x - PLAYER_X;
+    const dx = pickup.x - run.playerX;
     const dy = pickup.y - run.y;
     if (dx * dx + dy * dy <= (PLAYER_RADIUS + PICKUP_RADIUS) ** 2) {
       pickup.collected = true;
@@ -148,7 +178,7 @@ export function advanceFlappyRun(run: FlappyRun, dt = FLAPPY_STEP): void {
   }
 
   for (const obstacle of run.obstacles) {
-    if (!obstacle.passed && obstacle.x + OBSTACLE_WIDTH < PLAYER_X - PLAYER_RADIUS) {
+    if (!obstacle.passed && obstacle.x + OBSTACLE_WIDTH < run.playerX - PLAYER_RADIUS) {
       obstacle.passed = true;
       run.gatesCleared += 1;
       run.baseScore += 1;
@@ -191,13 +221,13 @@ function nextReachableGap(run: FlappyRun, previous: number, difficulty: FlappyDi
   const physicsBound = Math.min(difficulty.variation, 42 + reactionSeconds * 28);
   const delta = (random(run) * 2 - 1) * physicsBound;
   const margin = difficulty.gap / 2 + 42;
-  const candidate = Math.max(margin, Math.min(FLAPPY_HEIGHT - margin, previous + delta));
+  const candidate = Math.max(margin, Math.min(run.height - margin, previous + delta));
   return Number.isFinite(candidate) ? candidate : 280;
 }
 
 function collidesWithObstacle(run: FlappyRun, gap: number): boolean {
   return run.obstacles.some(obstacle => {
-    const horizontal = PLAYER_X + PLAYER_RADIUS > obstacle.x && PLAYER_X - PLAYER_RADIUS < obstacle.x + OBSTACLE_WIDTH;
+    const horizontal = run.playerX + PLAYER_RADIUS > obstacle.x && run.playerX - PLAYER_RADIUS < obstacle.x + OBSTACLE_WIDTH;
     if (!horizontal) return false;
     return run.y - PLAYER_RADIUS < obstacle.gapCenter - gap / 2 || run.y + PLAYER_RADIUS > obstacle.gapCenter + gap / 2;
   });

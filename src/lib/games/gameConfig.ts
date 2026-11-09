@@ -5,7 +5,7 @@ export const GAME_CATALOGUE: Array<{ id: GameId; title: string; playable: boolea
   { id: 'release-day', title: 'Release Day Simulator', playable: true, difficulty: 'Strategic', summary: 'Plan and launch a South African independent music release.', colour: 'from-fuchsia-600 to-violet-700' },
   { id: 'flappy', title: 'Flappy Bird', playable: true, difficulty: 'Reflex', summary: 'Guide the MusicInsta mascot through three responsive music worlds.', colour: 'from-pink-500 to-purple-700', cover: '/assets/games/flappy/ui/game-cover.jpg' },
   { id: 'one-more-floor', title: 'One More Floor', playable: false, difficulty: 'Arcade', summary: 'Climb a musical tower one risky floor at a time.', colour: 'from-cyan-600 to-blue-700' },
-  { id: 'memory-heist', title: 'Memory Heist', playable: true, difficulty: 'Memory', summary: 'Study the studio, then recover every matching music artefact.', colour: 'from-amber-500 to-orange-700' },
+  { id: 'memory-heist', title: 'Memory Heist', playable: true, difficulty: 'Memory', summary: 'Recover 48 music artefacts across four premium heist chapters.', colour: 'from-fuchsia-600 to-violet-900', cover: '/assets/games/memory-heist/ui/game-cover.png' },
   { id: 'angry-birds', title: 'Angry Birds', playable: false, difficulty: 'Physics', summary: 'A future MusicInsta physics challenge with original characters.', colour: 'from-red-500 to-rose-700' },
   { id: 'stack', title: 'Stack', playable: false, difficulty: 'Timing', summary: 'Place moving blocks; every missed edge is trimmed away.', colour: 'from-emerald-500 to-teal-700' },
   { id: '2048', title: '2048', playable: false, difficulty: 'Puzzle', summary: 'Swipe or use arrow keys to combine music-themed tiles.', colour: 'from-yellow-500 to-amber-700' },

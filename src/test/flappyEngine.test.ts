@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   advanceFlappyRun,
+  availableContinues,
   beginFlappyRun,
+  continueFlappyRun,
   createFlappyRun,
   difficultyAt,
   FLAPPY_STEP,
@@ -64,5 +66,20 @@ describe('Flappy v2 deterministic engine', () => {
     const frozen = { y: run.y, score: run.totalRunScore, time: run.time };
     advanceFlappyRun(run, FLAPPY_STEP);
     expect({ y: run.y, score: run.totalRunScore, time: run.time }).toEqual(frozen);
+  });
+
+  it('earns one score-preserving continuation per 10 bonus points from level 5', () => {
+    const run = createFlappyRun('continue-seed', 5, 'wide');
+    run.gatesCleared = 17;
+    run.baseScore = 17;
+    run.bonusScore = 24;
+    run.totalRunScore = 41;
+    run.status = 'failed';
+    expect(availableContinues(run)).toBe(2);
+    expect(continueFlappyRun(run)).toBe(true);
+    expect(run.status).toBe('paused');
+    expect(run.gatesCleared).toBe(17);
+    expect(run.totalRunScore).toBe(41);
+    expect(availableContinues(run)).toBe(1);
   });
 });

@@ -9,6 +9,7 @@ import { campaignEvents, applyReleaseChoice, initialReleaseState, releaseResult,
 import { DAILY_REPEAT_CAP, FLAPPY_LEVELS, GAME_CATALOGUE, MEMORY_LEVELS, RELEASE_CAMPAIGNS, nextMilestone } from '@/lib/games/gameConfig';
 import { createGameSession, getGameProfile, submitGameResult, type GameProfile } from '@/lib/games/gameApi';
 import { FlappyGame as FlappyGameV2 } from '@/components/games/FlappyGame';
+import { MemoryHeistGame as MemoryHeistV2 } from '@/components/games/MemoryHeistGame';
 
 type ActiveGame = 'release-day' | 'memory-heist' | 'flappy' | null;
 type RewardGrant = { points: number; kind: string; amount: number };
@@ -27,7 +28,7 @@ export default function GamesPage(){
   const verified=(next:GameProfile,grants:Array<{points:number;kind:string;amount:number}>)=>{setProfile(next); grants.forEach(g=>toast.success(`You reached ${g.points.toLocaleString()} points and unlocked ${g.amount} ${formatReward(g.kind)}. Use it in AI Studio.`));};
   const milestone=nextMilestone(profile.points);
   if(active==='release-day') return <ReleaseDayGame profile={profile} onExit={()=>setActive(null)} onVerified={verified}/>;
-  if(active==='memory-heist') return <MemoryHeist profile={profile} onExit={()=>setActive(null)} onVerified={verified}/>;
+  if(active==='memory-heist') return <MemoryHeistV2 profile={profile} onExit={()=>setActive(null)} onVerified={verified}/>;
   if(active==='flappy') return <FlappyGameV2 profile={profile} onExit={()=>setActive(null)} onVerified={verified}/>;
   return <main className="min-h-screen pb-28"><header className="sticky top-0 z-30 border-b border-border bg-background/90 px-4 py-4 backdrop-blur"><div className="mx-auto flex max-w-6xl items-center gap-3"><Gamepad2 className="h-7 w-7 text-primary"/><div><h1 className="text-xl font-bold">MusicInsta Games</h1><p className="text-xs text-muted-foreground">Play, learn and earn verified reward points.</p></div></div></header><div className="mx-auto max-w-6xl space-y-7 p-4 sm:p-6">
     <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-fuchsia-700 via-purple-800 to-slate-950 p-6 text-white shadow-2xl sm:p-9"><div className="max-w-2xl"><span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wider">Featured flagship game</span><h2 className="mt-4 text-3xl font-black sm:text-5xl">Release Day Simulator</h2><p className="mt-3 max-w-xl text-white/80">Make seven consequential decisions, manage a fictional rand budget and learn how preparation, audience fit and trust shape an independent release.</p><div className="mt-5 flex flex-wrap gap-3"><Button size="lg" onClick={()=>setActive('release-day')}><Play className="mr-2 h-4 w-4"/>{profile.progress['release-day']?'Continue playing':'Start campaign'}</Button><span className="self-center text-sm text-white/70">6 campaigns · deterministic outcomes · replayable events</span></div></div></section>

@@ -8,8 +8,9 @@ import {
   FLAPPY_ENVIRONMENTS, FLAPPY_BRAND, loadFlappyAssets, type FlappyEnvironmentId, type LoadedFlappyAssets,
 } from '@/lib/games/flappyAssets';
 import {
-  advanceFlappyRun, beginFlappyRun, createFlappyRun, difficultyAt, flapRun, FLAPPY_HEIGHT, FLAPPY_RULESET_VERSION,
-  FLAPPY_STEP, FLAPPY_TARGETS, FLAPPY_WIDTH, levelTarget, mascotTilt, type FlappyRun, type FlappyRunStatus,
+  advanceFlappyRun, availableContinues, beginFlappyRun, continueFlappyRun, createFlappyRun, difficultyAt, flapRun,
+  FLAPPY_HEIGHT, FLAPPY_RULESET_VERSION, FLAPPY_STEP, FLAPPY_TARGETS, FLAPPY_WIDE_WIDTH, FLAPPY_WIDTH,
+  levelTarget, mascotTilt, type FlappyLayout, type FlappyRun, type FlappyRunStatus,
 } from '@/lib/games/flappyEngine';
 
 type RewardGrant = { points: number; kind: string; amount: number };
@@ -36,7 +37,11 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
   const reduceMotion = useReducedMotion();
   const savedEnvironment = profile.preferences?.flappyEnvironment as FlappyEnvironmentId | undefined;
   const [environmentId, setEnvironmentId] = useState<FlappyEnvironmentId>(() => savedEnvironment || readEnvironment());
-  const [sound, setSound] = useState(() => profile.preferences?.flappySound ?? localStorage.getItem(SOUND_KEY) === '1');
+  const [sound, setSound] = useState(() => {
+    const stored = localStorage.getItem(SOUND_KEY);
+    return profile.preferences?.flappySound ?? (stored === null ? true : stored === '1');
+  });
+  const [wideLayout, setWideLayout] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
   const [level, setLevel] = useState(Math.min(10, profile.progress.flappy?.unlocked || 1));
   const [localUnlocked, setLocalUnlocked] = useState(Math.min(10, profile.progress.flappy?.unlocked || 1));
   const [status, setStatus] = useState<FlappyRunStatus | 'loading'>('loading');
@@ -60,9 +65,11 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
   const timersRef = useRef<number[]>([]);
   const sessionRef = useRef('');
   const flapTimesRef = useRef<number[]>([]);
+  const continueTimesRef = useRef<number[]>([]);
   const verifyingRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastPickupTotalRef = useRef(0);
+  const lastGateRef = useRef(0);
 
   const environment = FLAPPY_ENVIRONMENTS[environmentId];
   const target = levelTarget(level);
@@ -73,6 +80,12 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
   useEffect(() => { environmentRef.current = environmentId; }, [environmentId]);
   useEffect(() => { soundRef.current = sound; }, [sound]);
   useEffect(() => { setLocalUnlocked(Math.min(10, profile.progress.flappy?.unlocked || 1)); }, [profile.progress.flappy?.unlocked]);
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)');
+    const update = () => setWideLayout(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
 
   const clearTimers = useCallback(() => {
     timersRef.current.forEach(window.clearTimeout);
@@ -97,7 +110,7 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
       .then(loaded => {
         if (!active) return;
         setAssets(loaded);
-        const preview = createFlappyRun(`preview-${environmentId}-${level}`, level);
+        const preview = createFlappyRun(`preview-${environmentId}-${level}`, level, wideLayout ? 'wide' : 'portrait');
         runRef.current = preview;
         setStatus('ready');
       })
@@ -107,7 +120,7 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
         setStatus('loading');
       });
     return () => { active = false; };
-  }, [assetAttempt, clearTimers, environmentId, level, stopLoop]);
+  }, [assetAttempt, clearTimers, environmentId, level, stopLoop, wideLayout]);
 
   const playTone = useCallback((frequency: number, duration = .07, gainValue = .028) => {
     if (!soundRef.current) return;
@@ -138,6 +151,10 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
       playTone(value === 4 ? 880 : 660, .12, .04);
       timersRef.current.push(window.setTimeout(() => setCollectionBurst(null), 600));
     }
+    if (run.gatesCleared > lastGateRef.current) {
+      lastGateRef.current = run.gatesCleared;
+      playTone(440 + Math.min(220, run.gatesCleared * 4), .09, .025);
+    }
   }, [playTone]);
 
   const draw = useCallback(() => {
@@ -148,10 +165,10 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
     const context = canvas.getContext('2d');
     if (!context) return;
     const difficulty = difficultyAt(run.level, run.gatesCleared);
-    context.clearRect(0, 0, FLAPPY_WIDTH, FLAPPY_HEIGHT);
-    context.drawImage(loaded.far, 0, 0, FLAPPY_WIDTH, FLAPPY_HEIGHT);
-    drawTiledLayer(context, loaded.mid, -(run.time * difficulty.speed * .06) % FLAPPY_WIDTH, .82);
-    drawTiledLayer(context, loaded.near, -(run.time * difficulty.speed * .13) % FLAPPY_WIDTH, .92);
+    context.clearRect(0, 0, run.width, run.height);
+    drawCoverImage(context, loaded.far, run.width, run.height);
+    drawTiledLayer(context, loaded.mid, -(run.time * difficulty.speed * .06) % FLAPPY_WIDTH, .82, run.width, run.height);
+    drawTiledLayer(context, loaded.near, -(run.time * difficulty.speed * .13) % FLAPPY_WIDTH, .92, run.width, run.height);
 
     for (const obstacle of run.obstacles) {
       const visualX = obstacle.x - 5;
@@ -163,7 +180,7 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
       context.rotate(Math.PI);
       context.drawImage(loaded.obstacleTop, -visualWidth / 2, -topHeight / 2, visualWidth, topHeight + 8);
       context.restore();
-      context.drawImage(loaded.obstacleBottom, visualX, bottomY - 8, visualWidth, FLAPPY_HEIGHT - bottomY + 12);
+      context.drawImage(loaded.obstacleBottom, visualX, bottomY - 8, visualWidth, run.height - bottomY + 12);
     }
 
     for (const pickup of run.pickups) {
@@ -180,7 +197,7 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
       for (let index = 3; index > 0; index -= 1) {
         context.beginPath();
         context.fillStyle = `rgba(244,114,182,${.07 * index})`;
-        context.arc(82 - index * 9, run.y + index * 2, 4 + index, 0, Math.PI * 2);
+        context.arc(run.playerX - index * 9, run.y + index * 2, 4 + index, 0, Math.PI * 2);
         context.fill();
       }
     }
@@ -190,7 +207,7 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
     const tilt = run.status === 'ready' ? -6 : mascotTilt(run);
     const squash = run.flapPulse > 0 && !reduceMotion ? 1.08 : 1;
     context.save();
-    context.translate(82, run.y + bob);
+    context.translate(run.playerX, run.y + bob);
     context.rotate(tilt * Math.PI / 180);
     context.scale(squash, 1 / squash);
     context.drawImage(mascot, -31, -31, 62, 62);
@@ -213,6 +230,7 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
         durationMs: Math.round(run.time * 1000),
         completed: true,
         actions: flapTimesRef.current,
+        continues: continueTimesRef.current,
         rulesetVersion: FLAPPY_RULESET_VERSION,
       });
       setVerifiedPoints(response.pointsAwarded);
@@ -260,9 +278,10 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
   const runCountdown = useCallback((after: () => void) => {
     clearTimers();
     setCountdown(3);
-    [2, 1].forEach((value, index) => timersRef.current.push(window.setTimeout(() => setCountdown(value), (index + 1) * 550)));
-    timersRef.current.push(window.setTimeout(() => { setCountdown(0); after(); }, 1_650));
-  }, [clearTimers]);
+    playTone(392, .08, .025);
+    [2, 1].forEach((value, index) => timersRef.current.push(window.setTimeout(() => { setCountdown(value); playTone(392 + (index + 1) * 55, .08, .025); }, (index + 1) * 550)));
+    timersRef.current.push(window.setTimeout(() => { setCountdown(0); playTone(659, .12, .035); after(); }, 1_650));
+  }, [clearTimers, playTone]);
 
   const startRun = useCallback(async () => {
     if (!assetsRef.current) return;
@@ -272,18 +291,20 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
     setVerifiedPoints(0);
     verifyingRef.current = false;
     flapTimesRef.current = [];
+    continueTimesRef.current = [];
     lastPickupTotalRef.current = 0;
+    lastGateRef.current = 0;
     setHud(EMPTY_HUD);
     let seed = `offline-${Date.now()}-${level}`;
     sessionRef.current = '';
     try {
-      const session = await createGameSession('flappy', level, `flappy-v2-${level}-${Date.now()}`);
+      const session = await createGameSession('flappy', level, `flappy-v2-${level}-${Date.now()}`, wideLayout ? 'wide' : 'portrait');
       sessionRef.current = session.sessionId;
       seed = session.seed;
     } catch {
       toast.info('Playing offline. Reward verification will remain pending until a verified run is available.');
     }
-    const run = createFlappyRun(seed, level);
+    const run = createFlappyRun(seed, level, wideLayout ? 'wide' : 'portrait');
     runRef.current = run;
     setStatus('ready');
     draw();
@@ -295,7 +316,7 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
       accumulatorRef.current = 0;
       frameRef.current = window.requestAnimationFrame(gameLoop);
     });
-  }, [clearTimers, draw, gameLoop, level, runCountdown, stopLoop]);
+  }, [clearTimers, draw, gameLoop, level, runCountdown, stopLoop, wideLayout]);
 
   const handleFlap = useCallback(() => {
     const run = runRef.current;
@@ -327,6 +348,22 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
       frameRef.current = window.requestAnimationFrame(gameLoop);
     });
   }, [gameLoop, runCountdown]);
+
+  const continueRun = useCallback(() => {
+    const run = runRef.current;
+    if (!run || !continueFlappyRun(run)) return;
+    continueTimesRef.current.push(Math.round(run.time * 1000));
+    syncHud(run);
+    setStatus('paused');
+    runCountdown(() => {
+      run.status = 'playing';
+      statusRef.current = 'playing';
+      setStatus('playing');
+      lastFrameRef.current = 0;
+      accumulatorRef.current = 0;
+      frameRef.current = window.requestAnimationFrame(gameLoop);
+    });
+  }, [gameLoop, runCountdown, syncHud]);
 
   const chooseEnvironment = useCallback((next: FlappyEnvironmentId) => {
     if (statusRef.current === 'playing') return;
@@ -383,18 +420,20 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
     selectLevel(next);
   };
 
+  const continuationCount = runRef.current ? availableContinues(runRef.current) : 0;
+
   const overlay = useMemo(() => {
     if (status === 'loading') return null;
     if (status === 'playing') return null;
     if (countdown > 0) return <Overlay title={String(countdown)} body="Get ready…" />;
     if (status === 'ready') return <Overlay title={`Level ${level}`} body={`Clear ${target} gates. Tap, click, or press Space to flap.`}><Button size="lg" onClick={event => { event.stopPropagation(); void startRun(); }}><Play className="mr-2 h-5 w-5"/>Start run</Button></Overlay>;
     if (status === 'paused') return <Overlay title="Paused" body="Physics and scoring are frozen."><Button size="lg" onClick={event => { event.stopPropagation(); resume(); }}><Play className="mr-2 h-5 w-5"/>Resume</Button></Overlay>;
-    if (status === 'failed') return <Overlay icon={<XCircle className="h-12 w-12 text-rose-400"/>} title="Run ended" body={`You cleared ${hud.gatesCleared} of ${target} gates.`}><Button size="lg" onClick={event => { event.stopPropagation(); void startRun(); }}><RefreshCw className="mr-2 h-5 w-5"/>Replay</Button></Overlay>;
+    if (status === 'failed') return <Overlay icon={<XCircle className="h-12 w-12 text-rose-400"/>} title="Run ended" body={`You cleared ${hud.gatesCleared} of ${target} gates.${level >= 5 ? ' Every 10 bonus-note points earns one continuation.' : ''}`}><div className="flex flex-wrap justify-center gap-2">{continuationCount > 0 && <Button size="lg" onClick={event => { event.stopPropagation(); continueRun(); }}><Play className="mr-2 h-5 w-5"/>Continue · {continuationCount}</Button>}<Button size="lg" variant={continuationCount > 0 ? 'outline' : 'default'} onClick={event => { event.stopPropagation(); void startRun(); }}><RefreshCw className="mr-2 h-5 w-5"/>Replay</Button></div></Overlay>;
     return null;
-  }, [countdown, hud.gatesCleared, level, resume, startRun, status, target]);
+  }, [continuationCount, continueRun, countdown, hud.gatesCleared, level, resume, startRun, status, target]);
 
   return (
-    <main className="min-h-screen bg-[#09070d] pb-12 text-white">
+    <main className="min-h-screen bg-[#09070d] pb-24 text-white lg:pb-4">
       <header className="sticky top-0 z-50 border-b border-fuchsia-500/20 bg-[#0b0910]/95 px-4 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-3">
           <button onClick={onExit} aria-label="Back to Games" className="grid h-11 w-11 place-items-center rounded-full hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-pink-400"><ArrowLeft className="h-5 w-5"/></button>
@@ -408,21 +447,22 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-6xl gap-5 p-3 sm:p-5 lg:grid-cols-[minmax(420px,1fr)_320px] lg:items-start">
+      <div className="mx-auto grid max-w-[1440px] gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
         <section className="min-w-0">
           <div
-            className="relative mx-auto aspect-[360/560] w-full max-w-[560px] touch-none overflow-hidden rounded-[24px] border-2 bg-[#130c20] shadow-[0_0_55px_rgba(236,72,153,.18)]"
+            className="relative mx-auto aspect-[360/560] w-full max-w-[560px] touch-pan-y overflow-hidden rounded-[24px] border-2 bg-[#130c20] shadow-[0_0_55px_rgba(236,72,153,.18)] lg:aspect-[900/560] lg:max-h-[calc(100dvh-9rem)] lg:max-w-[900px]"
             style={{ borderColor: environment.accent }}
-            onPointerDown={event => { event.preventDefault(); handleFlap(); }}
+            onPointerDown={event => { if (event.pointerType !== 'touch') { event.preventDefault(); handleFlap(); } }}
+            onPointerUp={event => { if (event.pointerType === 'touch') handleFlap(); }}
           >
-            <canvas ref={canvasRef} width={FLAPPY_WIDTH} height={FLAPPY_HEIGHT} className="h-full w-full" aria-label="MusicInsta Flappy game playfield"/>
+            <canvas ref={canvasRef} width={wideLayout ? FLAPPY_WIDE_WIDTH : FLAPPY_WIDTH} height={FLAPPY_HEIGHT} className="h-full w-full" aria-label="MusicInsta Flappy game playfield"/>
             <div className="pointer-events-none absolute inset-x-3 top-3 z-20 grid grid-cols-3 gap-2 text-center text-[11px] font-bold sm:text-xs">
               <div className="rounded-full border border-white/15 bg-black/55 px-2 py-2 backdrop-blur">Level {level}</div>
               <div className="rounded-full border border-white/15 bg-black/55 px-2 py-2 backdrop-blur">Gates {hud.gatesCleared}/{target}</div>
               <div className="rounded-full border border-white/15 bg-black/55 px-2 py-2 backdrop-blur">Score {hud.totalRunScore}</div>
             </div>
 
-            {collectionBurst && <motion.div key={collectionBurst.key} initial={{ opacity: 1, y: 0, scale: .8 }} animate={{ opacity: 0, y: -34, scale: 1.2 }} transition={{ duration: .55 }} className={`pointer-events-none absolute z-30 text-2xl font-black ${collectionBurst.value===4?'text-amber-300':'text-pink-300'}`} style={{ left: `${collectionBurst.x / FLAPPY_WIDTH * 100}%`, top: `${collectionBurst.y / FLAPPY_HEIGHT * 100}%` }}>+{collectionBurst.value}</motion.div>}
+            {collectionBurst && <motion.div key={collectionBurst.key} initial={{ opacity: 1, y: 0, scale: .8 }} animate={{ opacity: 0, y: -34, scale: 1.2 }} transition={{ duration: .55 }} className={`pointer-events-none absolute z-30 text-2xl font-black ${collectionBurst.value===4?'text-amber-300':'text-pink-300'}`} style={{ left: `${collectionBurst.x / (runRef.current?.width || FLAPPY_WIDTH) * 100}%`, top: `${collectionBurst.y / FLAPPY_HEIGHT * 100}%` }}>+{collectionBurst.value}</motion.div>}
             {overlay}
             {status === 'completed' && <CompletionOverlay reduceMotion={Boolean(reduceMotion)} level={level} hud={hud} verification={verification} verifiedPoints={verifiedPoints} onRetry={() => runRef.current && void verifyCompletion(runRef.current)} onReplay={() => void startRun()} onNext={nextLevel} onChoose={() => { setStatus('ready'); setVerification('idle'); }} hasNext={level < 10}/>} 
           </div>
@@ -434,6 +474,7 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
             <div className="flex items-center justify-between"><h2 className="font-bold">Level progression</h2><span className="text-xs text-white/55">Best {personalBest}</span></div>
             <div className="mt-3 grid grid-cols-5 gap-2">{FLAPPY_TARGETS.map((gateTarget,index)=>{const value=index+1;const locked=value>localUnlocked;return <button key={value} disabled={locked||status==='playing'} onClick={()=>selectLevel(value)} className={`relative h-11 rounded-xl border text-sm font-bold transition ${value===level?'border-pink-400 bg-pink-500/20':'border-white/10 bg-black/20 hover:border-pink-400/45'} disabled:opacity-35`}>{locked?<Lock className="mx-auto h-3.5 w-3.5"/>:value}<span className="sr-only">{gateTarget} gates</span></button>;})}</div>
             <div className="mt-4 flex items-start gap-3 rounded-xl bg-black/25 p-3"><Award className="mt-0.5 h-5 w-5 text-pink-400"/><div><p className="text-sm font-semibold">{target} gates to complete</p><p className="text-xs leading-5 text-white/55">Difficulty rises smoothly as you approach the final gate. Bonus notes raise score, not gate progress.</p></div></div>
+            {level >= 5 && <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/5 p-3 text-xs leading-5 text-amber-100/75">Every 10 bonus-note points earns one continuation. Continuing preserves your gates and score.</p>}
           </section>
 
           <section className="rounded-2xl border border-white/10 bg-white/[.04] p-4">
@@ -467,11 +508,25 @@ function ScoreStat({ label, value }: { label: string; value: number }) {
   return <div className="rounded-xl bg-black/25 p-2"><b className="block text-lg text-pink-300">{value}</b><span className="text-[10px] uppercase tracking-wider text-white/45">{label}</span></div>;
 }
 
-function drawTiledLayer(context: CanvasRenderingContext2D, image: HTMLImageElement, offset: number, opacity: number) {
+function drawCoverImage(context: CanvasRenderingContext2D, image: HTMLImageElement, width: number, height: number) {
+  const sourceRatio = image.naturalWidth / image.naturalHeight;
+  const targetRatio = width / height;
+  let sourceX = 0, sourceY = 0, sourceWidth = image.naturalWidth, sourceHeight = image.naturalHeight;
+  if (sourceRatio < targetRatio) {
+    sourceHeight = image.naturalWidth / targetRatio;
+    sourceY = (image.naturalHeight - sourceHeight) / 2;
+  } else {
+    sourceWidth = image.naturalHeight * targetRatio;
+    sourceX = (image.naturalWidth - sourceWidth) / 2;
+  }
+  context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, width, height);
+}
+
+function drawTiledLayer(context: CanvasRenderingContext2D, image: HTMLImageElement, offset: number, opacity: number, width: number, height: number) {
   context.save();
   context.globalAlpha = opacity;
-  context.drawImage(image, offset, 0, FLAPPY_WIDTH, FLAPPY_HEIGHT);
-  context.drawImage(image, offset + FLAPPY_WIDTH, 0, FLAPPY_WIDTH, FLAPPY_HEIGHT);
+  const tileWidth = FLAPPY_WIDTH;
+  for (let x = offset - tileWidth; x < width + tileWidth; x += tileWidth) context.drawImage(image, x, 0, tileWidth, height);
   context.restore();
 }
 
