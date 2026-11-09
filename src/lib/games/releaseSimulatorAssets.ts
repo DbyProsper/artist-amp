@@ -1,0 +1,15 @@
+import type { CampaignId } from './releaseSimulatorEngine';
+
+export interface ReleaseAsset { id:string;path:string;width:number;height:number;alt:string;campaign?:CampaignId;kind:'cover'|'scenario'|'portrait'|'outcome'|'background'|'hub'; }
+const root='/assets/games/release-simulator';
+const campaigns:Record<CampaignId,{files:string[];alts:string[]}>= {
+  'first-single':{files:['cover','recording-session','artwork-planning','release-checklist','listener-feedback','outcome'],alts:['Artist recording a first single','Focused recording session','Artist and designer planning artwork','Artist reviewing release files','Artist reading early listener feedback','Small engaged launch audience']},
+  'campus-launch':{files:['cover','radio-interview','ambassador-planning','pop-up-performance','content-shoot','outcome'],alts:['Campus courtyard performance','Community radio interview','Student ambassador planning','Campus pop-up performance','Campus content shoot','Engaged campus launch audience']},
+  'independent-hustle':{files:['cover','side-work','transport-planning','home-recording','budget-review','outcome'],alts:['Artist balancing music and a weekly plan','Creative paid side work','Transport and equipment planning','Home recording session','Independent budget review','Sustainable home-studio progress']},
+  'collaboration-release':{files:['cover','shared-session','remote-feedback','creative-disagreement','joint-promotion','outcome'],alts:['Two artists writing together','Shared recording session','Remote producer feedback','Respectful creative discussion','Joint promotional shoot','Artists celebrating their collaboration']},
+  'regional-campaign':{files:['cover','travel-preparation','local-performance','media-appearance','remote-engagement','outcome'],alts:['Artist planning a regional campaign','Travel preparation','Small venue performance','Local media appearance','Remote fan engagement','Regional partners celebrating progress']},
+  'release-under-pressure':{files:['cover','technical-fault','missed-delivery','team-discussion','recovery-announcement','outcome'],alts:['Team managing a backstage issue','Technical equipment fault','Team checking a missed delivery','Urgent team discussion','Responsible recovery announcement','Calm successful campaign recovery']},
+};
+export const RELEASE_SIMULATOR_ASSETS:ReleaseAsset[]=Object.entries(campaigns).flatMap(([campaign,data])=>data.files.map((file,index)=>({id:`${campaign}-${file}`,path:`${root}/campaigns/${campaign}/${file}.webp`,width:724,height:362,alt:data.alts[index],campaign:campaign as CampaignId,kind:index===0?'cover':index===5?'outcome':'scenario'}))) as ReleaseAsset[];
+export const RELEASE_CHARACTER_ASSETS=['artist','producer','collaborator','designer','promoter','radio-presenter','student-ambassador','venue-coordinator'].map(id=>({id,path:`${root}/characters/${id}.webp`,width:443,height:443,alt:`Fictional ${id.replace('-',' ')} portrait`,kind:'portrait' as const}));
+export function preloadReleaseCampaign(id:CampaignId){for(const asset of RELEASE_SIMULATOR_ASSETS.filter(item=>item.campaign===id)){const image=new Image();image.src=asset.path;}}

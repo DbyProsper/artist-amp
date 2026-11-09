@@ -14,4 +14,7 @@ export interface GameProfile { points:number; progress:Record<string,GameProgres
 export const getGameProfile=()=>gameRequest<GameProfile>('/games/profile');
 export const createGameSession=(game:string,level:number,seed:string,mode='ranked')=>gameRequest<{sessionId:string;seed:string;rulesetVersion?:string}>('/games/session',{game,level,seed,mode});
 export const submitGameResult=(payload:Record<string,unknown>)=>gameRequest<{verified:boolean;pointsAwarded:number;profile:GameProfile;milestones:Array<{points:number;kind:string;amount:number}>}>('/games/result',payload);
+export interface ReleaseCloudState { sessionId:string;seed:string;level:number;mode:string;revision:number;actions:string[];rulesetVersion:string }
+export const getActiveReleaseState=()=>gameRequest<ReleaseCloudState>('/games/release/state');
+export const saveReleaseState=(sessionId:string,expectedRevision:number,actions:string[])=>gameRequest<{saved:boolean;revision:number}>('/games/release/state',{sessionId,expectedRevision,actions},'PATCH');
 export const saveGamePreferences=(preferences:Partial<GamePreferences>)=>gameRequest<{preferences:GamePreferences}>('/games/profile/preferences',preferences,'PATCH');
