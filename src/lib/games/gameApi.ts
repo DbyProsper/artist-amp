@@ -9,7 +9,7 @@ async function gameRequest<T>(path:string, body?:unknown, method?:'GET'|'POST'|'
   return response.json();
 }
 export interface GameProgress { unlocked:number;best:number;completed?:number[];starsByLevel?:Record<string,number>;bestByMode?:Record<string,number> }
-export interface GamePreferences { flappyEnvironment?:'cosmic-groove'|'neon-studio'|'jozi-skyline';flappySound?:boolean;memoryTheme?:'neon-vault'|'backstage-pass'|'cosmic-archive';memorySound?:boolean }
+export interface GamePreferences { flappyEnvironment?:'cosmic-groove'|'neon-studio'|'jozi-skyline';flappySound?:boolean;memoryTheme?:'neon-vault'|'backstage-pass'|'cosmic-archive';memorySound?:boolean;pianoTheme?:'cosmic-keys'|'neon-studio'|'jozi-nights';pianoMusicVolume?:number;pianoEffectsVolume?:number;pianoScrollSpeed?:number;pianoVisualOffset?:number;pianoInputOffset?:number }
 export interface GameProfile { points:number; progress:Record<string,GameProgress>; promotionalCredits:{images:number;beats:number;fullSongs:number}; claimedMilestones:number[]; preferences?:GamePreferences; }
 export const getGameProfile=()=>gameRequest<GameProfile>('/games/profile');
 export const createGameSession=(game:string,level:number,seed:string,mode='ranked')=>gameRequest<{sessionId:string;seed:string;rulesetVersion?:string}>('/games/session',{game,level,seed,mode});

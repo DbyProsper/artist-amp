@@ -1,0 +1,8 @@
+[
+  {"id":"first-light","bpm":82,"duration":66,"root":48,"progression":[0,5,9,7],"style":"gentle"},
+  {"id":"midnight-orbit","bpm":92,"duration":72,"root":45,"progression":[0,8,5,10],"style":"cinematic"},
+  {"id":"campus-afterglow","bpm":76,"duration":70,"root":51,"progression":[0,9,5,7],"style":"rnb"},
+  {"id":"jozi-pulse","bpm":112,"duration":72,"root":41,"progression":[0,8,3,10],"style":"amapiano"},
+  {"id":"velvet-keys","bpm":118,"duration":72,"root":38,"progression":[0,10,8,5],"style":"afro-house"},
+  {"id":"starlight-finale","bpm":126,"duration":76,"root":43,"progression":[0,8,3,10,5,7],"style":"finale"}
+]

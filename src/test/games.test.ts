@@ -3,9 +3,9 @@ import { GAME_CATALOGUE, REWARD_MILESTONES, MEMORY_LEVELS, FLAPPY_LEVELS } from 
 import { applyReleaseChoice, campaignEvents, initialReleaseState, releaseResult } from '@/lib/games/releaseDayEngine';
 
 describe('MusicInsta Games', () => {
-  it('keeps the required catalogue order and only three playable games', () => {
-    expect(GAME_CATALOGUE.map(game => game.title)).toEqual(['Release Day Simulator','Flappy Bird','One More Floor','Memory Heist','Angry Birds','Stack','2048','Whack-a-Mole']);
-    expect(GAME_CATALOGUE.filter(game => game.playable).map(game => game.id)).toEqual(['release-day','flappy','memory-heist']);
+  it('keeps Piano third, Memory Heist fourth and exposes four playable games', () => {
+    expect(GAME_CATALOGUE.map(game => game.title)).toEqual(['Release Day Simulator','Flappy Bird','MusicInsta Piano','Memory Heist','One More Floor','Angry Birds','Stack','2048','Whack-a-Mole']);
+    expect(GAME_CATALOGUE.filter(game => game.playable).map(game => game.id)).toEqual(['release-day','flappy','musicinsta-piano','memory-heist']);
   });
   it('has the exact typed milestone totals', () => {
     const totals = REWARD_MILESTONES.reduce((sum, item) => ({ ...sum, [item.kind]: sum[item.kind] + item.amount }), { images: 0, beats: 0, fullSongs: 0 });
