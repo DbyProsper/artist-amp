@@ -4,7 +4,7 @@ import { applyReleaseChoice, campaignEvents, initialReleaseState, releaseResult 
 
 describe('MusicInsta Games', () => {
   it('keeps Piano third, Memory Heist fourth and exposes four playable games', () => {
-    expect(GAME_CATALOGUE.map(game => game.title)).toEqual(['Release Day Simulator','Flappy Bird','MusicInsta Piano','Memory Heist','One More Floor','Angry Birds','Stack','2048','Whack-a-Mole']);
+    expect(GAME_CATALOGUE.map(game => game.title)).toEqual(['Release Day Simulator','MusicInsta Mascot','MusicInsta Piano','Memory Heist','One More Floor','Angry Birds','Stack','2048','Whack-a-Mole']);
     expect(GAME_CATALOGUE.filter(game => game.playable).map(game => game.id)).toEqual(['release-day','flappy','musicinsta-piano','memory-heist']);
   });
   it('has the exact typed milestone totals', () => {

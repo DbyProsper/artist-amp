@@ -3,7 +3,7 @@ export type RewardKind = 'images' | 'beats' | 'fullSongs';
 
 export const GAME_CATALOGUE: Array<{ id: GameId; title: string; playable: boolean; difficulty: string; summary: string; colour: string; cover?: string }> = [
   { id: 'release-day', title: 'Release Day Simulator', playable: true, difficulty: 'Strategic', summary: 'Manage six distinct South African release campaigns with real dependencies, budgets and consequences.', colour: 'from-fuchsia-600 to-violet-700', cover: '/assets/games/release-simulator/ui/game-cover.webp' },
-  { id: 'flappy', title: 'Flappy Bird', playable: true, difficulty: 'Reflex', summary: 'Guide the MusicInsta mascot through three responsive music worlds.', colour: 'from-pink-500 to-purple-700', cover: '/assets/games/flappy/ui/game-cover.jpg' },
+  { id: 'flappy', title: 'MusicInsta Mascot', playable: true, difficulty: 'Reflex', summary: 'Guide the MusicInsta mascot through three responsive music worlds.', colour: 'from-pink-500 to-purple-700', cover: '/assets/games/flappy/ui/game-cover.jpg' },
   { id: 'musicinsta-piano', title: 'MusicInsta Piano', playable: true, difficulty: 'Rhythm', summary: 'Perform six original piano tracks across four synchronised lanes.', colour: 'from-fuchsia-500 to-violet-950', cover: '/assets/games/musicinsta-piano/ui/game-cover.jpg' },
   { id: 'memory-heist', title: 'Memory Heist', playable: true, difficulty: 'Memory', summary: 'Recover 48 music artefacts across four premium heist chapters.', colour: 'from-fuchsia-600 to-violet-900', cover: '/assets/games/memory-heist/ui/game-cover.png' },
   { id: 'one-more-floor', title: 'One More Floor', playable: false, difficulty: 'Arcade', summary: 'Climb a musical tower one risky floor at a time.', colour: 'from-cyan-600 to-blue-700' },

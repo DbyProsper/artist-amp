@@ -85,11 +85,11 @@ describe('content-based recommendation engine', () => {
     expect(rankFeedPosts([amapiano, rock], [], ['Rock'])[0].id).toBe('rock-post');
   });
 
-  it('keeps every recent post ahead of older personalized posts', () => {
+  it('keeps strong personal taste ahead of unrelated recency', () => {
     const makePost = (id: string, createdAt: Date, music: Track): Post => ({ id, artist: music.artist, type: 'audio', track: music, caption: '', likes: 0, comments: 0, shares: 0, saves: 0, createdAt });
     const recent = makePost('recent', new Date(), track('recent-track', 'a', 'rock'));
     const olderLiked = makePost('older', new Date(Date.now() - 72 * 60 * 60 * 1000), track('liked-track', 'b', 'amapiano'));
     const history: ListeningHistoryEntry[] = [{ trackId: 'liked-track', playCount: 8, completedCount: 4, skipCount: 0, liked: true, lastPlayedAt: Date.now() }];
-    expect(rankFeedPosts([olderLiked, recent], history, ['amapiano'])[0].id).toBe('recent');
+    expect(rankFeedPosts([olderLiked, recent], history, ['amapiano'], 'listener-a')[0].id).toBe('older');
   });
 });

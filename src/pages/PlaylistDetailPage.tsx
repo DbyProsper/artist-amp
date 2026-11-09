@@ -1,18 +1,44 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Play, Plus, Search, MoreHorizontal, Clock, Music, Trash2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import { useAuth } from '@/context/FirebaseAuthContext';
-import { collection, query, where, getDocs, doc, getDoc, addDoc, deleteDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { toast } from 'sonner';
-import { usePlayer } from '@/context/PlayerContext';
-import type { Track as PlayerTrack } from '@/types';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { DEFAULT_MEDIA_IMAGE, formatMediaDuration } from '@/lib/media';
+import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import {
+  ArrowLeft,
+  Play,
+  Plus,
+  Search,
+  MoreHorizontal,
+  Clock,
+  Music,
+  Trash2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { useAuth } from "@/context/FirebaseAuthContext";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  addDoc,
+  deleteDoc,
+  updateDoc,
+  arrayUnion,
+  arrayRemove,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { toast } from "sonner";
+import { usePlayer } from "@/context/PlayerContext";
+import type { Track as PlayerTrack } from "@/types";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { DEFAULT_MEDIA_IMAGE, formatMediaDuration } from "@/lib/media";
 
 interface Playlist {
   id: string;
@@ -54,7 +80,7 @@ export default function PlaylistDetailPage() {
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [tracks, setTracks] = useState<PlaylistTrack[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [availableTracks, setAvailableTracks] = useState<Track[]>([]);
   const [showAddTracks, setShowAddTracks] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -70,7 +96,7 @@ export default function PlaylistDetailPage() {
     if (!id) return;
 
     try {
-      const playlistDoc = await getDoc(doc(db, 'playlists', id));
+      const playlistDoc = await getDoc(doc(db, "playlists", id));
       if (playlistDoc.exists()) {
         const data = playlistDoc.data();
         setPlaylist({
@@ -81,8 +107,8 @@ export default function PlaylistDetailPage() {
         } as Playlist);
       }
     } catch (error) {
-      console.error('Error fetching playlist:', error);
-      toast.error('Failed to load playlist');
+      console.error("Error fetching playlist:", error);
+      toast.error("Failed to load playlist");
     }
   };
 
@@ -92,23 +118,35 @@ export default function PlaylistDetailPage() {
     try {
       // Fetch playlist tracks
       const tracksQuery = query(
-        collection(db, 'playlist_tracks'),
-        where('playlist_id', '==', id)
+        collection(db, "playlist_tracks"),
+        where("playlist_id", "==", id),
       );
       const tracksSnapshot = await getDocs(tracksQuery);
-      const playlistSnapshot = await getDoc(doc(db, 'playlists', id));
+      const playlistSnapshot = await getDoc(doc(db, "playlists", id));
       const embeddedIds = (playlistSnapshot.data()?.tracks || []) as string[];
-      const existingIds = new Set(tracksSnapshot.docs.map(item => item.data().track_id));
-      const embeddedDocs = await Promise.all(embeddedIds.filter(trackId => !existingIds.has(trackId)).map(async trackId => ({
-        id: `embedded-${trackId}`,
-        data: () => ({ playlist_id: id, track_id: trackId, added_at: playlistSnapshot.data()?.updated_at }),
-      })));
+      const existingIds = new Set(
+        tracksSnapshot.docs.map((item) => item.data().track_id),
+      );
+      const embeddedDocs = await Promise.all(
+        embeddedIds
+          .filter((trackId) => !existingIds.has(trackId))
+          .map(async (trackId) => ({
+            id: `embedded-${trackId}`,
+            data: () => ({
+              playlist_id: id,
+              track_id: trackId,
+              added_at: playlistSnapshot.data()?.updated_at,
+            }),
+          })),
+      );
       const membershipDocs = [...tracksSnapshot.docs, ...embeddedDocs];
 
       const trackPromises = membershipDocs.map(async (trackDoc) => {
         const trackData = trackDoc.data();
-        const catalogTrack = catalog.find(item => item.id === trackData.track_id);
-        const trackDocRef = await getDoc(doc(db, 'tracks', trackData.track_id));
+        const catalogTrack = catalog.find(
+          (item) => item.id === trackData.track_id,
+        );
+        const trackDocRef = await getDoc(doc(db, "tracks", trackData.track_id));
 
         if (trackDocRef.exists()) {
           const track = trackDocRef.data();
@@ -120,13 +158,18 @@ export default function PlaylistDetailPage() {
             track: {
               id: trackDocRef.id,
               title: track.title || catalogTrack?.title,
-              artist: catalogTrack?.artist.name || track.artist || 'Unknown Artist',
-              cover_url: track.cover_url || catalogTrack?.coverArt || DEFAULT_MEDIA_IMAGE,
+              artist:
+                catalogTrack?.artist.name || track.artist || "Unknown Artist",
+              cover_url:
+                track.cover_url ||
+                catalogTrack?.coverArt ||
+                DEFAULT_MEDIA_IMAGE,
               audio_url: track.audio_url || catalogTrack?.audioUrl,
               duration: Number(track.duration) || catalogTrack?.duration || 0,
               plays: track.plays,
               likes: track.likes,
-              user_id: track.user_id || track.profile_id || catalogTrack?.artist.id,
+              user_id:
+                track.user_id || track.profile_id || catalogTrack?.artist.id,
               created_at: track.created_at?.toDate() || new Date(),
             } as Track,
           } as PlaylistTrack;
@@ -154,10 +197,16 @@ export default function PlaylistDetailPage() {
         return null;
       });
 
-      const resolvedTracks = (await Promise.all(trackPromises)).filter(Boolean) as PlaylistTrack[];
-      setTracks(resolvedTracks.sort((a, b) => b.added_at.getTime() - a.added_at.getTime()));
+      const resolvedTracks = (await Promise.all(trackPromises)).filter(
+        Boolean,
+      ) as PlaylistTrack[];
+      setTracks(
+        resolvedTracks.sort(
+          (a, b) => b.added_at.getTime() - a.added_at.getTime(),
+        ),
+      );
     } catch (error) {
-      console.error('Error fetching tracks:', error);
+      console.error("Error fetching tracks:", error);
     } finally {
       setLoading(false);
     }
@@ -172,14 +221,32 @@ export default function PlaylistDetailPage() {
     setSearchLoading(true);
     try {
       const tracksData = catalog
-        .map(item => ({ id: item.id, title: item.title, artist: item.artist.name, cover_url: item.coverArt, audio_url: item.audioUrl || null, duration: item.duration, plays: item.plays, likes: item.likes, user_id: item.artist.id, created_at: item.createdAt || new Date() } as Track))
-        .filter(track => `${track.title || ''} ${track.artist || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
-        .filter(track => !tracks.some(pt => pt.track_id === track.id))
+        .map(
+          (item) =>
+            ({
+              id: item.id,
+              title: item.title,
+              artist: item.artist.name,
+              cover_url: item.coverArt,
+              audio_url: item.audioUrl || null,
+              duration: item.duration,
+              plays: item.plays,
+              likes: item.likes,
+              user_id: item.artist.id,
+              created_at: item.createdAt || new Date(),
+            }) as Track,
+        )
+        .filter((track) =>
+          `${track.title || ""} ${track.artist || ""}`
+            .toLowerCase()
+            .includes(query.trim().toLowerCase()),
+        )
+        .filter((track) => !tracks.some((pt) => pt.track_id === track.id))
         .slice(0, 30);
 
       setAvailableTracks(tracksData);
     } catch (error) {
-      console.error('Error searching tracks:', error);
+      console.error("Error searching tracks:", error);
     } finally {
       setSearchLoading(false);
     }
@@ -189,49 +256,75 @@ export default function PlaylistDetailPage() {
     if (!id) return;
 
     try {
-      await addDoc(collection(db, 'playlist_tracks'), {
+      await addDoc(collection(db, "playlist_tracks"), {
         playlist_id: id,
         track_id: trackId,
         added_at: new Date(),
       });
-      await updateDoc(doc(db, 'playlists', id), { tracks: arrayUnion(trackId), updated_at: new Date() });
+      await updateDoc(doc(db, "playlists", id), {
+        tracks: arrayUnion(trackId),
+        updated_at: new Date(),
+      });
 
-      toast.success('Track added to playlist');
+      toast.success("Track added to playlist");
       fetchTracks(); // Refresh tracks
       setShowAddTracks(false);
-      setSearchQuery('');
+      setSearchQuery("");
       setAvailableTracks([]);
     } catch (error) {
-      console.error('Error adding track:', error);
-      toast.error('Failed to add track');
+      console.error("Error adding track:", error);
+      toast.error("Failed to add track");
     }
   };
 
   const removeTrackFromPlaylist = async (playlistTrackId: string) => {
     try {
-      const membership = tracks.find(item => item.id === playlistTrackId);
-      if (!playlistTrackId.startsWith('embedded-')) await deleteDoc(doc(db, 'playlist_tracks', playlistTrackId));
-      if (id && membership) await updateDoc(doc(db, 'playlists', id), { tracks: arrayRemove(membership.track_id), updated_at: new Date() });
-      toast.success('Track removed from playlist');
+      const membership = tracks.find((item) => item.id === playlistTrackId);
+      if (!playlistTrackId.startsWith("embedded-"))
+        await deleteDoc(doc(db, "playlist_tracks", playlistTrackId));
+      if (id && membership)
+        await updateDoc(doc(db, "playlists", id), {
+          tracks: arrayRemove(membership.track_id),
+          updated_at: new Date(),
+        });
+      toast.success("Track removed from playlist");
       fetchTracks(); // Refresh tracks
     } catch (error) {
-      console.error('Error removing track:', error);
-      toast.error('Failed to remove track');
+      console.error("Error removing track:", error);
+      toast.error("Failed to remove track");
     }
   };
 
   const playPlaylistTrack = (selected: Track) => {
-    const queue = tracks.filter(item => Boolean(item.track.audio_url)).map(item => ({
-      id: item.track.id,
-      title: item.track.title,
-      artist: { id: item.track.user_id, name: item.track.artist, username: item.track.artist, avatar: '', coverImage: '', bio: '', location: '', genres: [], isVerified: false, followers: 0, following: 0, tracks: 0 },
-      coverArt: item.track.cover_url || DEFAULT_MEDIA_IMAGE,
-      duration: item.track.duration || 0,
-      plays: item.track.plays || 0,
-      likes: item.track.likes || 0,
-      audioUrl: item.track.audio_url || undefined,
-    } satisfies PlayerTrack));
-    const target = queue.find(item => item.id === selected.id);
+    const queue = tracks
+      .filter((item) => Boolean(item.track.audio_url))
+      .map(
+        (item) =>
+          ({
+            id: item.track.id,
+            title: item.track.title,
+            artist: {
+              id: item.track.user_id,
+              name: item.track.artist,
+              username: item.track.artist,
+              avatar: "",
+              coverImage: "",
+              bio: "",
+              location: "",
+              genres: [],
+              isVerified: false,
+              followers: 0,
+              following: 0,
+              tracks: 0,
+            },
+            coverArt: item.track.cover_url || DEFAULT_MEDIA_IMAGE,
+            duration: item.track.duration || 0,
+            plays: item.track.plays || 0,
+            likes: item.track.likes || 0,
+            audioUrl: item.track.audio_url || undefined,
+          }) satisfies PlayerTrack,
+      );
+    const target = queue.find((item) => item.id === selected.id);
     if (target) openInMainPlayer(target, queue);
   };
 
@@ -252,7 +345,7 @@ export default function PlaylistDetailPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Playlist not found</h1>
-          <Button onClick={() => navigate('/library')}>Back to Library</Button>
+          <Button onClick={() => navigate("/library")}>Back to Library</Button>
         </div>
       </div>
     );
@@ -262,27 +355,47 @@ export default function PlaylistDetailPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="relative overflow-hidden border-b border-border bg-gradient-to-br from-primary/35 via-background to-accent/20">
-        {playlist.cover_url && <img src={playlist.cover_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-20 blur-2xl" />}
-        <div className="relative flex items-end gap-5 p-6 sm:p-10">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/library')}>
+        {playlist.cover_url && (
+          <img
+            src={playlist.cover_url}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover opacity-20 blur-2xl"
+          />
+        )}
+        <div className="relative flex flex-col gap-4 p-4 sm:flex-row sm:items-end sm:gap-5 sm:p-10">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/library")}
+          >
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div className="flex items-center gap-4 flex-1">
+          <div className="flex min-w-0 w-full items-center gap-3 sm:flex-1 sm:gap-4">
             <img
               src={playlist.cover_url || DEFAULT_MEDIA_IMAGE}
               alt={playlist.name}
-              className="h-32 w-32 rounded-xl object-cover shadow-2xl sm:h-48 sm:w-48"
+              className="h-24 w-24 flex-none rounded-xl object-cover shadow-2xl sm:h-48 sm:w-48"
             />
-            <div>
-              <h1 className="text-3xl font-bold sm:text-5xl">{playlist.name}</h1>
-              <p className="text-sm text-muted-foreground">
-                {tracks.length} {tracks.length === 1 ? 'track' : 'tracks'}
-                {playlist.description && ` • ${playlist.description}`}
+            <div className="min-w-0 flex-1">
+              <h1 className="break-words text-2xl font-bold sm:text-5xl">
+                {playlist.name}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {tracks.length} {tracks.length === 1 ? "track" : "tracks"}
               </p>
+              {playlist.description && (
+                <p className="mt-1 line-clamp-3 break-words text-sm text-muted-foreground sm:line-clamp-none">
+                  {playlist.description}
+                </p>
+              )}
             </div>
           </div>
           {playlist.creator_id === (profile?.id || user?.uid) && (
-            <Button onClick={() => setShowAddTracks(true)} size="sm">
+            <Button
+              onClick={() => setShowAddTracks(true)}
+              size="sm"
+              className="w-full shrink-0 sm:w-auto"
+            >
               <Plus className="w-4 h-4 mr-2" />
               Add Tracks
             </Button>
@@ -298,9 +411,8 @@ export default function PlaylistDetailPage() {
             <h3 className="text-lg font-semibold mb-2">No tracks yet</h3>
             <p className="text-muted-foreground mb-4">
               {playlist.creator_id === (profile?.id || user?.uid)
-                ? 'Add some tracks to get started'
-                : 'This playlist is empty'
-              }
+                ? "Add some tracks to get started"
+                : "This playlist is empty"}
             </p>
             {playlist.creator_id === (profile?.id || user?.uid) && (
               <Button onClick={() => setShowAddTracks(true)}>
@@ -320,8 +432,11 @@ export default function PlaylistDetailPage() {
                 role="button"
                 tabIndex={0}
                 onClick={() => playPlaylistTrack(playlistTrack.track)}
-                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') playPlaylistTrack(playlistTrack.track); }}
-                className="group flex cursor-pointer items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted/50"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ")
+                    playPlaylistTrack(playlistTrack.track);
+                }}
+                className="group grid cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg p-2 transition-colors hover:bg-muted/50 sm:flex sm:gap-3 sm:p-3"
               >
                 <div className="flex items-center justify-center w-8 h-8 rounded bg-muted text-sm font-medium">
                   {index + 1}
@@ -332,17 +447,58 @@ export default function PlaylistDetailPage() {
                   className="w-12 h-12 rounded object-cover"
                 />
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-medium truncate">{playlistTrack.track.title}</h4>
-                  <p className="text-sm text-muted-foreground truncate">{playlistTrack.track.artist}</p>
+                  <h4 className="font-medium truncate">
+                    {playlistTrack.track.title}
+                  </h4>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {playlistTrack.track.artist}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
                   <Clock className="w-4 h-4" />
                   {formatDuration(playlistTrack.track.duration)}
                 </div>
-                <Button onClick={event => { event.stopPropagation(); playPlaylistTrack(playlistTrack.track); }} variant="ghost" size="icon" className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                <Button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    playPlaylistTrack(playlistTrack.track);
+                  }}
+                  variant="ghost"
+                  size="icon"
+                  className="hidden opacity-100 transition-opacity sm:inline-flex sm:opacity-0 sm:group-hover:opacity-100"
+                >
                   <Play className="w-4 h-4" />
                 </Button>
-                <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => playPlaylistTrack(playlistTrack.track)}><Play className="mr-2 h-4 w-4" />Play track</DropdownMenuItem>{playlist.creator_id === (profile?.id || user?.uid) && <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => void removeTrackFromPlaylist(playlistTrack.id)}><Trash2 className="mr-2 h-4 w-4" />Remove from playlist</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => playPlaylistTrack(playlistTrack.track)}
+                    >
+                      <Play className="mr-2 h-4 w-4" />
+                      Play track
+                    </DropdownMenuItem>
+                    {playlist.creator_id === (profile?.id || user?.uid) && (
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() =>
+                          void removeTrackFromPlaylist(playlistTrack.id)
+                        }
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Remove from playlist
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </motion.div>
             ))}
           </div>
@@ -354,7 +510,11 @@ export default function PlaylistDetailPage() {
         <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm">
           <div className="h-full flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-border">
-              <Button variant="ghost" size="icon" onClick={() => setShowAddTracks(false)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowAddTracks(false)}
+              >
                 <ArrowLeft className="w-5 h-5" />
               </Button>
               <h2 className="font-display font-bold text-lg">Add Tracks</h2>
@@ -382,19 +542,24 @@ export default function PlaylistDetailPage() {
                 <div className="space-y-2">
                   {availableTracks.map((track) => (
                     <Card key={track.id} className="p-3">
-                      <div className="flex items-center gap-3">
+                      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
                         <img
                           src={track.cover_url || DEFAULT_MEDIA_IMAGE}
                           alt={track.title}
                           className="w-12 h-12 rounded object-cover"
                         />
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-medium truncate">{track.title}</h4>
-                          <p className="text-sm text-muted-foreground truncate">{track.artist}</p>
+                          <h4 className="font-medium truncate">
+                            {track.title}
+                          </h4>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {track.artist}
+                          </p>
                         </div>
                         <Button
                           size="sm"
                           onClick={() => addTrackToPlaylist(track.id)}
+                          className="col-span-2 w-full sm:col-span-1 sm:w-auto"
                         >
                           <Plus className="w-4 h-4 mr-2" />
                           Add
@@ -409,7 +574,9 @@ export default function PlaylistDetailPage() {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-muted-foreground">Search for tracks to add to this playlist</p>
+                  <p className="text-muted-foreground">
+                    Search for tracks to add to this playlist
+                  </p>
                 </div>
               )}
             </div>

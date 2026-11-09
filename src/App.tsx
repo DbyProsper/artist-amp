@@ -13,6 +13,7 @@ import { useScrollToTop } from "@/hooks/useScrollToTop";
 import { useUserRole } from "@/hooks/useUserRole";
 import type { QuotaKey } from "@/lib/planLimits";
 import { BrandReveal } from "@/components/branding/BrandReveal";
+import { GlobalCallManager } from "@/components/chat/GlobalCallManager";
 
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -170,6 +171,7 @@ const AppRoutes = () => {
       <ScrollToTop />
       <ClearGuestPlayerOnAuth />
       <GlobalQuotaPrompt />
+      <GlobalCallManager />
       <StudioBrandReveal />
       <Suspense fallback={routeFallback}>
       <Routes>
