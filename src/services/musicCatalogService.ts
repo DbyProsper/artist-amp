@@ -1,8 +1,9 @@
-import { addDoc, collection, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, increment, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import type { Artist, Track } from '@/types';
 import type { ListeningHistoryEntry } from '@/services/recommendationEngine';
 import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
+import { persistTrackLike, persistTrackPlay } from '@/services/backendPersistenceService';
 
 const HISTORY_VERSION = 1;
 const HISTORY_EVENT = 'musicinsta:listening-history';
@@ -217,62 +218,20 @@ export async function loadListeningHistory(userId: string): Promise<ListeningHis
 export type ListeningEvent = 'play' | 'complete' | 'skip' | 'like' | 'unlike';
 
 export async function syncLikedTrack(userId: string, creatorId: string, track: Track, liked: boolean) {
-  const likeId = `${userId}_${track.id}`.replaceAll('/', '_').slice(0, 1400);
-  const likeRef = doc(db, 'track_likes', likeId);
-  const [creatorPlaylists, authPlaylists] = await Promise.all([
-    getDocs(query(collection(db, 'playlists'), where('creator_id', '==', creatorId))),
-    creatorId === userId ? Promise.resolve(null) : getDocs(query(collection(db, 'playlists'), where('auth_user_id', '==', userId))),
-  ]);
-  const candidates = [...creatorPlaylists.docs, ...(authPlaylists?.docs ?? [])];
-  const likedPlaylist = candidates.find(item => item.data().system_kind === 'liked_music' || String(item.data().name || '').toLowerCase() === 'liked music');
-  const playlistRef = likedPlaylist?.ref ?? doc(db, 'playlists', `liked_${userId}`);
-  const existingTracks = likedPlaylist && Array.isArray(likedPlaylist.data().tracks) ? likedPlaylist.data().tracks.map(String) : [];
-  const alreadyLiked = (await getDoc(likeRef)).exists();
-  const nextTracks = liked ? [...new Set([...existingTracks, track.id])] : existingTracks.filter(id => id !== track.id);
-  const membershipRef = doc(db, 'playlist_tracks', `${playlistRef.id}_${track.id}`.replaceAll('/', '_').slice(0, 1400));
-  const sourceCollection = track.sourceCollection ?? (track.id.startsWith('song-') ? 'songs' : 'tracks');
-  const sourceDocumentId = track.sourceDocumentId ?? (track.id.startsWith('song-') ? track.id.slice(5) : track.id);
-  if (!likedPlaylist && liked) {
-    await setDoc(playlistRef, {
-      creator_id: creatorId, auth_user_id: userId, name: 'Liked Music',
-      description: 'Songs you like on MusicInsta', system_kind: 'liked_music',
-      cover_url: track.coverArt, tracks: [], is_public: false,
-      created_at: serverTimestamp(), updated_at: serverTimestamp(),
-    });
-  }
-  const batch = writeBatch(db);
-  const membershipExists = (await getDoc(membershipRef)).exists();
-  if (liked) batch.set(likeRef, { user_id: userId, track_id: track.id, created_at: serverTimestamp() }, { merge: true });
-  else if (alreadyLiked) batch.delete(likeRef);
-  if (likedPlaylist || liked) batch.set(playlistRef, {
-    creator_id: creatorId, auth_user_id: userId, name: 'Liked Music',
-    description: 'Songs you like on MusicInsta', system_kind: 'liked_music',
-    cover_url: track.coverArt, tracks: nextTracks, is_public: false,
-    ...(likedPlaylist ? {} : { created_at: serverTimestamp() }), updated_at: serverTimestamp(),
-  }, { merge: true });
-  if (liked && !membershipExists) batch.set(membershipRef, { playlist_id: playlistRef.id, track_id: track.id, added_by: userId, created_at: serverTimestamp() });
-  else if (!liked && membershipExists) batch.delete(membershipRef);
-  const sourceRef = doc(db, sourceCollection, sourceDocumentId);
-  const sourceExists = alreadyLiked !== liked ? (await getDoc(sourceRef)).exists() : false;
-  if (sourceExists) batch.update(sourceRef, { likes: increment(liked ? 1 : -1) });
-  await batch.commit();
-
-  if (alreadyLiked !== liked) {
-    await addDoc(collection(db, 'analytics_events'), {
-      artist_id: track.artist.id,
-      track_id: track.id,
-      event: liked ? 'like' : 'unlike',
-      genre: track.genre || null,
-      actor_id: userId,
-      created_at: serverTimestamp(),
-    }).catch(() => undefined);
-  }
+  const result = await persistTrackLike(userId, creatorId, track, liked);
+  if (!result.changed) return;
+  await addDoc(collection(db, 'analytics_events'), {
+    artist_id: track.artist.id,
+    track_id: track.id,
+    event: liked ? 'like' : 'unlike',
+    genre: track.genre || null,
+    actor_id: userId,
+    created_at: serverTimestamp(),
+  }).catch(() => undefined);
 }
 
 export async function incrementTrackPlay(track: Track) {
-  const sourceCollection = track.sourceCollection ?? (track.id.startsWith('song-') ? 'songs' : 'tracks');
-  const sourceDocumentId = track.sourceDocumentId ?? (track.id.startsWith('song-') ? track.id.slice(5) : track.id);
-  await updateDoc(doc(db, sourceCollection, sourceDocumentId), { plays: increment(1) });
+  await persistTrackPlay(track);
 }
 
 export function recordListeningInteraction(userId: string, track: Track, event: ListeningEvent, lastPosition = 0): ListeningHistoryEntry[] {

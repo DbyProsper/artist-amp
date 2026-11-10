@@ -62,6 +62,8 @@ interface Track {
   likes: number | null;
   user_id: string;
   created_at: Date;
+  provider?: "youtube";
+  video_id?: string;
 }
 
 interface PlaylistTrack {
@@ -84,6 +86,7 @@ export default function PlaylistDetailPage() {
   const [availableTracks, setAvailableTracks] = useState<Track[]>([]);
   const [showAddTracks, setShowAddTracks] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedYouTube, setSelectedYouTube] = useState<Track | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -142,11 +145,14 @@ export default function PlaylistDetailPage() {
       const membershipDocs = [...tracksSnapshot.docs, ...embeddedDocs];
 
       const trackPromises = membershipDocs.map(async (trackDoc) => {
-        const trackData = trackDoc.data();
+        const trackData = trackDoc.data() as Record<string, any>;
         const catalogTrack = catalog.find(
           (item) => item.id === trackData.track_id,
         );
         const trackDocRef = await getDoc(doc(db, "tracks", trackData.track_id));
+        const externalDocRef = trackData.external_media_id || String(trackData.track_id).startsWith("youtube-")
+          ? await getDoc(doc(db, "external_media", trackData.external_media_id || trackData.track_id))
+          : null;
 
         if (trackDocRef.exists()) {
           const track = trackDocRef.data();
@@ -191,6 +197,29 @@ export default function PlaylistDetailPage() {
               likes: catalogTrack.likes,
               user_id: catalogTrack.artist.id,
               created_at: catalogTrack.createdAt || new Date(),
+            } as Track,
+          } as PlaylistTrack;
+        }
+        if (externalDocRef?.exists()) {
+          const external = externalDocRef.data();
+          return {
+            id: trackDoc.id,
+            playlist_id: trackData.playlist_id,
+            track_id: trackData.track_id,
+            added_at: trackData.added_at?.toDate?.() || new Date(),
+            track: {
+              id: trackData.track_id,
+              title: external.title || "YouTube video",
+              artist: external.artistOrChannel || "YouTube",
+              cover_url: external.thumbnail || DEFAULT_MEDIA_IMAGE,
+              audio_url: null,
+              duration: null,
+              plays: null,
+              likes: null,
+              user_id: external.added_by || "youtube",
+              created_at: external.updated_at?.toDate?.() || new Date(),
+              provider: "youtube",
+              video_id: external.video_id || external.id,
             } as Track,
           } as PlaylistTrack;
         }
@@ -296,6 +325,10 @@ export default function PlaylistDetailPage() {
   };
 
   const playPlaylistTrack = (selected: Track) => {
+    if (selected.provider === "youtube" && selected.video_id) {
+      setSelectedYouTube(selected);
+      return;
+    }
     const queue = tracks
       .filter((item) => Boolean(item.track.audio_url))
       .map(
@@ -506,6 +539,18 @@ export default function PlaylistDetailPage() {
       </div>
 
       {/* Add Tracks Modal */}
+      {selectedYouTube?.video_id && (
+        <div className="fixed inset-0 z-[140] grid place-items-center bg-black/85 p-4" onClick={() => setSelectedYouTube(null)}>
+          <div className="w-full max-w-5xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between gap-3 text-white">
+              <div className="min-w-0"><p className="truncate font-semibold">{selectedYouTube.title}</p><p className="truncate text-sm text-white/60">{selectedYouTube.artist}</p></div>
+              <button type="button" aria-label="Close player" onClick={() => setSelectedYouTube(null)}>✕</button>
+            </div>
+            <div className="aspect-video overflow-hidden rounded-xl bg-black"><iframe className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(selectedYouTube.video_id)}?autoplay=1&playsinline=1`} title={selectedYouTube.title} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen /></div>
+          </div>
+        </div>
+      )}
+
       {showAddTracks && (
         <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm">
           <div className="h-full flex flex-col">

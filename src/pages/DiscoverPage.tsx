@@ -24,6 +24,7 @@ import { useAuth } from '@/context/FirebaseAuthContext';
 import { addDoc, collection, deleteDoc, getDocs, query, serverTimestamp, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
+import { YouTubeDiscoverResults } from '@/components/discover/YouTubeDiscoverResults';
 
 type SortOption = 'trending' | 'newest' | 'popular';
 
@@ -249,7 +250,8 @@ export default function DiscoverPage() {
       {/* Main Content */}
       {isSearching ? (
         // Search Results
-        <div className="px-4 py-4">
+        <div className="space-y-6 px-4 py-4">
+          <YouTubeDiscoverResults query={searchQuery} />
           <Tabs defaultValue="all" onValueChange={setActiveTab}>
             <TabsList className="w-full bg-muted/50 mb-4">
               <TabsTrigger value="all" className="flex-1">All</TabsTrigger>
@@ -325,6 +327,7 @@ export default function DiscoverPage() {
               </TabsList>
 
               <TabsContent value="for-you" className="space-y-6">
+                <YouTubeDiscoverResults historyOnly />
                 {/* Based on your taste */}
                 <section>
                   <div className="flex items-center gap-2 mb-3">

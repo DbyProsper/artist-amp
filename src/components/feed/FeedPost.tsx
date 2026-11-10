@@ -11,7 +11,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { PostOptionsModal } from '@/components/modals/PostOptionsModal';
 import { toast } from 'sonner';
-import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { PostCommentsModal } from '@/components/feed/PostCommentsModal';
@@ -26,6 +26,7 @@ import { SharePostDialog } from '@/components/social/SharePostDialog';
 import { SocialMediaEditor } from '@/components/social/SocialMediaEditor';
 import { EMPTY_SOCIAL_EDIT_STATE, aspectRatioValue, socialFilter, type SocialEditState } from '@/types/socialEditor';
 import { renderSocialImage } from '@/lib/socialMediaEditor';
+import { persistPostLike, persistPostPlay } from '@/services/backendPersistenceService';
 
 interface FeedPostProps {
   post: Post;
@@ -180,14 +181,13 @@ export function FeedPost({ post }: FeedPostProps) {
     if (nextLiked === isLiked) return;
     setIsLiked(nextLiked);
     setLikes(current => Math.max(0, current + (nextLiked ? 1 : -1)));
-    const likeRef = doc(db, 'post_likes', `${post.id}_${actorId}`);
     try {
-      const batch = writeBatch(db);
-      if (nextLiked) {
-        batch.set(likeRef, { post_id: post.id, user_id: actorId, auth_user_id: user.uid, actor_name: profile?.name || user.displayName || 'MusicInsta user', actor_avatar: profile?.avatar_url || user.photoURL || DEFAULT_MEDIA_IMAGE, created_at: serverTimestamp() });
-      } else batch.delete(likeRef);
-      batch.update(doc(db, 'posts', post.id), { likes: increment(nextLiked ? 1 : -1) });
-      await batch.commit();
+      const result = await persistPostLike(post.id, nextLiked, {
+        profileId: actorId,
+        name: profile?.name || user.displayName || 'MusicInsta user',
+        avatar: profile?.avatar_url || user.photoURL || DEFAULT_MEDIA_IMAGE,
+      });
+      setLikes(result.likes);
       if (nextLiked && post.artist.id !== actorId) await addDoc(collection(db, 'notifications'), {
         profile_id: post.artist.id, from_profile_id: actorId, post_id: post.id,
         type: 'like', message: 'liked your post', read: false, created_at: serverTimestamp(),
@@ -216,6 +216,7 @@ export function FeedPost({ post }: FeedPostProps) {
     if (!post.track) return;
     if (!playCountedRef.current) {
       playCountedRef.current = true; setPlayCount(current => current + 1);
+      void persistPostPlay(post.id).catch(() => toast.error('This play could not be saved.'));
     }
     if (isCurrentTrack) {
       if (isPlaying) pauseTrack();
@@ -366,7 +367,7 @@ export function FeedPost({ post }: FeedPostProps) {
             onContextMenu={post.type === 'video' ? event => event.preventDefault() : undefined}
           >
             {post.type === 'video' && post.videoUrl ? (
-              <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="none" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; void updateDoc(doc(db, 'posts', post.id), { plays: increment(1) }).catch(() => undefined); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
+              <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="none" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; setPlayCount(current => current + 1); void persistPostPlay(post.id).catch(() => toast.error('This play could not be saved.')); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
             ) : (
               <img src={postImage} alt={post.track?.title || post.caption || 'Post'} loading="lazy" decoding="async" style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} className={cn('w-full object-contain', mediaEditState.aspectRatio === 'original' && post.type === 'image' ? 'h-auto max-h-[82vh]' : 'h-full')} />
             )}
