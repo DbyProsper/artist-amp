@@ -232,11 +232,19 @@ export async function syncLikedTrack(userId: string, creatorId: string, track: T
   const membershipRef = doc(db, 'playlist_tracks', `${playlistRef.id}_${track.id}`.replaceAll('/', '_').slice(0, 1400));
   const sourceCollection = track.sourceCollection ?? (track.id.startsWith('song-') ? 'songs' : 'tracks');
   const sourceDocumentId = track.sourceDocumentId ?? (track.id.startsWith('song-') ? track.id.slice(5) : track.id);
+  if (!likedPlaylist && liked) {
+    await setDoc(playlistRef, {
+      creator_id: creatorId, auth_user_id: userId, name: 'Liked Music',
+      description: 'Songs you like on MusicInsta', system_kind: 'liked_music',
+      cover_url: track.coverArt, tracks: [], is_public: false,
+      created_at: serverTimestamp(), updated_at: serverTimestamp(),
+    });
+  }
   const batch = writeBatch(db);
   const membershipExists = (await getDoc(membershipRef)).exists();
   if (liked) batch.set(likeRef, { user_id: userId, track_id: track.id, created_at: serverTimestamp() }, { merge: true });
   else if (alreadyLiked) batch.delete(likeRef);
-  batch.set(playlistRef, {
+  if (likedPlaylist || liked) batch.set(playlistRef, {
     creator_id: creatorId, auth_user_id: userId, name: 'Liked Music',
     description: 'Songs you like on MusicInsta', system_kind: 'liked_music',
     cover_url: track.coverArt, tracks: nextTracks, is_public: false,
