@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { unregisterPushNotifications } from '@/lib/callServices';
 
 interface Profile {
   id: string;
@@ -201,6 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
+      await unregisterPushNotifications().catch(() => undefined);
       sessionStorage.removeItem('musicinsta_identity');
       setOfficialIdentity(false);
       await firebaseSignOut(auth);

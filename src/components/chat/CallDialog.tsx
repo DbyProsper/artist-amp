@@ -25,27 +25,11 @@ import { useAuth } from "@/context/FirebaseAuthContext";
 import type { Artist } from "@/types";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { getCallIceServers, notifyIncomingCall } from "@/lib/callServices";
 
 type CallKind = "voice" | "video";
 type Signal = { type: RTCSdpType; sdp?: string };
 type IncomingCall = { id: string; kind: CallKind; offer: Signal };
-const turnUrl = import.meta.env.VITE_TURN_URL as string | undefined;
-const rtcConfig: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    ...(turnUrl
-      ? [
-          {
-            urls: turnUrl,
-            username: import.meta.env.VITE_TURN_USERNAME as string | undefined,
-            credential: import.meta.env.VITE_TURN_CREDENTIAL as
-              string | undefined,
-          },
-        ]
-      : []),
-  ],
-};
 const callHistoryRef = (callId: string) =>
   doc(db, "messages", `call_${callId}`);
 const updateCallHistory = (callId: string, values: Record<string, unknown>) =>
@@ -109,13 +93,14 @@ export function CallDialog({
   useEffect(() => () => release(), [release]);
 
   const connectMedia = async (callKind: CallKind) => {
+    const iceServers = await getCallIceServers();
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: callKind === "video",
     });
     localStreamRef.current = stream;
     if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-    const peer = new RTCPeerConnection(rtcConfig);
+    const peer = new RTCPeerConnection({ iceServers });
     stream.getTracks().forEach((track) => peer.addTrack(track, stream));
     remoteStreamRef.current = new MediaStream();
     peer.ontrack = (event) => {
@@ -249,6 +234,9 @@ export function CallDialog({
           offer: { type: offer.type, sdp: offer.sdp },
           status: "ringing",
         });
+        void notifyIncomingCall(callRef.id).catch((error) =>
+          console.warn("Incoming-call push notification failed", error),
+        );
         setStatus("ringing");
         missedTimerRef.current = window.setTimeout(() => {
           void updateDoc(callRef, {

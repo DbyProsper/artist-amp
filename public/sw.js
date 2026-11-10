@@ -47,3 +47,39 @@ self.addEventListener('fetch', event => {
     event.respondWith(cacheFirst(request, STATIC_CACHE).catch(() => fetch(request)));
   }
 });
+
+// FCM delivers standards-based Web Push events to this same worker. Keeping
+// push and caching in one worker avoids competing registrations for `/`.
+self.addEventListener('push', event => {
+  if (!event.data) return;
+  let payload = {};
+  try { payload = event.data.json(); } catch { payload = { notification: { body: event.data.text() } }; }
+  const data = payload.data || {};
+  const notification = payload.notification || payload.webpush?.notification || {};
+  const title = notification.title || `MusicInsta ${data.callType || ''} call`.trim();
+  const options = {
+    body: notification.body || `${data.callerName || 'A MusicInsta user'} is calling`,
+    icon: notification.icon || '/MusicInsta_Logo.png',
+    badge: notification.badge || '/favicon.ico',
+    image: notification.image,
+    tag: notification.tag || (data.callId ? `musicinsta-call-${data.callId}` : 'musicinsta-notification'),
+    requireInteraction: notification.requireInteraction ?? data.type === 'incoming_call',
+    renotify: true,
+    data: { ...data, ...(notification.data || {}), url: data.url || notification.data?.url || '/messages' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || '/messages', self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
+    if (existing) {
+      await existing.navigate(target);
+      return existing.focus();
+    }
+    return self.clients.openWindow(target);
+  })());
+});

@@ -5,6 +5,7 @@ import { useAuth } from '@/context/FirebaseAuthContext';
 import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
 import type { Artist } from '@/types';
 import { CallDialog } from './CallDialog';
+import { pushNotificationsEnabled, registerPushNotifications } from '@/lib/callServices';
 
 function toArtist(id: string, data: DocumentData): Artist {
   return {
@@ -26,6 +27,13 @@ function toArtist(id: string, data: DocumentData): Artist {
 export function GlobalCallManager() {
   const { user, profile } = useAuth();
   const [caller, setCaller] = useState<Artist | null>(null);
+
+  useEffect(() => {
+    if (!user || !('Notification' in window) || !pushNotificationsEnabled() || Notification.permission !== 'granted') return;
+    void registerPushNotifications().catch(error =>
+      console.warn('Could not refresh this device push registration', error),
+    );
+  }, [user]);
 
   useEffect(() => {
     if (!user) { setCaller(null); return; }

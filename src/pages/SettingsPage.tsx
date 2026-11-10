@@ -49,12 +49,19 @@ import {
 } from "firebase/auth";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  pushNotificationsEnabled,
+  registerPushNotifications,
+  unregisterPushNotifications,
+} from "@/lib/callServices";
 
 export default function SettingsPage() {
   const { user, profile, signOut } = useAuth();
   const { isAdminOrModerator } = useUserRole();
   const navigate = useNavigate();
-  const [pushNotifications, setPushNotifications] = useState(true);
+  const [pushNotifications, setPushNotifications] = useState(() =>
+    pushNotificationsEnabled(),
+  );
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pendingRequest, setPendingRequest] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
@@ -74,17 +81,24 @@ export default function SettingsPage() {
     false;
 
   const changePushNotifications = async (enabled: boolean) => {
-    if (enabled && "Notification" in window) {
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
+    try {
+      if (enabled) {
+        await registerPushNotifications();
+        setPushNotifications(true);
+        toast.success("Incoming-call notifications enabled on this device.");
+      } else {
+        await unregisterPushNotifications();
         setPushNotifications(false);
-        toast.error(
-          "Allow browser notifications to see incoming calls while MusicInsta is in the background.",
-        );
-        return;
+        toast.success("Incoming-call notifications disabled on this device.");
       }
+    } catch (error) {
+      setPushNotifications(false);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Incoming-call notifications could not be enabled.",
+      );
     }
-    setPushNotifications(enabled);
   };
 
   const handlePasswordSave = async () => {
