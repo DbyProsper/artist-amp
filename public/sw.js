@@ -3,6 +3,10 @@ const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 const IMAGE_LIMIT = 80;
 
+self.addEventListener('install', event => {
+  event.waitUntil(self.skipWaiting());
+});
+
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const names = await caches.keys();

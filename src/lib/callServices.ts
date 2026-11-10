@@ -91,5 +91,7 @@ export async function unregisterPushNotifications() {
 }
 
 export function pushNotificationsEnabled() {
-  return localStorage.getItem(PUSH_ENABLED_KEY) !== "false";
+  const saved = localStorage.getItem(PUSH_ENABLED_KEY);
+  if (saved !== null) return saved === "true";
+  return "Notification" in window && Notification.permission === "granted";
 }
