@@ -22,7 +22,7 @@ import { takeDawAudio } from '@/lib/dawTransfer';
 import { generateImage } from '@/lib/api';
 import { DEFAULT_MEDIA_IMAGE, readMediaDuration } from '@/lib/media';
 import { deletePostDraft, loadPostDraft, savePostDraft } from '@/lib/postDrafts';
-import { MUSIC_GENRES } from '@/lib/genres';
+import { MUSIC_GENRES, subgenresForGenre } from '@/lib/genres';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SocialMediaEditor } from '@/components/social/SocialMediaEditor';
 import type { SocialEditState } from '@/types/socialEditor';
@@ -72,6 +72,7 @@ export default function UploadPage() {
     engineers: '',
     label: '',
     genre: '',
+    subGenre: '',
     visualFilter: 'none',
     attachedMusic: '',
   });
@@ -116,7 +117,7 @@ export default function UploadPage() {
       if (track.profile_id !== profile.id) { toast.error('You can only post tracks from your own profile.'); return; }
       const cover = track.cover_url || DEFAULT_MEDIA_IMAGE;
       setUploadType('audio'); setMediaDuration(Number(track.duration) || 0); setGeneratedCoverUrl(cover);
-      setFormData(current => ({ ...current, title: track.title || 'Untitled track', caption: current.caption || `${track.title || 'New music'} by ${profile.name || 'MusicInsta artist'}`, lyrics: track.lyrics || '', genre: track.genre || 'other', filePreview: track.audio_url || '', coverPreview: cover, composers: track.credits?.composers?.join(', ') || '', producers: track.credits?.producers?.join(', ') || '', engineers: track.credits?.engineers?.join(', ') || '', label: track.credits?.label || '' }));
+      setFormData(current => ({ ...current, title: track.title || 'Untitled track', caption: current.caption || `${track.title || 'New music'} by ${profile.name || 'MusicInsta artist'}`, lyrics: track.lyrics || '', genre: track.genre || 'other', subGenre: track.sub_genre || '', filePreview: track.audio_url || '', coverPreview: cover, composers: track.credits?.composers?.join(', ') || '', producers: track.credits?.producers?.join(', ') || '', engineers: track.credits?.engineers?.join(', ') || '', label: track.credits?.label || '' }));
     });
   }, [existingTrackId, profile]);
 
@@ -337,7 +338,7 @@ export default function UploadPage() {
       }
 
       if (uploadType === 'audio' && existingTrackId) {
-        await updateDoc(doc(db, 'tracks', existingTrackId), { ...(coverUrl && coverUrl !== DEFAULT_MEDIA_IMAGE ? { cover_url: coverUrl } : {}), ...(hashtags.length ? { tags: arrayUnion(...hashtags) } : {}), updated_at: new Date() });
+        await updateDoc(doc(db, 'tracks', existingTrackId), { genre: formData.genre, sub_genre: formData.subGenre || null, ...(coverUrl && coverUrl !== DEFAULT_MEDIA_IMAGE ? { cover_url: coverUrl } : {}), ...(hashtags.length ? { tags: arrayUnion(...hashtags) } : {}), updated_at: new Date() });
         createdPostId = (await addDoc(collection(db, 'posts'), { profile_id: creatorId, type: 'audio', track_id: existingTrackId, image_url: coverUrl, caption: formData.caption, hashtags, mentions: mentionedProfileIds, excluded_user_ids: excludedProfileIds, is_story: false, expires_at: null, created_at: new Date(), is_new_release: false, is_new_post: true })).id;
       } else if (uploadType === 'audio') {
         // Create track document
@@ -345,6 +346,7 @@ export default function UploadPage() {
           profile_id: creatorId,
           title: formData.title,
           genre: formData.genre,
+          sub_genre: formData.subGenre || null,
           lyrics: formData.lyrics || null,
           audio_url: fileUrl,
           cover_url: coverUrl,
@@ -476,7 +478,7 @@ export default function UploadPage() {
     setGeneratedCoverUrl('');
     setSocialEditState(EMPTY_SOCIAL_EDIT_STATE);
     setExcludedProfileIds([]);
-    setFormData({ title: '', caption: '', lyrics: '', addToStory: false, file: null, filePreview: '', coverFile: null, coverPreview: '', releaseType: 'single', featuredArtists: '', writers: '', composers: '', producers: '', engineers: '', label: '', genre: '', visualFilter: 'none', attachedMusic: '' });
+    setFormData({ title: '', caption: '', lyrics: '', addToStory: false, file: null, filePreview: '', coverFile: null, coverPreview: '', releaseType: 'single', featuredArtists: '', writers: '', composers: '', producers: '', engineers: '', label: '', genre: '', subGenre: '', visualFilter: 'none', attachedMusic: '' });
   };
 
   /**
@@ -635,7 +637,8 @@ export default function UploadPage() {
                   />
                 </div>
                 <div className="grid gap-3 rounded-xl border border-border p-4 sm:grid-cols-2">
-                  <div className="space-y-2"><Label>Genre *</Label><select required className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={formData.genre} onChange={e => setFormData({ ...formData, genre: e.target.value })}><option value="">Select genre</option>{MUSIC_GENRES.map(genre => <option key={genre} value={genre}>{genre}</option>)}</select></div>
+                  <div className="space-y-2"><Label>Genre *</Label><select required className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={formData.genre} onChange={e => setFormData({ ...formData, genre: e.target.value, subGenre: '' })}><option value="">Select genre</option>{MUSIC_GENRES.map(genre => <option key={genre} value={genre}>{genre}</option>)}</select></div>
+                  <div className="space-y-2"><Label>Sub-genre</Label><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={formData.subGenre} onChange={e => setFormData({ ...formData, subGenre: e.target.value })}><option value="">No sub-genre</option>{subgenresForGenre(formData.genre).map(genre => <option key={genre} value={genre}>{genre}</option>)}</select></div>
                   <div className="space-y-2"><Label>Release type</Label><select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={formData.releaseType} onChange={e => setFormData({ ...formData, releaseType: e.target.value })}><option value="single">Single</option><option value="ep">EP</option><option value="album">Album</option><option value="mixtape">Mixtape</option><option value="demo">Demo</option></select></div>
                   <div className="space-y-2"><Label>Featured artists</Label><Input placeholder="Artist A, Artist B" value={formData.featuredArtists} onChange={e => setFormData({ ...formData, featuredArtists: e.target.value })} /></div>
                   <div className="space-y-2"><Label>Writers</Label><Input placeholder="Comma-separated names" value={formData.writers} onChange={e => setFormData({ ...formData, writers: e.target.value })} /></div>

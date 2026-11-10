@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Search, TrendingUp, Sparkles, Filter, Heart, Users, 
@@ -31,7 +31,7 @@ export default function DiscoverPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, profile } = useAuth();
-  const { catalog, listeningHistory, preferredGenres, currentTrack, catalogLoading } = usePlayer();
+  const { catalog, listeningHistory, preferredGenres, catalogLoading } = usePlayer();
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') === 'trending' ? 'trending' : 'for-you');
@@ -51,9 +51,18 @@ export default function DiscoverPage() {
   const catalogArtists = [...catalogTracks.map(track => track.artist), ...liveArtists]
     .filter((artist, index, list) => !isOfficialAccount(artist) && list.findIndex(item => item.id === artist.id) === index)
     .map(artist => ({ ...artist, followers: followerCounts[artist.id] ?? artist.followers }));
-  const genres = [...new Set([...DISCOVER_GENRES, ...catalogTracks.flatMap(track => [track.genre, ...track.artist.genres]).filter(Boolean).map(value => canonicalGenre(String(value)))])];
+  const genres = [...new Set([...DISCOVER_GENRES, ...catalogTracks.flatMap(track => [track.genre, track.subGenre, ...track.artist.genres]).filter(Boolean).map(value => canonicalGenre(String(value)))])];
   const liveTrackIds = new Set(liveTracks.map(track => track.id));
-  const personalizedTracks = useMemo(() => rankCatalog(catalogTracks, listeningHistory, currentTrack, preferredGenres).map(item => item.track), [catalogTracks, listeningHistory, currentTrack, preferredGenres]);
+  const stableOrders = useRef<{ identity: string; personalized: string[]; artists: string[]; trending: Record<string, string[]> }>({ identity: '', personalized: [], artists: [], trending: {} });
+  const rankingIdentity = `${user?.uid || 'guest'}:${preferredGenres.join('|')}`;
+  if (stableOrders.current.identity !== rankingIdentity) stableOrders.current = { identity: rankingIdentity, personalized: [], artists: [], trending: {} };
+  const rankedCandidates = rankCatalog(catalogTracks, listeningHistory, null, preferredGenres).map(item => item.track);
+  const availableIds = new Set(rankedCandidates.map(track => track.id));
+  const retainedPersonalized = stableOrders.current.personalized.filter(id => availableIds.has(id));
+  const retainedPersonalizedSet = new Set(retainedPersonalized);
+  stableOrders.current.personalized = [...retainedPersonalized, ...rankedCandidates.filter(track => !retainedPersonalizedSet.has(track.id)).map(track => track.id)];
+  const catalogById = new Map(catalogTracks.map(track => [track.id, track]));
+  const personalizedTracks = stableOrders.current.personalized.map(id => catalogById.get(id)).filter((track): track is Track => Boolean(track));
   const personalizedTrackOrder = useMemo(() => new Map(personalizedTracks.map((track, index) => [track.id, index])), [personalizedTracks]);
 
   useEffect(() => {
@@ -103,11 +112,11 @@ export default function DiscoverPage() {
 
   const filteredTracks = catalogTracks.filter((track) => {
     const needle = searchQuery.toLowerCase().replace(/^#/, '');
-    const searchable = [track.title, track.artist.name, track.genre, track.mood, ...(track.tags || [])].filter(Boolean).join(' ').toLowerCase();
+    const searchable = [track.title, track.artist.name, track.genre, track.subGenre, track.mood, ...(track.tags || [])].filter(Boolean).join(' ').toLowerCase();
     const matchesSearch = searchable.includes(needle);
     // Track filters are deliberately strict. An artist's profile genre must not
     // cause all of their songs to appear under that genre.
-    const matchesGenre = !selectedGenre || genreMatches(track.genre, selectedGenre);
+    const matchesGenre = !selectedGenre || genreMatches(track.genre, selectedGenre) || genreMatches(track.subGenre, selectedGenre);
     return matchesSearch && matchesGenre;
   });
   const filteredTrackIds = new Set(filteredTracks.map(track => track.id));
@@ -115,12 +124,18 @@ export default function DiscoverPage() {
   const rankedFilteredIds = new Set(rankedFilteredTracks.map(track => track.id));
   const personalizedGenreTracks = [...rankedFilteredTracks, ...filteredTracks.filter(track => !rankedFilteredIds.has(track.id))];
   const fallbackTracks = selectedGenre ? personalizedTracks.filter(track => !genreMatches(track.genre, selectedGenre)).slice(0, 6) : [];
-  const visibleArtists = rankArtists(
+  const rankedArtists = rankArtists(
     selectedGenre ? filteredArtists : catalogArtists,
     catalogTracks,
     listeningHistory,
     preferredGenres,
   );
+  const artistIds = new Set(rankedArtists.map(artist => artist.id));
+  const retainedArtistIds = stableOrders.current.artists.filter(id => artistIds.has(id));
+  const retainedArtistSet = new Set(retainedArtistIds);
+  stableOrders.current.artists = [...retainedArtistIds, ...rankedArtists.filter(artist => !retainedArtistSet.has(artist.id)).map(artist => artist.id)];
+  const artistsById = new Map(rankedArtists.map(artist => [artist.id, artist]));
+  const visibleArtists = stableOrders.current.artists.map(id => artistsById.get(id)).filter((artist): artist is (typeof rankedArtists)[number] => Boolean(artist));
   const followedArtists = visibleArtists.filter(artist => followingIds.has(artist.id));
   const suggestedArtists = visibleArtists.filter(artist => artist.id !== profile?.id && !followingIds.has(artist.id));
 
@@ -131,16 +146,25 @@ export default function DiscoverPage() {
       if (preferredDifference) return preferredDifference;
       return (personalizedTrackOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (personalizedTrackOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER);
     };
+    let sorted: Track[];
     switch (sortBy) {
       case 'trending':
-        return [...tracks].sort((a, b) => compareTaste(a, b) || (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.plays - a.plays);
+        sorted = [...tracks].sort((a, b) => compareTaste(a, b) || (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.plays - a.plays); break;
       case 'newest':
-        return [...tracks].sort((a, b) => compareTaste(a, b) || Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id)));
+        sorted = [...tracks].sort((a, b) => compareTaste(a, b) || Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))); break;
       case 'popular':
-        return [...tracks].sort((a, b) => compareTaste(a, b) || (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.likes - a.likes);
+        sorted = [...tracks].sort((a, b) => compareTaste(a, b) || (Number(liveTrackIds.has(b.id)) - Number(liveTrackIds.has(a.id))) || b.likes - a.likes); break;
       default:
-        return tracks;
+        sorted = tracks;
     }
+    const key = `${sortBy}:${selectedGenre || 'all'}:${searchQuery.toLowerCase()}`;
+    const ids = new Set(sorted.map(track => track.id));
+    const previous = (stableOrders.current.trending[key] || []).filter(id => ids.has(id));
+    const previousSet = new Set(previous);
+    const next = [...previous, ...sorted.filter(track => !previousSet.has(track.id)).map(track => track.id)];
+    stableOrders.current.trending[key] = next;
+    const byId = new Map(sorted.map(track => [track.id, track]));
+    return next.map(id => byId.get(id)).filter((track): track is Track => Boolean(track));
   };
 
   const isSearching = searchQuery.length > 0;

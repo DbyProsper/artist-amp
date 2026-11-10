@@ -41,7 +41,8 @@ import {
 } from "@/services/recommendationEngine";
 
 const FEED_SCROLL_KEY = "musicinsta:feed-scroll-position";
-const feedOrderKey = (identity: string) => `musicinsta:feed-order:${identity}`;
+const feedOrders = new Map<string, string[]>();
+const feedReloadSeed = crypto.getRandomValues(new Uint32Array(1))[0];
 
 export default function HomePage() {
   const reduceMotion = useReducedMotion();
@@ -134,25 +135,13 @@ export default function HomePage() {
     () => rankFeedPosts(posts, listeningHistory, preferredGenres, identity),
     [identity, listeningHistory, posts, preferredGenres],
   );
-  const [stablePostIds, setStablePostIds] = useState<string[]>(() => {
-    try {
-      return JSON.parse(sessionStorage.getItem(feedOrderKey(identity)) || "[]");
-    } catch {
-      return [];
-    }
-  });
+  const [stablePostIds, setStablePostIds] = useState<string[]>(() => feedOrders.get(identity) ?? []);
   const previousIdentity = useRef(identity);
 
   useEffect(() => {
     if (previousIdentity.current !== identity) {
       previousIdentity.current = identity;
-      try {
-        setStablePostIds(
-          JSON.parse(sessionStorage.getItem(feedOrderKey(identity)) || "[]"),
-        );
-      } catch {
-        setStablePostIds([]);
-      }
+      setStablePostIds(feedOrders.get(identity) ?? []);
       return;
     }
     setStablePostIds((current) => {
@@ -164,10 +153,16 @@ export default function HomePage() {
         .map((post) => post.id);
       // A live snapshot may add a newly published post. Keep the viewport
       // anchored by appending it to this session; a fresh session ranks it.
-      const next = current.length
-        ? [...retained, ...additions]
-        : rankedPosts.map((post) => post.id);
-      sessionStorage.setItem(feedOrderKey(identity), JSON.stringify(next));
+      let next = current.length ? [...retained, ...additions] : rankedPosts.map((post) => post.id);
+      if (!current.length && next.length > 1) {
+        const maximum = Math.min(8, next.length);
+        const lastFirst = sessionStorage.getItem(`musicinsta:last-feed-first:${identity}`);
+        let choice = feedReloadSeed % maximum;
+        if (next[choice] === lastFirst) choice = (choice + 1) % maximum;
+        next = [next[choice], ...next.slice(0, choice), ...next.slice(choice + 1)];
+        sessionStorage.setItem(`musicinsta:last-feed-first:${identity}`, next[0]);
+      }
+      feedOrders.set(identity, next);
       return next;
     });
   }, [identity, rankedPosts]);

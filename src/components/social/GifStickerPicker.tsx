@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { ImagePlus, LoaderCircle, Sticker, Upload } from 'lucide-react';
+import { ImagePlus, LoaderCircle, Search, Sticker, Upload } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { storage } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
+import { findGiphyMedia, type GiphyKind, type GiphyResult } from '@/services/giphyService';
 
 export interface SocialMediaAttachment {
   type: 'gif' | 'sticker';
@@ -25,8 +26,25 @@ export function GifStickerPicker({ onSelect, disabled = false }: Props) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState<'gif' | 'sticker' | null>(null);
+  const [kind, setKind] = useState<GiphyKind>('gifs');
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<GiphyResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const gifInputRef = useRef<HTMLInputElement>(null);
   const stickerInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open || !import.meta.env.VITE_GIPHY_API_KEY) return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setSearching(true);
+      void findGiphyMedia(kind, search, controller.signal)
+        .then(setResults)
+        .catch(error => { if (error?.name !== 'AbortError') toast.error('GIPHY could not be loaded.'); })
+        .finally(() => setSearching(false));
+    }, search ? 300 : 0);
+    return () => { window.clearTimeout(timeout); controller.abort(); };
+  }, [kind, open, search]);
 
   const upload = async (file: File, type: 'gif' | 'sticker') => {
     if (!user) { toast.info('Sign in to add GIFs or stickers.'); return; }
@@ -58,7 +76,18 @@ export function GifStickerPicker({ onSelect, disabled = false }: Props) {
           <Sticker className="h-5 w-5 text-muted-foreground" />
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="end" className="z-[260] w-72 border-border bg-card p-3">
+      <PopoverContent side="top" align="end" className="z-[260] w-80 border-border bg-card p-3">
+        <div className="mb-3 flex gap-1 rounded-lg bg-muted p-1">
+          {(['gifs', 'stickers'] as GiphyKind[]).map(value => <button key={value} type="button" onClick={() => setKind(value)} className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold capitalize ${kind === value ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground'}`}>{value}</button>)}
+        </div>
+        {import.meta.env.VITE_GIPHY_API_KEY ? <>
+          <label className="relative mb-3 block"><Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/><input value={search} onChange={event => setSearch(event.target.value)} placeholder={`Search GIPHY ${kind}`} className="h-9 w-full rounded-lg border border-border bg-background pl-8 pr-3 text-sm outline-none focus:ring-2 focus:ring-primary"/></label>
+          <div className="mb-3 grid max-h-52 grid-cols-3 gap-1 overflow-y-auto rounded-lg">
+            {results.map(item => <button key={item.id} type="button" title={item.title} onClick={() => { onSelect({ type: kind === 'gifs' ? 'gif' : 'sticker', url: item.url }); setOpen(false); }} className="aspect-square overflow-hidden rounded-md bg-muted"><img src={item.previewUrl} alt={item.title} loading="lazy" className="h-full w-full object-cover"/></button>)}
+            {searching && <div className="col-span-3 grid h-20 place-items-center"><LoaderCircle className="h-5 w-5 animate-spin text-primary"/></div>}
+          </div>
+          <p className="mb-3 text-right text-[10px] font-semibold text-muted-foreground">Powered by GIPHY</p>
+        </> : <p className="mb-3 rounded-lg bg-muted p-2 text-xs text-muted-foreground">GIPHY search will appear after the site key is configured. File uploads and quick stickers still work.</p>}
         <div className="mb-3 flex gap-2">
           <button type="button" disabled={Boolean(uploading)} onClick={() => gifInputRef.current?.click()} className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-muted disabled:opacity-50">
             {uploading === 'gif' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />} Upload GIF

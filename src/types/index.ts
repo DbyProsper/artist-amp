@@ -41,6 +41,7 @@ export interface Track {
   visualFilter?: string;
   attachedMusic?: string;
   genre?: string;
+  subGenre?: string;
   mood?: string;
   bpm?: number;
   energy?: number;
@@ -48,6 +49,8 @@ export interface Track {
   tags?: string[];
   storagePath?: string;
   source?: 'firestore' | 'gcs' | 'generated' | 'demo';
+  sourceCollection?: 'tracks' | 'songs';
+  sourceDocumentId?: string;
   isPublic?: boolean;
   createdAt?: Date;
   albumId?: string;

@@ -1,4 +1,4 @@
-import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import type { Artist, Track } from '@/types';
 import type { ListeningHistoryEntry } from '@/services/recommendationEngine';
@@ -52,6 +52,7 @@ function trackFrom(id: string, data: Record<string, unknown>, profiles: Map<stri
   if (!audioUrl) return null;
   const artist = artistFrom(data, profiles);
   const genres = [data.genre, metadata.genre, ...(artist.genres || [])].filter(Boolean).map(String);
+  const subGenre = String(data.sub_genre || metadata.sub_genre || '') || undefined;
   return {
     id,
     title: String(data.title || data.song_name || data.name || 'Untitled track'),
@@ -66,13 +67,16 @@ function trackFrom(id: string, data: Record<string, unknown>, profiles: Map<stri
     lyricStartTime: number(data.lyric_start_time || metadata.lyric_start_time) || undefined,
     credits: (data.credits || metadata.credits) as Track['credits'],
     genre: genres[0],
+    subGenre,
     mood: String(data.mood || metadata.mood || '') || undefined,
     bpm: number(data.bpm || metadata.bpm) || undefined,
     energy: number(data.energy || metadata.energy, Number.NaN),
     loudness: number(data.loudness || metadata.loudness, Number.NaN),
-    tags: [...new Set([...genres, ...(Array.isArray(data.tags) ? data.tags.map(String) : [])])],
+    tags: [...new Set([...genres, ...(subGenre ? [subGenre] : []), ...(Array.isArray(data.tags) ? data.tags.map(String) : [])])],
     storagePath: String(data.storage_path || metadata.storage_path || '') || undefined,
     source,
+    sourceCollection: id.startsWith('song-') ? 'songs' : 'tracks',
+    sourceDocumentId: id.startsWith('song-') ? id.slice(5) : id,
     isPublic: data.is_public !== false,
     createdAt: date(data.created_at || data.createdAt),
     albumId: String(data.album_id || metadata.album_id || '') || undefined,
@@ -215,35 +219,37 @@ export type ListeningEvent = 'play' | 'complete' | 'skip' | 'like' | 'unlike';
 export async function syncLikedTrack(userId: string, creatorId: string, track: Track, liked: boolean) {
   const likeId = `${userId}_${track.id}`.replaceAll('/', '_').slice(0, 1400);
   const likeRef = doc(db, 'track_likes', likeId);
-  const wasLiked = (await getDoc(likeRef)).exists();
-  if (liked) await setDoc(likeRef, { user_id: userId, track_id: track.id, created_at: serverTimestamp() }, { merge: true });
-  else await deleteDoc(likeRef).catch(() => undefined);
+  const [creatorPlaylists, authPlaylists] = await Promise.all([
+    getDocs(query(collection(db, 'playlists'), where('creator_id', '==', creatorId))),
+    creatorId === userId ? Promise.resolve(null) : getDocs(query(collection(db, 'playlists'), where('auth_user_id', '==', userId))),
+  ]);
+  const candidates = [...creatorPlaylists.docs, ...(authPlaylists?.docs ?? [])];
+  const likedPlaylist = candidates.find(item => item.data().system_kind === 'liked_music' || String(item.data().name || '').toLowerCase() === 'liked music');
+  const playlistRef = likedPlaylist?.ref ?? doc(db, 'playlists', `liked_${userId}`);
+  const existingTracks = likedPlaylist && Array.isArray(likedPlaylist.data().tracks) ? likedPlaylist.data().tracks.map(String) : [];
+  const alreadyLiked = (await getDoc(likeRef)).exists();
+  const nextTracks = liked ? [...new Set([...existingTracks, track.id])] : existingTracks.filter(id => id !== track.id);
+  const membershipRef = doc(db, 'playlist_tracks', `${playlistRef.id}_${track.id}`.replaceAll('/', '_').slice(0, 1400));
+  const sourceCollection = track.sourceCollection ?? (track.id.startsWith('song-') ? 'songs' : 'tracks');
+  const sourceDocumentId = track.sourceDocumentId ?? (track.id.startsWith('song-') ? track.id.slice(5) : track.id);
+  const batch = writeBatch(db);
+  const membershipExists = (await getDoc(membershipRef)).exists();
+  if (liked) batch.set(likeRef, { user_id: userId, track_id: track.id, created_at: serverTimestamp() }, { merge: true });
+  else if (alreadyLiked) batch.delete(likeRef);
+  batch.set(playlistRef, {
+    creator_id: creatorId, auth_user_id: userId, name: 'Liked Music',
+    description: 'Songs you like on MusicInsta', system_kind: 'liked_music',
+    cover_url: track.coverArt, tracks: nextTracks, is_public: false,
+    ...(likedPlaylist ? {} : { created_at: serverTimestamp() }), updated_at: serverTimestamp(),
+  }, { merge: true });
+  if (liked && !membershipExists) batch.set(membershipRef, { playlist_id: playlistRef.id, track_id: track.id, added_by: userId, created_at: serverTimestamp() });
+  else if (!liked && membershipExists) batch.delete(membershipRef);
+  const sourceRef = doc(db, sourceCollection, sourceDocumentId);
+  const sourceExists = alreadyLiked !== liked ? (await getDoc(sourceRef)).exists() : false;
+  if (sourceExists) batch.update(sourceRef, { likes: increment(liked ? 1 : -1) });
+  await batch.commit();
 
-  const playlists = await getDocs(query(collection(db, 'playlists'), where('creator_id', '==', creatorId)));
-  const likedPlaylist = playlists.docs.find(item => item.data().system_kind === 'liked_music' || String(item.data().name || '').toLowerCase() === 'liked music');
-  if (likedPlaylist) {
-    await updateDoc(likedPlaylist.ref, {
-      tracks: liked ? arrayUnion(track.id) : arrayRemove(track.id),
-      updated_at: serverTimestamp(),
-    });
-  } else if (liked) {
-    await addDoc(collection(db, 'playlists'), {
-      creator_id: creatorId,
-      auth_user_id: userId,
-      name: 'Liked Music',
-      description: 'Songs you like on MusicInsta',
-      system_kind: 'liked_music',
-      tracks: [track.id],
-      is_public: false,
-      created_at: serverTimestamp(),
-      updated_at: serverTimestamp(),
-    });
-  }
-
-  if (wasLiked !== liked) {
-    const isSong = track.id.startsWith('song-');
-    const trackRef = doc(db, isSong ? 'songs' : 'tracks', isSong ? track.id.slice(5) : track.id);
-    await updateDoc(trackRef, { likes: increment(liked ? 1 : -1) }).catch(() => undefined);
+  if (alreadyLiked !== liked) {
     await addDoc(collection(db, 'analytics_events'), {
       artist_id: track.artist.id,
       track_id: track.id,
@@ -253,6 +259,12 @@ export async function syncLikedTrack(userId: string, creatorId: string, track: T
       created_at: serverTimestamp(),
     }).catch(() => undefined);
   }
+}
+
+export async function incrementTrackPlay(track: Track) {
+  const sourceCollection = track.sourceCollection ?? (track.id.startsWith('song-') ? 'songs' : 'tracks');
+  const sourceDocumentId = track.sourceDocumentId ?? (track.id.startsWith('song-') ? track.id.slice(5) : track.id);
+  await updateDoc(doc(db, sourceCollection, sourceDocumentId), { plays: increment(1) });
 }
 
 export function recordListeningInteraction(userId: string, track: Track, event: ListeningEvent, lastPosition = 0): ListeningHistoryEntry[] {

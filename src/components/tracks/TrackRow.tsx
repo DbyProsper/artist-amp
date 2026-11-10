@@ -101,7 +101,7 @@ export function TrackRow({ track, index, showIndex, queue }: TrackRowProps) {
           {track.title}
         </p>
         <p className="text-xs text-muted-foreground truncate">
-          {track.artist.name}
+          {track.artist.name}{track.subGenre ? ` · ${track.subGenre}` : ''}
         </p>
       </div>
       

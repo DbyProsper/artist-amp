@@ -1,9 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Track } from '@/types';
 import { useAuth } from '@/context/FirebaseAuthContext';
+import { toast } from 'sonner';
 import { buildPersonalizedQueue, shuffleUpcoming, type ListeningHistoryEntry } from '@/services/recommendationEngine';
-import { loadListeningHistory, loadMusicCatalog, recordListeningInteraction, syncLikedTrack } from '@/services/musicCatalogService';
-import { doc, increment, onSnapshot, updateDoc } from 'firebase/firestore';
+import { incrementTrackPlay, loadListeningHistory, loadMusicCatalog, recordListeningInteraction, syncLikedTrack } from '@/services/musicCatalogService';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 interface PlayerContextType {
@@ -200,10 +201,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     });
     if (countPlay) {
       updateHistory(track, 'play');
-      const isGeneratedSong = track.id.startsWith('song-');
-      const collectionName = isGeneratedSong ? 'songs' : 'tracks';
-      const documentId = isGeneratedSong ? track.id.slice('song-'.length) : track.id;
-      void updateDoc(doc(db, collectionName, documentId), { plays: increment(1) }).catch(() => undefined);
+      void incrementTrackPlay(track).catch(() => {
+        toast.error('This play could not be saved. Check your connection and try again.');
+      });
       setCatalog(current => current.map(item => item.id === track.id ? { ...item, plays: item.plays + 1 } : item));
     }
   }, [setQueue, updateHistory]);
@@ -376,12 +376,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const likeTrack = useCallback((track: Track, liked: boolean) => {
     const wasLiked = Boolean(historyRef.current.find(entry => entry.trackId === track.id)?.liked);
     if (wasLiked === liked) {
-      if (user?.uid) void syncLikedTrack(user.uid, profile?.id || user.uid, track, liked).catch(() => undefined);
+      if (user?.uid) void syncLikedTrack(user.uid, profile?.id || user.uid, track, liked).catch(() => toast.error('Liked Music could not be updated.'));
       return;
     }
     updateHistory(track, liked ? 'like' : 'unlike');
     setCatalog(current => current.map(item => item.id === track.id ? { ...item, likes: Math.max(0, item.likes + (liked ? 1 : -1)) } : item));
-    if (user?.uid) void syncLikedTrack(user.uid, profile?.id || user.uid, track, liked).catch(() => undefined);
+    if (user?.uid) void syncLikedTrack(user.uid, profile?.id || user.uid, track, liked).catch(() => toast.error('Liked Music could not be updated.'));
   }, [profile?.id, updateHistory, user?.uid]);
 
   const setSleepTimer = useCallback((minutes: number | null) => {

@@ -13,6 +13,7 @@ export const PIANO_THEMES: Array<{id:PianoTheme;name:string;background:string;pr
 ];
 
 export const PIANO_TRACKS:PianoTrack[] = [
+  {id:'keys-at-full-tilt',title:'Keys at Full Tilt',direction:'High-energy precision piano challenge',bpm:120,duration:160,key:'Dynamic',cover:'/assets/games/musicinsta-piano/song-covers/keys-at-full-tilt.png',audio:'/assets/games/musicinsta-piano/audio/keys-at-full-tilt/keys-at-full-tilt.mp3',difficulties:['normal','hard','expert'],chartVersion:'2.0.0'},
   {id:'first-light',title:'First Light',direction:'Gentle introductory piano',bpm:82,duration:66,key:'C major',cover:'/assets/games/musicinsta-piano/song-covers/first-light.jpg',audio:'/assets/games/musicinsta-piano/audio/first-light/backing.wav',difficulties:['learn','easy','normal','hard'],chartVersion:'1.0.0'},
   {id:'midnight-orbit',title:'Midnight Orbit',direction:'Atmospheric cinematic groove',bpm:92,duration:72,key:'A minor',cover:'/assets/games/musicinsta-piano/song-covers/midnight-orbit.jpg',audio:'/assets/games/musicinsta-piano/audio/midnight-orbit/backing.wav',difficulties:['easy','normal','hard'],chartVersion:'1.0.0'},
   {id:'campus-afterglow',title:'Campus Afterglow',direction:'Warm R&B-inspired piano',bpm:76,duration:70,key:'E♭ major',cover:'/assets/games/musicinsta-piano/song-covers/campus-afterglow.jpg',audio:'/assets/games/musicinsta-piano/audio/campus-afterglow/backing.wav',difficulties:['easy','normal','hard'],chartVersion:'1.0.0'},

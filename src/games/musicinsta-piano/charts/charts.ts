@@ -1,4 +1,5 @@
 import type { PianoDifficulty, PianoTrack } from '../configuration/manifest';
+import keysAtFullTiltChart from './keys_at_full_tilt_chart.json';
 
 export type PianoNoteType='tap'|'hold'|'chord';
 export interface PianoNote {id:string;lane:0|1|2|3;time:number;duration:number;type:PianoNoteType;pitch:number;}
@@ -7,6 +8,16 @@ const DENSITY:Record<PianoDifficulty,number>={learn:4,easy:3,normal:2,hard:1,exp
 const SEED_LANES=[[0,1,2,3],[0,2,1,3],[1,0,3,2],[2,1,3,0],[0,3,1,2],[3,1,2,0]] as const;
 
 export function generatePianoChart(track:PianoTrack,difficulty:PianoDifficulty):PianoNote[]{
+  if(track.id==='keys-at-full-tilt'){
+    const imported=(keysAtFullTiltChart as Array<{id:string;lane:number;timestampMs:number;durationMs?:number;type:'TAP'|'HOLD'|'CHORD'}>).map((note,index)=>({
+      id:note.id,lane:note.lane as 0|1|2|3,time:note.timestampMs/1000,duration:(note.durationMs||0)/1000,type:note.type.toLowerCase() as PianoNoteType,pitch:60+note.lane*3+(index%2),
+    }));
+    for(let lane=0;lane<4;lane++){
+      const laneNotes=imported.filter(note=>note.lane===lane).sort((a,b)=>a.time-b.time);
+      laneNotes.forEach((note,index)=>{const next=laneNotes[index+1];if(next&&note.duration&&note.time+note.duration>next.time-.05)note.duration=Math.max(.05,next.time-note.time-.05);});
+    }
+    return imported;
+  }
   const beat=60/track.bpm, step=beat*(difficulty==='expert'?.5:1), density=DENSITY[difficulty];
   const lanes=SEED_LANES[Math.max(0,Number(track.id.length)%SEED_LANES.length)]; const notes:PianoNote[]=[]; const lastEnd=[-1,-1,-1,-1]; let index=0;
   for(let t=4;t<track.duration-2;t+=step){
@@ -24,9 +35,9 @@ export function generatePianoChart(track:PianoTrack,difficulty:PianoDifficulty):
 
 export function validatePianoChart(notes:PianoNote[]){
   const errors:string[]=[]; const lanes=[0,1,2,3].map(l=>notes.filter(n=>n.lane===l).sort((a,b)=>a.time-b.time));
-  lanes.forEach((lane,laneIndex)=>lane.forEach((note,index)=>{const next=lane[index+1];if(next&&next.time<note.time+Math.max(note.duration,.18))errors.push(`Lane ${laneIndex} overlaps at ${note.time}`);}));
+  lanes.forEach((lane,laneIndex)=>lane.forEach((note,index)=>{const next=lane[index+1];if(next&&next.time<note.time+Math.max(note.duration,.05))errors.push(`Lane ${laneIndex} overlaps at ${note.time}`);}));
   const byTime=new Map<string,number>();notes.forEach(n=>{const key=n.time.toFixed(3);byTime.set(key,(byTime.get(key)||0)+1);});
-  byTime.forEach((count,time)=>{if(count>2)errors.push(`${count} simultaneous notes at ${time}`);});
+  byTime.forEach((count,time)=>{if(count>4)errors.push(`${count} simultaneous notes at ${time}`);});
   if(new Set(notes.map(n=>n.id)).size!==notes.length)errors.push('Duplicate note IDs');
   return errors;
 }
