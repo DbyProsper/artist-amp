@@ -12,6 +12,7 @@ import {
   Video,
   Gamepad2,
   Trophy,
+  Reply,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,8 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  arrayRemove,
+  arrayUnion,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -63,6 +66,8 @@ interface Message {
     coverUrl: string;
   };
   challenge?: { gameId: string; senderScore: number; recipientScore?: number };
+  reply?: { id: string; preview: string; senderId: string };
+  reactions: Record<string, string[]>;
 }
 
 function formatCallDuration(seconds: number) {
@@ -90,6 +95,8 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
   const [callKind, setCallKind] = useState<"voice" | "video" | null>(null);
   const [showGames, setShowGames] = useState(false);
   const [gameBests, setGameBests] = useState<Record<string, number>>({});
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [recipientPresence, setRecipientPresence] = useState<{ online: boolean; lastActive: Date | null }>({ online: false, lastActive: null });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -166,6 +173,8 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
                           : Number(value.recipient_score),
                     }
                   : undefined,
+              reply: value.reply_to_id ? { id: value.reply_to_id, preview: value.reply_preview || "Message", senderId: value.reply_sender_id || "" } : undefined,
+              reactions: Object.fromEntries(Object.entries(value.reactions || {}).map(([key, ids]) => [key, Array.isArray(ids) ? ids.map(String) : []])),
             };
           })
           .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
@@ -185,6 +194,12 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
       () => toast.error("Messages could not be loaded."),
     );
   }, [profile?.id, recipient.id, user]);
+
+  useEffect(() => onSnapshot(doc(db, "profiles", recipient.id), snapshot => {
+    const value = snapshot.data();
+    const lastActive = value?.last_active?.toDate?.() || null;
+    setRecipientPresence({ online: Boolean(value?.is_online) && Boolean(lastActive && Date.now() - lastActive.getTime() < 120_000), lastActive });
+  }), [recipient.id]);
 
   useEffect(() => {
     if (!user) return;
@@ -222,6 +237,9 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
         media_type: selectedAttachment?.type || null,
         media_url: selectedAttachment?.url || null,
         sticker: selectedAttachment?.sticker || null,
+        reply_to_id: replyingTo?.id || null,
+        reply_preview: replyingTo?.content || replyingTo?.track?.title || replyingTo?.attachment?.type || null,
+        reply_sender_id: replyingTo?.senderId || null,
         created_at: serverTimestamp(),
         read: false,
       });
@@ -249,6 +267,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
         created_at: serverTimestamp(),
       });
       await batch.commit();
+      setReplyingTo(null);
     } catch {
       setNewMessage(content);
       setAttachment(selectedAttachment);
@@ -276,6 +295,13 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
   const handleEmojiSelect = (emoji: string) => {
     setNewMessage((prev) => prev + emoji);
     inputRef.current?.focus();
+  };
+
+  const reactionEmoji: Record<string, string> = { heart: "❤️", laugh: "😂", fire: "🔥" };
+  const toggleReaction = async (message: Message, reaction: string) => {
+    if (!profile) return;
+    const reacted = message.reactions[reaction]?.includes(profile.id);
+    await updateDoc(doc(db, "messages", message.id), { [`reactions.${reaction}`]: reacted ? arrayRemove(profile.id) : arrayUnion(profile.id) });
   };
 
   const gameNames: Record<string, string> = {
@@ -359,7 +385,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
                 />
               )}
             </div>
-            <span className="text-xs text-muted-foreground">Active now</span>
+            <span className="text-xs text-muted-foreground">{recipientPresence.online ? "Active now" : recipientPresence.lastActive ? `Last active ${formatDistanceToNow(recipientPresence.lastActive, { addSuffix: true })}` : "Offline"}</span>
           </div>
         </button>
         <button
@@ -402,6 +428,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
                   : "bg-muted rounded-bl-md"
               }`}
             >
+              {message.reply && <div className="mb-2 border-l-2 border-current/50 pl-2 text-xs opacity-70"><p className="line-clamp-2">{message.reply.preview}</p></div>}
               {message.attachment && (
                 <SocialAttachment
                   attachment={message.attachment}
@@ -559,6 +586,11 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
                   </button>
                 </div>
               )}
+              {editingId !== message.id && <div className="mt-1 flex flex-wrap items-center gap-1 border-t border-current/10 pt-1">
+                {Object.entries(message.reactions).map(([reaction, ids]) => ids.length ? <button key={reaction} type="button" onClick={() => void toggleReaction(message, reaction)} className={`rounded-full bg-background/20 px-1.5 py-0.5 text-[11px] ${profile?.id && ids.includes(profile.id) ? "ring-1 ring-current" : ""}`} title={`${ids.length} reaction${ids.length === 1 ? "" : "s"}`}>{reactionEmoji[reaction] || "👍"} {ids.length}</button> : null)}
+                <button type="button" onClick={() => setReplyingTo(message)} aria-label="Reply to message" className="ml-auto rounded-full p-1 opacity-70 hover:bg-background/20"><Reply className="h-3.5 w-3.5" /></button>
+                {Object.entries(reactionEmoji).map(([reaction, emoji]) => <button key={reaction} type="button" onClick={() => void toggleReaction(message, reaction)} aria-label={`React ${emoji}`} className="rounded-full p-0.5 text-xs opacity-70 hover:bg-background/20 hover:opacity-100">{emoji}</button>)}
+              </div>}
             </div>
           </motion.div>
         ))}
@@ -567,6 +599,7 @@ export function ChatWindow({ recipient, onBack }: ChatWindowProps) {
 
       {/* Input */}
       <div className="p-4 border-t border-border bg-card safe-bottom">
+        {replyingTo && <div className="mb-2 flex items-center gap-2 rounded-xl border-l-2 border-primary bg-muted/50 px-3 py-2"><Reply className="h-4 w-4 text-primary" /><p className="min-w-0 flex-1 truncate text-xs">Replying to {replyingTo.isOwn ? "your message" : recipient.name}: {replyingTo.content || replyingTo.track?.title || "attachment"}</p><button type="button" aria-label="Cancel reply" onClick={() => setReplyingTo(null)}><X className="h-4 w-4" /></button></div>}
         {attachment && (
           <div className="mb-2 flex items-end gap-2 rounded-xl bg-muted/60 p-2">
             <SocialAttachment attachment={attachment} />

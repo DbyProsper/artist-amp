@@ -29,7 +29,16 @@ import { buildTimedLyrics, hasAuthoredTimestamps } from "@/lib/timedLyrics";
 import { ShareTrackDialog } from "@/components/social/ShareTrackDialog";
 import { useNavigate } from "react-router-dom";
 
-type YouTubePlayerApi = { destroy:()=>void; playVideo:()=>void; pauseVideo:()=>void; seekTo:(seconds:number,allowSeekAhead:boolean)=>void; setVolume:(volume:number)=>void; getCurrentTime:()=>number; getDuration:()=>number; getPlayerState:()=>number };
+type YouTubePlayerApi = {
+  playVideo?: () => void;
+  pauseVideo?: () => void;
+  stopVideo?: () => void;
+  seekTo?: (seconds: number, allowSeekAhead: boolean) => void;
+  setVolume?: (volume: number) => void;
+  getCurrentTime?: () => number;
+  getDuration?: () => number;
+  getPlayerState?: () => number;
+};
 let youtubeApiPromise: Promise<void> | null = null;
 function loadYouTubePlayerApi() {
   if ((window as any).YT?.Player) return Promise.resolve();
@@ -44,29 +53,43 @@ function loadYouTubePlayerApi() {
 
 function YouTubeGlobalPlayback({ visible }: { visible: boolean }) {
   const { currentTrack, isPlaying, isExpanded, volume, syncExternalPlayback, externalEnded } = usePlayer();
-  const mount = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
   const player = useRef<YouTubePlayerApi | null>(null);
   const wantedPlaying = useRef(isPlaying);
   const endedVideo = useRef<string | null>(null);
   const videoId = currentTrack?.provider === "youtube" ? currentTrack.youtubeVideoId : undefined;
 
-  useEffect(() => { wantedPlaying.current = isPlaying; const instance=player.current;if(!instance)return;const state=instance.getPlayerState();if(isPlaying&&state!==1&&state!==3)instance.playVideo();if(!isPlaying&&state!==2&&state!==0)instance.pauseVideo(); }, [isPlaying]);
-  useEffect(() => { player.current?.setVolume(volume); }, [volume]);
   useEffect(() => {
-    if (!videoId || !mount.current) return;
+    wantedPlaying.current = isPlaying;
+    const instance = player.current;
+    if (!instance) return;
+    const state = typeof instance.getPlayerState === 'function' ? instance.getPlayerState() : -1;
+    if (isPlaying && state !== 1 && state !== 3) instance.playVideo?.();
+    if (!isPlaying && state !== 2 && state !== 0) instance.pauseVideo?.();
+  }, [isPlaying]);
+  useEffect(() => { player.current?.setVolume?.(volume); }, [volume]);
+  useEffect(() => {
+    if (!videoId || !frame.current) return;
     let cancelled=false; let poll=0;
-    const seek = (event: Event) => { const detail=(event as CustomEvent<{percent:number}>).detail;const instance=player.current;if(!instance)return;const mediaDuration=instance.getDuration();if(mediaDuration>0){instance.seekTo(Math.max(0,Math.min(mediaDuration,mediaDuration*detail.percent/100)),true);syncExternalPlayback(mediaDuration*detail.percent/100,mediaDuration);if(wantedPlaying.current)instance.playVideo();} };
+    const seek = (event: Event) => {
+      const detail=(event as CustomEvent<{percent:number}>).detail;
+      const instance=player.current;
+      if (!instance || typeof instance.getDuration !== 'function' || typeof instance.seekTo !== 'function') return;
+      const mediaDuration=Number(instance.getDuration()) || 0;
+      if(mediaDuration>0){const target=Math.max(0,Math.min(mediaDuration,mediaDuration*detail.percent/100));instance.seekTo(target,true);syncExternalPlayback(target,mediaDuration);if(wantedPlaying.current)instance.playVideo?.();}
+    };
     window.addEventListener('musicinsta:youtube-seek', seek);
     void loadYouTubePlayerApi().then(() => {
-      if(cancelled||!mount.current)return;
-      player.current?.destroy();
-      player.current=new (window as any).YT.Player(mount.current,{videoId,playerVars:{autoplay:1,controls:1,playsinline:1,rel:0,origin:window.location.origin},events:{onReady:(event:any)=>{event.target.setVolume(volume);if(wantedPlaying.current)event.target.playVideo();const duration=event.target.getDuration();syncExternalPlayback(event.target.getCurrentTime(),duration,wantedPlaying.current);},onStateChange:(event:any)=>{const state=Number(event.data);const duration=event.target.getDuration();syncExternalPlayback(event.target.getCurrentTime(),duration,state===1?true:state===2||state===0?false:undefined);if(state===1)endedVideo.current=null;if(state===0&&endedVideo.current!==videoId){endedVideo.current=videoId;externalEnded();}}}}) as YouTubePlayerApi;
-      poll=window.setInterval(()=>{const instance=player.current;if(!instance)return;const duration=instance.getDuration();if(duration>0)syncExternalPlayback(instance.getCurrentTime(),duration);},250);
+      if(cancelled||!frame.current)return;
+      const instance = new (window as any).YT.Player(frame.current,{events:{onReady:(event:any)=>{const target=event.target as YouTubePlayerApi;target.setVolume?.(volume);if(wantedPlaying.current)target.playVideo?.();const duration=Number(target.getDuration?.())||0;syncExternalPlayback(Number(target.getCurrentTime?.())||0,duration,wantedPlaying.current);},onStateChange:(event:any)=>{const target=event.target as YouTubePlayerApi;const state=Number(event.data);const duration=Number(target.getDuration?.())||0;syncExternalPlayback(Number(target.getCurrentTime?.())||0,duration,state===1?true:state===2||state===0?false:undefined);if(state===1)endedVideo.current=null;if(state===0&&endedVideo.current!==videoId){endedVideo.current=videoId;externalEnded();}}}}) as YouTubePlayerApi;
+      player.current=instance;
+      poll=window.setInterval(()=>{const active=player.current;if(!active||typeof active.getDuration!=='function'||typeof active.getCurrentTime!=='function')return;const mediaDuration=Number(active.getDuration())||0;if(mediaDuration>0)syncExternalPlayback(Number(active.getCurrentTime())||0,mediaDuration);},250);
     });
-    return()=>{cancelled=true;window.removeEventListener('musicinsta:youtube-seek',seek);window.clearInterval(poll);player.current?.destroy();player.current=null;};
+    return()=>{cancelled=true;window.removeEventListener('musicinsta:youtube-seek',seek);window.clearInterval(poll);player.current?.pauseVideo?.();player.current=null;};
   },[externalEnded,syncExternalPlayback,videoId]);
   if (!videoId) return null;
-  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-16 z-[60] aspect-video w-[calc(100%-3rem)] max-w-xl -translate-x-1/2 rounded-2xl sm:top-20 lg:max-w-2xl" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}><div key={videoId} ref={mount} className="h-full w-full" /></div>;
+  const src = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&autoplay=1&controls=1&playsinline=1&rel=0&origin=${encodeURIComponent(window.location.origin)}`;
+  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-1/2 z-[60] aspect-square w-[calc(100%-4rem)] max-w-sm -translate-x-1/2 -translate-y-[56%] rounded-2xl lg:aspect-video lg:max-w-2xl lg:-translate-y-[58%]" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}><iframe key={videoId} ref={frame} title={`${currentTrack?.title || 'YouTube'} video`} src={src} className="h-full w-full border-0" allow="autoplay; encrypted-media; picture-in-picture" /></div>;
 }
 
 function formatTime(seconds: number): string {
@@ -310,9 +333,9 @@ export function FullPlayer() {
               <img
                 src={currentTrack.coverArt}
                 alt=""
-                className="w-full h-full object-cover scale-110 blur-3xl opacity-30"
+                className="h-full w-full scale-110 object-cover opacity-50 blur-3xl saturate-150"
               />
-              <div className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/90 to-background" />
+              <div className="absolute inset-0 bg-gradient-to-b from-background/65 via-background/80 to-background" />
             </div>
 
             {/* Header */}
@@ -381,7 +404,7 @@ export function FullPlayer() {
               ) : (
                 <motion.div
                   className={cn(
-                    "player-artwork aspect-square w-full max-w-sm overflow-hidden rounded-2xl shadow-2xl lg:max-w-[30rem]",
+                    "player-artwork aspect-square w-full max-w-sm overflow-hidden rounded-2xl shadow-2xl lg:max-w-[25rem] xl:max-w-[27rem]",
                   )}
                   animate={{
                     scale: isPlaying ? 1 : 0.95,
@@ -393,7 +416,7 @@ export function FullPlayer() {
                   <img
                     src={currentTrack.coverArt}
                     alt={currentTrack.title}
-                    className="h-full w-full object-contain"
+                    className="h-full w-full object-cover"
                   />
                 </motion.div>
               )}

@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { Youtube, Play, ExternalLink, SquarePlus } from "lucide-react";
 import { API_BASE } from "@/config/api";
 import { useNavigate } from "react-router-dom";
+import { usePlayer } from "@/context/PlayerContext";
+import type { Artist, Track } from "@/types";
 
 interface YouTubeEmbedProps {
   channelUrl: string;
@@ -26,11 +28,13 @@ function buildEmbedUrl(url: string): string | null {
 
 export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
   const navigate = useNavigate();
+  const { openInMainPlayer } = usePlayer();
   const [isLoaded, setIsLoaded] = useState(false);
   const [iframeUrl, setIframeUrl] = useState<string | null>(() =>
     buildEmbedUrl(channelUrl),
   );
   const [resolveError, setResolveError] = useState("");
+  const [videos, setVideos] = useState<Array<{ id: string; title: string; artistOrChannel: string; thumbnail: string }>>([]);
 
   useEffect(() => {
     const direct = buildEmbedUrl(channelUrl);
@@ -63,6 +67,21 @@ export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
       });
     return () => controller.abort();
   }, [channelUrl]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(`${API_BASE}/youtube/channel/videos?url=${encodeURIComponent(channelUrl)}&max_results=12`, { signal: controller.signal })
+      .then(async response => { const value = await response.json(); if (!response.ok) throw new Error(value.detail || 'Videos unavailable'); setVideos(Array.isArray(value.videos) ? value.videos : []); })
+      .catch(error => { if (error.name !== 'AbortError') console.warn('YouTube channel video list unavailable', error); });
+    return () => controller.abort();
+  }, [channelUrl]);
+
+  const playVideo = (selected: typeof videos[number]) => {
+    const artist: Artist = { id: `youtube-channel-${selected.artistOrChannel}`, name: selected.artistOrChannel || artistName, username: selected.artistOrChannel || artistName, avatar: selected.thumbnail, coverImage: selected.thumbnail, bio: 'YouTube artist', location: 'YouTube', genres: [], isVerified: false, followers: 0, following: 0, tracks: videos.length };
+    const queue: Track[] = videos.map(video => ({ id: `youtube-${video.id}`, title: video.title, artist: { ...artist, id: `youtube-channel-${video.artistOrChannel}`, name: video.artistOrChannel || artistName }, coverArt: video.thumbnail, duration: 0, plays: 0, likes: 0, provider: 'youtube', youtubeVideoId: video.id, source: 'youtube' }));
+    const track = queue.find(item => item.youtubeVideoId === selected.id);
+    if (track) openInMainPlayer(track, queue);
+  };
 
   if (!iframeUrl) {
     return (
@@ -104,6 +123,8 @@ export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
           <ExternalLink className="w-3 h-3" />
         </a></div>
       </div>
+
+      {videos.length > 0 && <div><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Choose a channel video</p><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{videos.map(video => <button key={video.id} type="button" onClick={() => playVideo(video)} className="overflow-hidden rounded-xl border border-border bg-card text-left transition hover:border-primary/60"><div className="relative aspect-video overflow-hidden bg-muted"><img src={video.thumbnail} alt="" className="h-full w-full object-cover" /><span className="absolute inset-0 grid place-items-center bg-black/15 opacity-0 transition hover:opacity-100"><Play className="h-8 w-8 fill-white text-white" /></span></div><p className="line-clamp-2 p-2 text-xs font-medium">{video.title}</p></button>)}</div></div>}
 
       <motion.div
         initial={{ opacity: 0, y: 10 }}

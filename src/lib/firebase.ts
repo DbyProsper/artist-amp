@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { browserLocalPersistence, getAuth, setPersistence } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -24,6 +24,12 @@ console.debug('Firebase config', {
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
+// Make the intended long-lived session explicit. This prevents browsers from
+// falling back to session-only authentication after storage pressure or a
+// provider redirect.
+void setPersistence(auth, browserLocalPersistence).catch((error) =>
+  console.warn('Firebase local auth persistence could not be enabled', error),
+);
 // IndexedDB-backed persistence lets Firestore reuse documents between routes,
 // refreshes and browser sessions instead of downloading the same feed again.
 export const db = initializeFirestore(app, {

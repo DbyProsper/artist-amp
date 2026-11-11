@@ -37,6 +37,7 @@ interface Conversation {
 }
 
 function artistFromProfile(id: string, data: DocumentData): Artist {
+  const lastActive = data.last_active?.toDate?.() || null;
   return {
     id,
     name: data.name || "MusicInsta user",
@@ -50,6 +51,8 @@ function artistFromProfile(id: string, data: DocumentData): Artist {
     followers: 0,
     following: 0,
     tracks: 0,
+    lastActive,
+    isOnline: Boolean(data.is_online) && Boolean(lastActive && Date.now() - lastActive.getTime() < 120_000),
   };
 }
 
@@ -383,6 +386,7 @@ export default function MessagesPage() {
                   {conversation.unread}
                 </span>
               )}
+              <span className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-background ${conversation.artist.isOnline ? 'bg-green-500' : 'bg-muted-foreground/50'}`} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1">
@@ -399,6 +403,7 @@ export default function MessagesPage() {
               <p className="truncate text-sm text-muted-foreground">
                 {conversation.lastMessage}
               </p>
+              <p className="text-[11px] text-muted-foreground/80">{conversation.artist.isOnline ? 'Active now' : conversation.artist.lastActive ? `Last active ${formatTimeAgo(conversation.artist.lastActive)}` : 'Offline'}</p>
             </div>
             <span className="text-xs text-muted-foreground">
               {formatTimeAgo(conversation.timestamp)}

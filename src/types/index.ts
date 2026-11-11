@@ -11,6 +11,8 @@ export interface Artist {
   followers: number;
   following: number;
   tracks: number;
+  isOnline?: boolean;
+  lastActive?: Date | null;
   socialLinks?: {
     youtube?: string;
     spotify?: string;
