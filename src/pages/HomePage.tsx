@@ -194,9 +194,11 @@ export default function HomePage() {
         realArtists.filter(
           (artist) =>
             artist.id !== "musicinsta-official" &&
-            artist.username !== "musicinsta",
+            artist.username !== "musicinsta" &&
+            !artist.id.startsWith('youtube-channel-') &&
+            artist.location !== 'YouTube',
         ),
-        catalog,
+        catalog.filter(track => track.provider !== 'youtube'),
         listeningHistory,
         preferredGenres,
       ).slice(0, 8),

@@ -13,6 +13,7 @@ export interface Notification {
   from_profile_id: string | null;
   track_id: string | null;
   post_id: string | null;
+  project_id: string | null;
   from_profile?: {
     id: string;
     username: string | null;
@@ -71,6 +72,7 @@ export function useRealTimeNotifications() {
           from_profile_id: data.from_profile_id,
           track_id: data.track_id,
           post_id: data.post_id,
+          project_id: data.project_id,
           from_profile: fromProfile,
         });
       }

@@ -12,8 +12,8 @@ export interface YouTubeMedia {
   genre?: string;
 }
 
-const YOUTUBE_HISTORY_CACHE_KEY = 'musicinsta:youtube-history:v2';
 const YOUTUBE_HISTORY_CACHE_MS = 30 * 60 * 1000;
+const youtubeHistoryCacheKey = () => `musicinsta:youtube-history:v3:${auth.currentUser?.uid || 'guest'}`;
 
 export function inferYouTubeGenre(item: Pick<YouTubeMedia, 'title' | 'artistOrChannel' | 'genre'>): string {
   if (item.genre && item.genre !== 'Music') return item.genre;
@@ -82,20 +82,20 @@ export function searchYouTube(query: string) {
 
 export function loadYouTubeHistory() {
   try {
-    const cached = JSON.parse(localStorage.getItem(YOUTUBE_HISTORY_CACHE_KEY) || 'null');
+    const cached = JSON.parse(localStorage.getItem(youtubeHistoryCacheKey()) || 'null');
     if (cached?.savedAt && Date.now() - cached.savedAt < YOUTUBE_HISTORY_CACHE_MS && Array.isArray(cached.results)) return Promise.resolve({ results: cached.results, cached: true } as SearchResponse);
   } catch { /* refresh below */ }
   return api<SearchResponse>('/api/discover/history').then(response => {
-    try { localStorage.setItem(YOUTUBE_HISTORY_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), results: response.results || [] })); } catch { /* storage can be unavailable */ }
+    try { localStorage.setItem(youtubeHistoryCacheKey(), JSON.stringify({ savedAt: Date.now(), results: response.results || [] })); } catch { /* storage can be unavailable */ }
     return response;
   });
 }
 
 export function saveYouTubeHistory(item: YouTubeMedia) {
   try {
-    const cached = JSON.parse(localStorage.getItem(YOUTUBE_HISTORY_CACHE_KEY) || 'null');
+    const cached = JSON.parse(localStorage.getItem(youtubeHistoryCacheKey()) || 'null');
     const results = Array.isArray(cached?.results) ? cached.results.filter((value: YouTubeMedia) => value.id !== item.id) : [];
-    localStorage.setItem(YOUTUBE_HISTORY_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), results: [{ ...item, genre: inferYouTubeGenre(item) }, ...results] }));
+    localStorage.setItem(youtubeHistoryCacheKey(), JSON.stringify({ savedAt: Date.now(), results: [{ ...item, genre: inferYouTubeGenre(item) }, ...results] }));
   } catch { /* best effort */ }
   return api<{ saved: boolean }>('/api/discover/history', { method: 'POST', body: JSON.stringify({ ...item, genre: inferYouTubeGenre(item) }) });
 }

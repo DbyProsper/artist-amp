@@ -22,7 +22,10 @@ export function NotificationsPanel({ isOpen, onClose }: Props) {
 
   const openNotification = (notification: Notification) => {
     void markAsRead(notification.id);
-    if (notification.type === 'message') navigate('/messages');
+    if (notification.type === 'daw_collaboration' && notification.project_id) {
+      localStorage.setItem('musicinsta_active_daw_project', notification.project_id);
+      navigate(`/studio/daw?project=${encodeURIComponent(notification.project_id)}`);
+    } else if (notification.type === 'message') navigate('/messages');
     else if (notification.from_profile_id) navigate(`/user/${notification.from_profile_id}`);
     onClose();
   };

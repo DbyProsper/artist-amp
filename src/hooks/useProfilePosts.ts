@@ -132,6 +132,8 @@ export function useProfilePosts(profileId: string | undefined) {
               track: postTrack,
               imageUrl: post.image_url || undefined,
               videoUrl: post.video_url || undefined,
+              youtubeVideoId: post.youtube_video_id || undefined,
+              plays: Number(post.plays) || 0,
               caption: post.caption || '',
               likes: post.likes || 0,
               comments: post.comments || 0,

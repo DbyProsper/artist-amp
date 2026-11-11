@@ -11,8 +11,10 @@ export function VideoThumbnail({ src, poster, alt = 'Video thumbnail', className
   const videoRef = useRef<HTMLVideoElement>(null);
   const [ready, setReady] = useState(false);
 
+  const youtubeId = src.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{6,})/)?.[1];
   return (
     <div className={`relative overflow-hidden bg-black ${className}`} aria-label={alt}>
+      {youtubeId ? <img src={poster || `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`} alt={alt} className="h-full w-full object-cover" /> : <>
       <video
         ref={videoRef}
         src={src}
@@ -31,6 +33,7 @@ export function VideoThumbnail({ src, poster, alt = 'Video thumbnail', className
       />
       {!ready && poster && <img src={poster} alt="" className="absolute inset-0 h-full w-full object-cover" />}
       {!ready && !poster && <div className="absolute inset-0 animate-pulse bg-muted" />}
+      </>}
     </div>
   );
 }

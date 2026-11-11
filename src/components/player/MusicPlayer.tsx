@@ -29,44 +29,44 @@ import { buildTimedLyrics, hasAuthoredTimestamps } from "@/lib/timedLyrics";
 import { ShareTrackDialog } from "@/components/social/ShareTrackDialog";
 import { useNavigate } from "react-router-dom";
 
+type YouTubePlayerApi = { destroy:()=>void; playVideo:()=>void; pauseVideo:()=>void; seekTo:(seconds:number,allowSeekAhead:boolean)=>void; setVolume:(volume:number)=>void; getCurrentTime:()=>number; getDuration:()=>number; getPlayerState:()=>number };
+let youtubeApiPromise: Promise<void> | null = null;
+function loadYouTubePlayerApi() {
+  if ((window as any).YT?.Player) return Promise.resolve();
+  if (youtubeApiPromise) return youtubeApiPromise;
+  youtubeApiPromise = new Promise(resolve => {
+    const previous = (window as any).onYouTubeIframeAPIReady;
+    (window as any).onYouTubeIframeAPIReady = () => { previous?.(); resolve(); };
+    if (!document.querySelector('script[data-musicinsta-youtube-api]')) { const script=document.createElement('script');script.src='https://www.youtube.com/iframe_api';script.dataset.musicinstaYoutubeApi='true';document.head.appendChild(script); }
+  });
+  return youtubeApiPromise;
+}
+
 function YouTubeGlobalPlayback({ visible }: { visible: boolean }) {
   const { currentTrack, isPlaying, isExpanded, volume, syncExternalPlayback, externalEnded } = usePlayer();
-  const frame = useRef<HTMLIFrameElement>(null);
+  const mount = useRef<HTMLDivElement>(null);
+  const player = useRef<YouTubePlayerApi | null>(null);
+  const wantedPlaying = useRef(isPlaying);
   const endedVideo = useRef<string | null>(null);
   const videoId = currentTrack?.provider === "youtube" ? currentTrack.youtubeVideoId : undefined;
-  const send = (func: string, args: unknown[] = []) => frame.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func, args }), "*");
 
+  useEffect(() => { wantedPlaying.current = isPlaying; const instance=player.current;if(!instance)return;const state=instance.getPlayerState();if(isPlaying&&state!==1&&state!==3)instance.playVideo();if(!isPlaying&&state!==2&&state!==0)instance.pauseVideo(); }, [isPlaying]);
+  useEffect(() => { player.current?.setVolume(volume); }, [volume]);
   useEffect(() => {
-    if (!videoId) return;
-    const handle = (event: MessageEvent) => {
-      if (!String(event.origin).includes("youtube")) return;
-      let payload: any;
-      try { payload = typeof event.data === "string" ? JSON.parse(event.data) : event.data; } catch { return; }
-      if (payload?.event === "infoDelivery") {
-        const info = payload.info || {};
-        if (typeof info.currentTime === "number" || typeof info.duration === "number") syncExternalPlayback(Number(info.currentTime) || 0, Number(info.duration) || 0, typeof info.playerState === "number" ? info.playerState === 1 : undefined);
-        if (info.playerState === 1) endedVideo.current = null;
-        if (info.playerState === 0 && endedVideo.current !== videoId) { endedVideo.current = videoId || null; externalEnded(); }
-      }
-    };
-    window.addEventListener("message", handle);
-    const seek = (event: Event) => { const value = (event as CustomEvent<{ percent: number; duration: number }>).detail; send("seekTo", [(value.percent / 100) * value.duration, true]); };
+    if (!videoId || !mount.current) return;
+    let cancelled=false; let poll=0;
+    const seek = (event: Event) => { const detail=(event as CustomEvent<{percent:number}>).detail;const instance=player.current;if(!instance)return;const mediaDuration=instance.getDuration();if(mediaDuration>0){instance.seekTo(Math.max(0,Math.min(mediaDuration,mediaDuration*detail.percent/100)),true);syncExternalPlayback(mediaDuration*detail.percent/100,mediaDuration);if(wantedPlaying.current)instance.playVideo();} };
     window.addEventListener('musicinsta:youtube-seek', seek);
-    const listen = () => frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'musicinsta-global-player' }), '*');
-    listen();
-    const poll = window.setInterval(() => { listen(); send("getCurrentTime"); send("getDuration"); }, 500);
-    return () => { window.removeEventListener("message", handle); window.removeEventListener('musicinsta:youtube-seek', seek); window.clearInterval(poll); };
-  }, [externalEnded, syncExternalPlayback, videoId]);
-
-  useEffect(() => {
-    if (!videoId) return;
-    send(isPlaying ? "playVideo" : "pauseVideo");
-  }, [isPlaying, videoId]);
-  useEffect(() => { if (videoId) send("setVolume", [volume]); }, [videoId, volume]);
+    void loadYouTubePlayerApi().then(() => {
+      if(cancelled||!mount.current)return;
+      player.current?.destroy();
+      player.current=new (window as any).YT.Player(mount.current,{videoId,playerVars:{autoplay:1,controls:1,playsinline:1,rel:0,origin:window.location.origin},events:{onReady:(event:any)=>{event.target.setVolume(volume);if(wantedPlaying.current)event.target.playVideo();const duration=event.target.getDuration();syncExternalPlayback(event.target.getCurrentTime(),duration,wantedPlaying.current);},onStateChange:(event:any)=>{const state=Number(event.data);const duration=event.target.getDuration();syncExternalPlayback(event.target.getCurrentTime(),duration,state===1?true:state===2||state===0?false:undefined);if(state===1)endedVideo.current=null;if(state===0&&endedVideo.current!==videoId){endedVideo.current=videoId;externalEnded();}}}}) as YouTubePlayerApi;
+      poll=window.setInterval(()=>{const instance=player.current;if(!instance)return;const duration=instance.getDuration();if(duration>0)syncExternalPlayback(instance.getCurrentTime(),duration);},250);
+    });
+    return()=>{cancelled=true;window.removeEventListener('musicinsta:youtube-seek',seek);window.clearInterval(poll);player.current?.destroy();player.current=null;};
+  },[externalEnded,syncExternalPlayback,videoId]);
   if (!videoId) return null;
-  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-20 z-[60] aspect-video w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-2xl sm:top-24" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}>
-    <iframe ref={frame} key={videoId} onLoad={() => { frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'musicinsta-global-player' }), '*'); send("setVolume", [volume]); if (isPlaying) send("playVideo"); }} className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&controls=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`} title={currentTrack?.title || "YouTube music"} allow="autoplay; encrypted-media; picture-in-picture" />
-  </div>;
+  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-16 z-[60] aspect-video w-[calc(100%-3rem)] max-w-xl -translate-x-1/2 rounded-2xl sm:top-20 lg:max-w-2xl" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}><div key={videoId} ref={mount} className="h-full w-full" /></div>;
 }
 
 function formatTime(seconds: number): string {
@@ -393,7 +393,7 @@ export function FullPlayer() {
                   <img
                     src={currentTrack.coverArt}
                     alt={currentTrack.title}
-                    className="w-full h-full object-cover"
+                    className="h-full w-full object-contain"
                   />
                 </motion.div>
               )}

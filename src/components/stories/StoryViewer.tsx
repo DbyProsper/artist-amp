@@ -4,11 +4,10 @@ import { X, Heart, ChevronLeft, ChevronRight, BadgeCheck, MessageCircle, Pause, 
 import { Story } from '@/types';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { toast } from 'sonner';
-import { addDoc, collection, deleteDoc, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { PostCommentsModal } from '@/components/feed/PostCommentsModal';
 import { formatDistanceToNow } from 'date-fns';
 import { aspectRatioValue, socialFilter } from '@/types/socialEditor';
+import { loadStoryState, markStoryViewed, persistStoryLike } from '@/services/backendPersistenceService';
 
 interface StoryViewerProps { stories: Story[]; initialIndex: number; onClose: () => void; }
 
@@ -24,7 +23,7 @@ export function StoryViewer({ stories, initialIndex, onClose }: StoryViewerProps
   const videoRef = useRef<HTMLVideoElement>(null);
   const musicRef = useRef<HTMLAudioElement>(null);
   const clipEndRef = useRef(MAX_STORY_DURATION);
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const currentStory = stories[currentIndex];
   const musicStart = Math.max(0, Number(currentStory?.attachedMusicData?.clipStart) || 0);
   const musicEnd = Math.max(musicStart + 15, Math.min(musicStart + MAX_STORY_DURATION, Number(currentStory?.attachedMusicData?.clipEnd) || musicStart + 15));
@@ -59,8 +58,14 @@ export function StoryViewer({ stories, initialIndex, onClose }: StoryViewerProps
 
   useEffect(() => {
     if (!user || !currentStory) { setIsLiked(false); return; }
-    getDoc(doc(db, 'story_likes', `${currentStory.id}_${user.uid}`)).then(snapshot => setIsLiked(snapshot.exists())).catch(() => undefined);
+    loadStoryState(currentStory.id).then(state => setIsLiked(state.liked)).catch(() => undefined);
   }, [currentStory, user]);
+
+  useEffect(() => {
+    if (!user || !currentStory) return;
+    window.dispatchEvent(new CustomEvent('musicinsta:story-viewed', { detail: { storyId: currentStory.id } }));
+    void markStoryViewed(currentStory.id, profile?.id || user.uid, profile?.name || user.displayName || 'MusicInsta user').catch(() => undefined);
+  }, [currentStory?.id, profile?.id, profile?.name, user]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -79,12 +84,9 @@ export function StoryViewer({ stories, initialIndex, onClose }: StoryViewerProps
     if (!user) { toast.error('Sign in to like stories'); return; }
     const nextLiked = !isLiked;
     setIsLiked(nextLiked);
-    const likeRef = doc(db, 'story_likes', `${currentStory.id}_${user.uid}`);
-    if (nextLiked) {
-      await setDoc(likeRef, { story_id: currentStory.id, user_id: user.uid, created_at: serverTimestamp() });
-      if (currentStory.artist.id !== user.uid) await addDoc(collection(db, 'notifications'), { profile_id: currentStory.artist.id, from_profile_id: user.uid, post_id: currentStory.id, type: 'like', message: 'liked your story', read: false, created_at: serverTimestamp() });
-      toast.success(`${currentStory.artist.name} was notified that you liked their story! ❤️`);
-    } else await deleteDoc(likeRef);
+    if (nextLiked) toast.success('Story liked.');
+    try { await persistStoryLike(currentStory.id, nextLiked, profile?.id || user.uid, profile?.name || user.displayName || 'MusicInsta user'); }
+    catch { setIsLiked(!nextLiked); toast.error('The story like could not be saved.'); }
   };
 
   if (!currentStory) return null;

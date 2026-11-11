@@ -75,6 +75,11 @@ export function removePostComment(postId: string, commentId: string, profileId: 
   return mutate<{ deleted: boolean }>(`/api/social/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}?profile_id=${encodeURIComponent(profileId)}`, 'DELETE');
 }
 
+export function loadViewedStories() { return request<{ storyIds: string[] }>('/api/social/stories/viewed'); }
+export function loadStoryState(storyId: string) { return request<{ liked: boolean; viewed: boolean; likes: number; views: number }>(`/api/social/stories/${encodeURIComponent(storyId)}/state`); }
+export function markStoryViewed(storyId: string, actorProfileId: string, actorName: string) { return request<{ viewed: boolean }>(`/api/social/stories/${encodeURIComponent(storyId)}/view`, { actorProfileId, actorName }); }
+export function persistStoryLike(storyId: string, liked: boolean, actorProfileId: string, actorName: string) { return request<{ liked: boolean; likes: number }>(`/api/social/stories/${encodeURIComponent(storyId)}/like`, { liked, actorProfileId, actorName }); }
+
 export function persistPostPlay(postId: string) {
   return request<{ saved: boolean }>(`/api/social/posts/${encodeURIComponent(postId)}/play`, {});
 }

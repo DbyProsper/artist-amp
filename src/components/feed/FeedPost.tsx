@@ -55,7 +55,7 @@ export function FeedPost({ post }: FeedPostProps) {
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [playlists, setPlaylists] = useState<Array<{ id: string; name: string }>>([]);
   const [videoSpeed, setVideoSpeed] = useState(1);
-  const [playCount, setPlayCount] = useState(post.plays ?? post.track?.plays ?? 0);
+  const [playCount, setPlayCount] = useState(post.youtubeVideoId ? (post.plays ?? 0) : (post.track?.plays ?? post.plays ?? 0));
   const [showNewBadge, setShowNewBadge] = useState(() => Boolean(
     (post.isNewPost || post.isNewRelease) &&
     Date.now() - post.createdAt.getTime() < 24 * 60 * 60 * 1000 &&
@@ -112,7 +112,7 @@ export function FeedPost({ post }: FeedPostProps) {
   const isCurrentTrack = post.track && currentTrack?.id === post.track.id;
 
   useEffect(() => { setIsLiked(Boolean(post.isLiked)); setLikes(post.likes); }, [post.isLiked, post.likes]);
-  useEffect(() => { setCommentCount(post.comments); setPlayCount(post.plays ?? post.track?.plays ?? 0); }, [post.comments, post.plays, post.track?.plays]);
+  useEffect(() => { setCommentCount(post.comments); setPlayCount(post.youtubeVideoId ? (post.plays ?? 0) : (post.track?.plays ?? post.plays ?? 0)); }, [post.comments, post.plays, post.track?.plays, post.youtubeVideoId]);
   useEffect(() => {
     const update = (event: Event) => { const detail = (event as CustomEvent<{ postId: string; count: number }>).detail; if (detail?.postId === post.id) setCommentCount(detail.count); };
     window.addEventListener('musicinsta:post-comment-count', update);

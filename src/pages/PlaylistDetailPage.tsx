@@ -86,7 +86,6 @@ export default function PlaylistDetailPage() {
   const [availableTracks, setAvailableTracks] = useState<Track[]>([]);
   const [showAddTracks, setShowAddTracks] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [selectedYouTube, setSelectedYouTube] = useState<Track | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -197,6 +196,8 @@ export default function PlaylistDetailPage() {
               likes: catalogTrack.likes,
               user_id: catalogTrack.artist.id,
               created_at: catalogTrack.createdAt || new Date(),
+              provider: catalogTrack.provider === 'youtube' ? 'youtube' : undefined,
+              video_id: catalogTrack.youtubeVideoId,
             } as Track,
           } as PlaylistTrack;
         }
@@ -325,12 +326,8 @@ export default function PlaylistDetailPage() {
   };
 
   const playPlaylistTrack = (selected: Track) => {
-    if (selected.provider === "youtube" && selected.video_id) {
-      setSelectedYouTube(selected);
-      return;
-    }
     const queue = tracks
-      .filter((item) => Boolean(item.track.audio_url))
+      .filter((item) => Boolean(item.track.audio_url || (item.track.provider === 'youtube' && item.track.video_id)))
       .map(
         (item) =>
           ({
@@ -355,6 +352,11 @@ export default function PlaylistDetailPage() {
             plays: item.track.plays || 0,
             likes: item.track.likes || 0,
             audioUrl: item.track.audio_url || undefined,
+            provider: item.track.provider,
+            youtubeVideoId: item.track.video_id,
+            source: item.track.provider === 'youtube' ? 'youtube' : 'firestore',
+            sourceCollection: item.track.provider === 'youtube' ? 'external_media' : 'tracks',
+            sourceDocumentId: item.track.provider === 'youtube' ? item.track.id : item.track.id,
           }) satisfies PlayerTrack,
       );
     const target = queue.find((item) => item.id === selected.id);
@@ -537,19 +539,6 @@ export default function PlaylistDetailPage() {
           </div>
         )}
       </div>
-
-      {/* Add Tracks Modal */}
-      {selectedYouTube?.video_id && (
-        <div className="fixed inset-0 z-[140] grid place-items-center bg-black/85 p-4" onClick={() => setSelectedYouTube(null)}>
-          <div className="w-full max-w-5xl" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-2 flex items-center justify-between gap-3 text-white">
-              <div className="min-w-0"><p className="truncate font-semibold">{selectedYouTube.title}</p><p className="truncate text-sm text-white/60">{selectedYouTube.artist}</p></div>
-              <button type="button" aria-label="Close player" onClick={() => setSelectedYouTube(null)}>✕</button>
-            </div>
-            <div className="aspect-video overflow-hidden rounded-xl bg-black"><iframe className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(selectedYouTube.video_id)}?autoplay=1&playsinline=1`} title={selectedYouTube.title} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen /></div>
-          </div>
-        </div>
-      )}
 
       {showAddTracks && (
         <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm">

@@ -29,7 +29,7 @@ interface DawTrack {
   compressorAmount?: number; pitchEnabled?: boolean; pitchKey?: string; pitchScale?: string; pitchAmount?: number;
 }
 interface ProjectSummary { id: string; name: string; updatedAt: string; trackCount: number; ownerId: string; editorIds: string[] }
-interface CollaboratorProfile { id: string; name: string; username: string; avatarUrl: string }
+interface CollaboratorProfile { id: string; authUid: string; name: string; username: string; avatarUrl: string }
 interface ActiveNodes { source: AudioBufferSourceNode; harmonySource?: AudioBufferSourceNode; gain: GainNode; pan: StereoPannerNode; eq: BiquadFilterNode[]; compressor: DynamicsCompressorNode; compressorWet: GainNode; delay: DelayNode; delayWet: GainNode; delayFeedback: GainNode; reverbWet: GainNode }
 
 const TRACK_COLORS = ['#ec4899', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444'];
@@ -331,6 +331,15 @@ export default function StudioDawPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Auth is restored asynchronously. A brand-new session can therefore be
+  // created while the temporary local owner is still active. Promote only
+  // unsaved/local sessions to the authenticated owner; shared projects keep
+  // their real owner unchanged.
+  useEffect(() => {
+    if (!user || (projectOwnerId !== 'local' && projectOwnerId)) return;
+    setProjectOwnerId(user.uid);
+  }, [projectOwnerId, user]);
+
   useEffect(() => {
     if (!loaded || applyingRemoteRef.current) return;
     if (baselineProjectIdRef.current !== projectId || baselineSignatureRef.current === null) {
@@ -347,8 +356,9 @@ export default function StudioDawPage() {
     const timer = window.setTimeout(async () => {
       setSaving(true);
       const now = new Date().toISOString();
+      const cloudOwnerId = projectOwnerId === 'local' && user ? user.uid : projectOwnerId;
       const project: StoredDawProject = {
-        id: projectId, ownerId, cloudOwnerId: projectOwnerId, editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
+        id: projectId, ownerId, cloudOwnerId, editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
         tracks: tracks.map(({ buffer: _buffer, sourceBlob, ...track }) => ({ ...track, blob: sourceBlob })),
         createdAt: projects.find(item => item.id === projectId)?.updatedAt || now, updatedAt: now,
       };
@@ -366,7 +376,7 @@ export default function StudioDawPage() {
           if (addedCloudUrls) setTracks(current => current.map(track => cloudReadyTracks.find(item => item.id === track.id) || track));
           const cloudTracks = withoutUndefined(cloudReadyTracks.map(({ buffer: _buffer, sourceBlob: _blob, ...track }) => track));
           await setDoc(doc(db, 'studio_projects', projectId), {
-            owner_id: projectOwnerId, editor_ids: editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
+            owner_id: cloudOwnerId, editor_ids: editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
             tracks: cloudTracks, track_count: cloudTracks.length, version: 2,
             created_at: projects.find(item => item.id === projectId)?.updatedAt || serverTimestamp(), updated_at: serverTimestamp(), updated_by: user.uid,
           }, { merge: true });
@@ -412,18 +422,18 @@ export default function StudioDawPage() {
     if (!collaboratorsOpen || !user) return;
     void getDocs(collection(db, 'profiles')).then(snapshot => setCollaboratorProfiles(snapshot.docs.filter(item => item.id !== user.uid).map(item => {
       const value = item.data();
-      return { id: item.id, name: String(value.name || value.username || 'MusicInsta user'), username: String(value.username || ''), avatarUrl: String(value.avatar_url || '') };
+      return { id: item.id, authUid: String(value.user_id || value.auth_user_id || value.uid || item.id), name: String(value.name || value.username || 'MusicInsta user'), username: String(value.username || ''), avatarUrl: String(value.avatar_url || '') };
     }))).catch(() => toast.error('Users could not be loaded.'));
   }, [collaboratorsOpen, user]);
 
   const inviteCollaborator = async (collaborator: CollaboratorProfile) => {
-    if (!user || projectOwnerId !== user.uid) return;
+    if (!user || (projectOwnerId !== user.uid && projectOwnerId !== 'local')) return;
     const projectRef = doc(db, 'studio_projects', projectId);
     const snapshot = await getDoc(projectRef);
     if (!snapshot.exists()) { toast.error('Make one change and wait for this project to save before inviting an editor.'); return; }
-    await setDoc(projectRef, { editor_ids: arrayUnion(collaborator.id), updated_at: serverTimestamp(), updated_by: user.uid }, { merge: true });
-    setEditorIds(current => current.includes(collaborator.id) ? current : [...current, collaborator.id]);
-    await setDoc(doc(collection(db, 'notifications')), { profile_id: collaborator.id, from_profile_id: user.uid, type: 'daw_collaboration', message: `${profile?.name || user.displayName || 'A MusicInsta artist'} invited you to edit “${projectName}”.`, project_id: projectId, read: false, created_at: serverTimestamp() });
+    await setDoc(projectRef, { editor_ids: arrayUnion(collaborator.authUid), updated_at: serverTimestamp(), updated_by: user.uid }, { merge: true });
+    setEditorIds(current => current.includes(collaborator.authUid) ? current : [...current, collaborator.authUid]);
+    await setDoc(doc(collection(db, 'notifications')), { profile_id: collaborator.authUid, target_profile_id: collaborator.id, from_profile_id: user.uid, type: 'daw_collaboration', message: `${profile?.name || user.displayName || 'A MusicInsta artist'} invited you to edit “${projectName}”.`, project_id: projectId, read: false, created_at: serverTimestamp() });
     toast.success(`${collaborator.name} can now edit this project.`);
   };
 
@@ -459,6 +469,13 @@ export default function StudioDawPage() {
     try { await addDecodedTrack(await decodeBlob(blob), blob, name, offset); }
     catch { toast.error('This audio could not be decoded. Try WAV, MP3, M4A, or OGG.'); }
   }, [addDecodedTrack, decodeBlob]);
+
+  useEffect(() => {
+    const requestedProject = searchParams.get('project');
+    if (!requestedProject || !loaded || requestedProject === projectId) return;
+    localStorage.setItem('musicinsta_active_daw_project', requestedProject);
+    void loadProject(requestedProject);
+  }, [loadProject, loaded, projectId, searchParams]);
 
   useEffect(() => {
     const key = searchParams.get('importEnhanced');
@@ -864,7 +881,7 @@ export default function StudioDawPage() {
           <Input aria-label="Project name" value={projectName} onChange={event => setProjectName(event.target.value)} className="min-w-[190px] flex-1 sm:max-w-sm" />
           <span className="flex items-center gap-1 text-xs text-muted-foreground"><Save className="h-3.5 w-3.5" />{!loaded ? 'Loading project…' : saving ? 'Saving…' : hasUserChanges ? 'Unsaved changes' : user ? 'Saved locally and in the cloud' : 'Saved on this device'}</span>
           <Button variant="outline" onClick={() => setProjectsOpen(true)}><FolderOpen className="mr-2 h-4 w-4" />Projects</Button>
-          {user && projectOwnerId === user.uid && <Button variant="outline" onClick={() => setCollaboratorsOpen(true)}><Users className="mr-2 h-4 w-4" />Collaborators</Button>}
+          {user && (projectOwnerId === user.uid || projectOwnerId === 'local') && <Button variant="outline" onClick={() => setCollaboratorsOpen(true)}><Users className="mr-2 h-4 w-4" />Collaborators</Button>}
           <Button variant="outline" onClick={() => { setBeatOpen(value => !value); setBeatMode('choice'); }}><Sparkles className="mr-2 h-4 w-4" />Beat maker</Button>
           <Button variant="outline" onClick={() => void createPostFromMix()} disabled={!tracks.length}><Send className="mr-2 h-4 w-4" />New post</Button>
           <Button onClick={() => void exportMix('wav')} disabled={!tracks.length || Boolean(exportState)}>{exportState?.format === 'wav' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}{exportState?.format === 'wav' ? `${exportState.progress}%` : 'WAV'}</Button>
@@ -875,7 +892,7 @@ export default function StudioDawPage() {
 
       {projectsOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setProjectsOpen(false)}><div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex items-center justify-between"><div><h2 className="text-xl font-bold">DAW projects</h2><p className="text-sm text-muted-foreground">Your projects and projects shared with you stay available across devices.</p></div><Button onClick={newProject}><Plus className="mr-2 h-4 w-4" />New project</Button></div><div className="space-y-2">{projects.map(project => <div key={project.id} className={`flex items-center gap-3 rounded-xl border p-3 ${project.id === projectId ? 'border-primary bg-primary/5' : 'border-border'}`}><button className="min-w-0 flex-1 text-left" onClick={() => void loadProject(project.id)}><p className="truncate font-semibold">{project.name}</p><p className="text-xs text-muted-foreground">{project.trackCount} tracks · {new Date(project.updatedAt).toLocaleString()}{user && project.ownerId !== user.uid ? ' · Shared with you' : ''}</p></button>{!user || project.ownerId === user.uid ? <Button variant="ghost" size="icon" aria-label={`Delete ${project.name}`} onClick={() => void removeProject(project)}><Trash2 className="h-4 w-4" /></Button> : null}</div>)}{!projects.length && <p className="py-8 text-center text-muted-foreground">No saved projects yet.</p>}</div></div></div>}
 
-      {collaboratorsOpen && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4" onClick={() => setCollaboratorsOpen(false)}><div className="max-h-[82vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">Project collaborators</h2><p className="text-sm text-muted-foreground">Invite MusicInsta users to edit this project. Changes synchronize in real time.</p></div><Button variant="ghost" size="icon" onClick={() => setCollaboratorsOpen(false)}><X className="h-4 w-4" /></Button></div><Input value={collaboratorSearch} onChange={event => setCollaboratorSearch(event.target.value)} placeholder="Search users by name or username" /><div className="mt-4 space-y-2">{visibleCollaborators.map(person => { const invited = editorIds.includes(person.id); return <div key={person.id} className="flex items-center gap-3 rounded-xl border border-border p-3"><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-muted">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <Users className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><p className="truncate font-medium">{person.name}</p><p className="truncate text-xs text-muted-foreground">{person.username ? `@${person.username.replace(/^@/, '')}` : 'MusicInsta user'}</p></div><Button size="sm" variant={invited ? 'outline' : 'default'} onClick={() => void (invited ? removeCollaborator(person.id) : inviteCollaborator(person))}>{invited ? <UserMinus className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}{invited ? 'Remove' : 'Invite'}</Button></div>; })}</div></div></div>}
+      {collaboratorsOpen && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4" onClick={() => setCollaboratorsOpen(false)}><div className="max-h-[82vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">Project collaborators</h2><p className="text-sm text-muted-foreground">Invite MusicInsta users to edit this project. Changes synchronize in real time.</p></div><Button variant="ghost" size="icon" onClick={() => setCollaboratorsOpen(false)}><X className="h-4 w-4" /></Button></div><Input value={collaboratorSearch} onChange={event => setCollaboratorSearch(event.target.value)} placeholder="Search users by name or username" /><div className="mt-4 space-y-2">{visibleCollaborators.map(person => { const invited = editorIds.includes(person.authUid); return <div key={person.id} className="flex items-center gap-3 rounded-xl border border-border p-3"><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-muted">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <Users className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><p className="truncate font-medium">{person.name}</p><p className="truncate text-xs text-muted-foreground">{person.username ? `@${person.username.replace(/^@/, '')}` : 'MusicInsta user'}</p></div><Button size="sm" variant={invited ? 'outline' : 'default'} onClick={() => void (invited ? removeCollaborator(person.authUid) : inviteCollaborator(person))}>{invited ? <UserMinus className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}{invited ? 'Remove' : 'Invite'}</Button></div>; })}</div></div></div>}
 
       {beatOpen && <section className="mx-auto mt-4 max-w-[1550px] rounded-2xl border border-border bg-card p-4">
         {beatMode === 'choice' && <div><h2 className="text-lg font-bold">Create a beat</h2><p className="mt-1 text-sm text-muted-foreground">Build the rhythm and melody yourself, or describe a beat for MusicInsta AI.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><button onClick={() => setBeatMode('manual')} className="rounded-2xl border border-border p-5 text-left transition hover:border-primary"><SlidersHorizontal className="mb-3 h-6 w-6 text-primary" /><p className="font-semibold">Manual beat maker</p><p className="mt-1 text-sm text-muted-foreground">Program drums and a five-note melody on the 16-step sequencer.</p></button><button onClick={() => setBeatMode('ai')} className="rounded-2xl border border-border p-5 text-left transition hover:border-primary"><Sparkles className="mb-3 h-6 w-6 text-primary" /><p className="font-semibold">Generate with AI</p><p className="mt-1 text-sm text-muted-foreground">Use the same MusicInsta beat generator, preview here, then send the result to the playlist.</p></button></div></div>}

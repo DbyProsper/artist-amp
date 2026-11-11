@@ -14,6 +14,7 @@ import { useUserRole } from "@/hooks/useUserRole";
 import type { QuotaKey } from "@/lib/planLimits";
 import { BrandReveal } from "@/components/branding/BrandReveal";
 import { GlobalCallManager } from "@/components/chat/GlobalCallManager";
+import { DawCollaborationInviteManager } from "@/components/studio/DawCollaborationInviteManager";
 
 const LandingPage = lazy(() => import('./pages/LandingPage'));
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -186,6 +187,7 @@ const AppRoutes = () => {
       <ClearGuestPlayerOnAuth />
       <GlobalQuotaPrompt />
       <GlobalCallManager />
+      <DawCollaborationInviteManager />
       <CookieConsentBanner />
       <StudioBrandReveal />
       <Suspense fallback={routeFallback}>
