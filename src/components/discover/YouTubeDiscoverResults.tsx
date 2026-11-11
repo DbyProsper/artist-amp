@@ -10,17 +10,20 @@ import {
   addYouTubeToPlaylist,
   loadYouTubeHistory,
   searchYouTube,
+  saveYouTubeHistory,
   type YouTubeMedia,
   youtubeMediaToTrack,
 } from '@/services/youtubeDiscoveryService';
 import { usePlayer } from '@/context/PlayerContext';
+import { genreMatches } from '@/lib/genres';
 
 interface Props {
   query?: string;
   historyOnly?: boolean;
+  genre?: string | null;
 }
 
-export function YouTubeDiscoverResults({ query: searchQuery = '', historyOnly = false }: Props) {
+export function YouTubeDiscoverResults({ query: searchQuery = '', historyOnly = false, genre = null }: Props) {
   const { user, profile } = useAuth();
   const { playTrack, catalog } = usePlayer();
   const [items, setItems] = useState<YouTubeMedia[]>([]);
@@ -33,7 +36,7 @@ export function YouTubeDiscoverResults({ query: searchQuery = '', historyOnly = 
     if (historyOnly) {
       if (!user) { setItems([]); return; }
       setLoading(true);
-      loadYouTubeHistory().then(response => setItems(response.results || [])).catch(() => setItems([])).finally(() => setLoading(false));
+      loadYouTubeHistory().then(response => setItems((response.results || []).filter(item => !genre || genreMatches(youtubeMediaToTrack(item).genre, genre)))).catch(() => setItems([])).finally(() => setLoading(false));
       return;
     }
     const query = searchQuery.trim();
@@ -43,11 +46,13 @@ export function YouTubeDiscoverResults({ query: searchQuery = '', historyOnly = 
       .then(response => setItems(response.results || []))
       .catch(cause => { setItems([]); setError(cause instanceof Error ? cause.message : 'Search is unavailable.'); })
       .finally(() => setLoading(false));
-  }, [historyOnly, searchQuery, user]);
+  }, [genre, historyOnly, searchQuery, user]);
 
   const play = (item: YouTubeMedia) => {
+    const enriched = { ...item, genre: youtubeMediaToTrack(item).genre };
     const youtubeQueue = items.map(youtubeMediaToTrack);
-    playTrack(youtubeMediaToTrack(item), [...youtubeQueue, ...catalog]);
+    playTrack(youtubeMediaToTrack(enriched), [...youtubeQueue, ...catalog]);
+    if (user) void saveYouTubeHistory(enriched).catch(() => undefined);
   };
 
   const openPlaylistPicker = async (item: YouTubeMedia) => {

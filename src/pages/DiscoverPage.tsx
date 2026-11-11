@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Search, TrendingUp, Sparkles, Filter, Heart, Users, 
-  Radio, ArrowRight
+  Radio, ArrowRight, Youtube, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ArtistCard } from '@/components/artists/ArtistCard';
@@ -45,6 +45,8 @@ export default function DiscoverPage() {
   const [sortBy, setSortBy] = useState<SortOption>('trending');
   const { posts } = useFeedPosts();
   const [youtubeHistoryTracks, setYoutubeHistoryTracks] = useState<Track[]>([]);
+  const [openYouTubeArtist, setOpenYouTubeArtist] = useState<string | null>(null);
+  const searchBoxRef = useRef<HTMLFormElement>(null);
   const [followerCounts, setFollowerCounts] = useState<Record<string, number>>({});
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -58,9 +60,10 @@ export default function DiscoverPage() {
     if (!user) { setYoutubeHistoryTracks([]); return; }
     void loadYouTubeHistory().then(response => setYoutubeHistoryTracks((response.results || []).map(youtubeMediaToTrack))).catch(() => setYoutubeHistoryTracks([]));
   }, [user]);
-  const catalogTracks = [...youtubeHistoryTracks, ...(catalog.length ? catalog : liveTracks)].filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
+  const musicInstaTracks = (catalog.length ? catalog : liveTracks).filter(track => track.provider !== 'youtube');
+  const catalogTracks = [...youtubeHistoryTracks, ...musicInstaTracks].filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
   const isOfficialAccount = (artist: { id: string; username: string }) => artist.id === 'musicinsta-official' || artist.id === 'musicinsta' || artist.username.toLowerCase() === 'musicinsta';
-  const catalogArtists = [...catalogTracks.map(track => track.artist), ...liveArtists]
+  const catalogArtists = [...musicInstaTracks.map(track => track.artist), ...liveArtists]
     .filter((artist, index, list) => !isOfficialAccount(artist) && list.findIndex(item => item.id === artist.id) === index)
     .map(artist => ({ ...artist, followers: followerCounts[artist.id] ?? artist.followers }));
   const genres = [...new Set([...DISCOVER_GENRES, ...catalogTracks.flatMap(track => [track.genre, track.subGenre, ...track.artist.genres]).filter(Boolean).map(value => canonicalGenre(String(value)))])];
@@ -76,6 +79,22 @@ export default function DiscoverPage() {
   const catalogById = new Map(catalogTracks.map(track => [track.id, track]));
   const personalizedTracks = stableOrders.current.personalized.map(id => catalogById.get(id)).filter((track): track is Track => Boolean(track));
   const personalizedTrackOrder = useMemo(() => new Map(personalizedTracks.map((track, index) => [track.id, index])), [personalizedTracks]);
+  const youtubeArtists = useMemo(() => {
+    const groups = new Map<string, { name: string; avatar: string; tracks: Track[] }>();
+    youtubeHistoryTracks.forEach(track => {
+      if (selectedGenre && !genreMatches(track.genre, selectedGenre) && !genreMatches(track.subGenre, selectedGenre)) return;
+      const key = track.artist.name.toLowerCase();
+      const current = groups.get(key) || { name: track.artist.name, avatar: track.coverArt, tracks: [] };
+      current.tracks.push(track); groups.set(key, current);
+    });
+    return [...groups.entries()].map(([id, value]) => ({ id, ...value }));
+  }, [selectedGenre, youtubeHistoryTracks]);
+
+  useEffect(() => {
+    const close = (event: PointerEvent) => { if (!searchBoxRef.current?.contains(event.target as Node)) setSearchFocused(false); };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, []);
 
   useEffect(() => {
     getDocs(collection(db, 'follows')).then(snapshot => {
@@ -206,17 +225,17 @@ export default function DiscoverPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-border p-4">
         <div className="flex items-center gap-3 mb-3">
-          <form className="relative flex flex-1 gap-2" onSubmit={event => { event.preventDefault(); submitSearch(); }}>
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <form ref={searchBoxRef} className="relative flex min-w-0 flex-1 gap-2" onSubmit={event => { event.preventDefault(); submitSearch(); }}>
+            <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
               type="text"
               placeholder="Search real artists and songs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
-              className="pl-10 pr-20 bg-muted border-none h-12 rounded-xl"
-            />
-            <button type="submit" className="absolute right-1 top-1 h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">Search</button>
+              className="h-12 rounded-xl border-none bg-muted pl-10 pr-3"
+            /></div>
+            <button type="submit" className="h-12 shrink-0 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground sm:px-5">Search</button>
             {searchFocused && searchSuggestions.length > 0 && <div className="absolute inset-x-0 top-14 z-50 overflow-hidden rounded-xl border border-border bg-popover shadow-xl">{searchSuggestions.map(value => <button type="button" key={value} onMouseDown={event => event.preventDefault()} onClick={() => submitSearch(value)} className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm hover:bg-muted"><Search className="h-4 w-4 text-muted-foreground" />{value}</button>)}</div>}
           </form>
           
@@ -275,7 +294,7 @@ export default function DiscoverPage() {
       {isSearching ? (
         // Search Results
         <div className="space-y-6 px-4 py-4">
-          <YouTubeDiscoverResults query={youtubeQuery} />
+          <YouTubeDiscoverResults query={youtubeQuery} genre={selectedGenre} />
           <Tabs defaultValue="all" onValueChange={setActiveTab}>
             <TabsList className="w-full bg-muted/50 mb-4">
               <TabsTrigger value="all" className="flex-1">All</TabsTrigger>
@@ -351,7 +370,15 @@ export default function DiscoverPage() {
               </TabsList>
 
               <TabsContent value="for-you" className="space-y-6">
-                <YouTubeDiscoverResults historyOnly />
+                <YouTubeDiscoverResults historyOnly genre={selectedGenre} />
+                {youtubeArtists.length > 0 && <section>
+                  <div className="mb-3 flex items-center gap-2"><Youtube className="h-5 w-5 text-red-500" /><h2 className="font-display text-lg font-bold">YouTube artists</h2></div>
+                  <p className="mb-3 text-sm text-muted-foreground">Artists from videos you played. These are separate from MusicInsta profiles and cannot be followed here.</p>
+                  <div className="space-y-2">{youtubeArtists.map(artist => <div key={artist.id} className="rounded-xl border border-border bg-card">
+                    <button type="button" onClick={() => setOpenYouTubeArtist(current => current === artist.id ? null : artist.id)} className="flex w-full items-center gap-3 p-3 text-left"><img src={artist.avatar} alt="" className="h-12 w-12 rounded-full object-cover" /><span className="min-w-0 flex-1"><strong className="block truncate">{artist.name}</strong><span className="text-xs text-muted-foreground">{artist.tracks.length} played {artist.tracks.length === 1 ? 'track' : 'tracks'}</span></span>{openYouTubeArtist === artist.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>
+                    {openYouTubeArtist === artist.id && <div className="space-y-1 border-t border-border p-2">{artist.tracks.map((track, index) => <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={artist.tracks} />)}</div>}
+                  </div>)}</div>
+                </section>}
                 {/* Based on your taste */}
                 <section>
                   <div className="flex items-center gap-2 mb-3">

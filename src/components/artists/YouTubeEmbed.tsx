@@ -86,7 +86,7 @@ export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="mx-auto w-full max-w-3xl space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-red-500/10 flex items-center justify-center">
@@ -108,7 +108,7 @@ export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="relative aspect-video rounded-xl overflow-hidden bg-muted/30"
+        className="relative aspect-video w-full overflow-hidden rounded-xl bg-muted/30"
       >
         {!isLoaded && (
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-red-500/20 to-red-600/10">

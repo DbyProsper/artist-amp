@@ -151,9 +151,12 @@ export default function HomePage() {
       const additions = rankedPosts
         .filter((post) => !retainedSet.has(post.id))
         .map((post) => post.id);
-      // A live snapshot may add a newly published post. Keep the viewport
-      // anchored by appending it to this session; a fresh session ranks it.
       let next = current.length ? [...retained, ...additions] : rankedPosts.map((post) => post.id);
+      const priorityId = sessionStorage.getItem('musicinsta:priority-post-id');
+      if (priorityId && available.has(priorityId)) {
+        next = [priorityId, ...next.filter(id => id !== priorityId)];
+        sessionStorage.removeItem('musicinsta:priority-post-id');
+      }
       if (!current.length && next.length > 1) {
         const maximum = Math.min(8, next.length);
         const lastFirst = sessionStorage.getItem(`musicinsta:last-feed-first:${identity}`);

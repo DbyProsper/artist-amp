@@ -17,6 +17,7 @@ import {
   X,
   GripVertical,
   SquarePlus,
+  Youtube,
 } from "lucide-react";
 import { usePlayer } from "@/context/PlayerContext";
 import { cn } from "@/lib/utils";
@@ -28,9 +29,10 @@ import { buildTimedLyrics, hasAuthoredTimestamps } from "@/lib/timedLyrics";
 import { ShareTrackDialog } from "@/components/social/ShareTrackDialog";
 import { useNavigate } from "react-router-dom";
 
-function YouTubeGlobalPlayback() {
+function YouTubeGlobalPlayback({ visible }: { visible: boolean }) {
   const { currentTrack, isPlaying, isExpanded, volume, syncExternalPlayback, externalEnded } = usePlayer();
   const frame = useRef<HTMLIFrameElement>(null);
+  const endedVideo = useRef<string | null>(null);
   const videoId = currentTrack?.provider === "youtube" ? currentTrack.youtubeVideoId : undefined;
   const send = (func: string, args: unknown[] = []) => frame.current?.contentWindow?.postMessage(JSON.stringify({ event: "command", func, args }), "*");
 
@@ -43,13 +45,16 @@ function YouTubeGlobalPlayback() {
       if (payload?.event === "infoDelivery") {
         const info = payload.info || {};
         if (typeof info.currentTime === "number" || typeof info.duration === "number") syncExternalPlayback(Number(info.currentTime) || 0, Number(info.duration) || 0, typeof info.playerState === "number" ? info.playerState === 1 : undefined);
-        if (info.playerState === 0) externalEnded();
+        if (info.playerState === 1) endedVideo.current = null;
+        if (info.playerState === 0 && endedVideo.current !== videoId) { endedVideo.current = videoId || null; externalEnded(); }
       }
     };
     window.addEventListener("message", handle);
     const seek = (event: Event) => { const value = (event as CustomEvent<{ percent: number; duration: number }>).detail; send("seekTo", [(value.percent / 100) * value.duration, true]); };
     window.addEventListener('musicinsta:youtube-seek', seek);
-    const poll = window.setInterval(() => { send("getCurrentTime"); send("getDuration"); }, 750);
+    const listen = () => frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'musicinsta-global-player' }), '*');
+    listen();
+    const poll = window.setInterval(() => { listen(); send("getCurrentTime"); send("getDuration"); }, 500);
     return () => { window.removeEventListener("message", handle); window.removeEventListener('musicinsta:youtube-seek', seek); window.clearInterval(poll); };
   }, [externalEnded, syncExternalPlayback, videoId]);
 
@@ -59,8 +64,8 @@ function YouTubeGlobalPlayback() {
   }, [isPlaying, videoId]);
   useEffect(() => { if (videoId) send("setVolume", [volume]); }, [videoId, volume]);
   if (!videoId) return null;
-  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded ? "fixed left-1/2 top-20 z-[60] aspect-video w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-2xl sm:top-24" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}>
-    <iframe ref={frame} key={videoId} onLoad={() => { send("setVolume", [volume]); if (isPlaying) send("playVideo"); }} className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&controls=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`} title={currentTrack?.title || "YouTube music"} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
+  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-20 z-[60] aspect-video w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-2xl sm:top-24" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}>
+    <iframe ref={frame} key={videoId} onLoad={() => { frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 'musicinsta-global-player' }), '*'); send("setVolume", [volume]); if (isPlaying) send("playVideo"); }} className="h-full w-full" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1&controls=1&playsinline=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`} title={currentTrack?.title || "YouTube music"} allow="autoplay; encrypted-media; picture-in-picture" />
   </div>;
 }
 
@@ -214,6 +219,7 @@ export function FullPlayer() {
   const [isLiked, setIsLiked] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showYouTubeVideo, setShowYouTubeVideo] = useState(false);
   const lyricContainerRef = useRef<HTMLDivElement>(null);
 
   const timedLyrics = useMemo(
@@ -255,6 +261,8 @@ export function FullPlayer() {
     lyricContainerRef.current?.scrollTo({ top: 0 });
   }, [currentTrack?.id, showLyrics]);
 
+  useEffect(() => setShowYouTubeVideo(false), [currentTrack?.id]);
+
   useEffect(() => {
     setIsLiked(
       Boolean(
@@ -287,7 +295,7 @@ export function FullPlayer() {
 
   return (
     <>
-      <YouTubeGlobalPlayback />
+      <YouTubeGlobalPlayback visible={showYouTubeVideo && !showQueue && !showSettings} />
       <AnimatePresence>
         {isExpanded && (
           <motion.div
@@ -331,6 +339,7 @@ export function FullPlayer() {
                     📝
                   </button>
                 )}
+                {currentTrack.provider === 'youtube' && <button onClick={() => setShowYouTubeVideo(value => !value)} className={cn("inline-flex items-center gap-1 rounded-full px-3 py-2 text-xs font-semibold hover:bg-muted/50", showYouTubeVideo && "bg-primary/15 text-primary")} title={showYouTubeVideo ? 'Show artwork' : 'Watch video'}><Youtube className="h-4 w-4" />{showYouTubeVideo ? 'Artwork' : 'Video'}</button>}
                 <button
                   className="p-2 rounded-full hover:bg-muted/50 transition-colors"
                   onClick={() => setShowSettings(true)}
@@ -341,7 +350,7 @@ export function FullPlayer() {
             </div>
 
             {/* Album Art or Lyrics */}
-            <div className={cn("player-artwork-stage flex min-h-0 flex-1 items-center justify-center px-8", currentTrack.provider === "youtube" && "pt-[min(46vw,430px)] sm:pt-[400px]")}>
+            <div className="player-artwork-stage flex min-h-0 flex-1 items-center justify-center px-8">
               {showLyrics && currentTrack?.lyrics ? (
                 <motion.div
                   ref={lyricContainerRef}
@@ -372,7 +381,7 @@ export function FullPlayer() {
               ) : (
                 <motion.div
                   className={cn(
-                    "player-artwork w-full max-w-sm aspect-square rounded-2xl overflow-hidden shadow-2xl",
+                    "player-artwork aspect-square w-full max-w-sm overflow-hidden rounded-2xl shadow-2xl lg:max-w-[30rem]",
                   )}
                   animate={{
                     scale: isPlaying ? 1 : 0.95,
@@ -554,7 +563,7 @@ export function FullPlayer() {
             </div>
 
             {showQueue && (
-              <div className="player-up-next absolute inset-x-0 bottom-0 z-20 max-h-[55vh] overflow-y-auto rounded-t-3xl border-t border-border bg-card p-4 shadow-2xl">
+              <div className="player-up-next absolute inset-x-0 bottom-0 z-[80] max-h-[55vh] overflow-y-auto rounded-t-3xl border-t border-border bg-card p-4 shadow-2xl">
                 <div className="mb-3 flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold">Up next</h3>
@@ -642,6 +651,7 @@ export function FullPlayer() {
           audioUrl: currentTrack.audioUrl,
           coverArt: currentTrack.coverArt,
           artistName: currentTrack.artist.name,
+          youtubeVideoId: currentTrack.youtubeVideoId,
         }}
         onClose={() => setShowShare(false)}
       />

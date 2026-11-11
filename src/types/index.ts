@@ -97,6 +97,7 @@ export interface Post {
   caption: string;
   likes: number;
   comments: number;
+  plays?: number;
   shares: number;
   saves: number;
   createdAt: Date;

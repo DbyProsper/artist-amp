@@ -26,7 +26,7 @@ import { SharePostDialog } from '@/components/social/SharePostDialog';
 import { SocialMediaEditor } from '@/components/social/SocialMediaEditor';
 import { EMPTY_SOCIAL_EDIT_STATE, aspectRatioValue, socialFilter, type SocialEditState } from '@/types/socialEditor';
 import { renderSocialImage } from '@/lib/socialMediaEditor';
-import { loadPostLike, persistPostLike, persistPostPlay } from '@/services/backendPersistenceService';
+import { persistPostLike, persistPostPlay } from '@/services/backendPersistenceService';
 
 interface FeedPostProps {
   post: Post;
@@ -55,7 +55,7 @@ export function FeedPost({ post }: FeedPostProps) {
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [playlists, setPlaylists] = useState<Array<{ id: string; name: string }>>([]);
   const [videoSpeed, setVideoSpeed] = useState(1);
-  const [playCount, setPlayCount] = useState(post.track?.plays || 0);
+  const [playCount, setPlayCount] = useState(post.plays ?? post.track?.plays ?? 0);
   const [showNewBadge, setShowNewBadge] = useState(() => Boolean(
     (post.isNewPost || post.isNewRelease) &&
     Date.now() - post.createdAt.getTime() < 24 * 60 * 60 * 1000 &&
@@ -111,17 +111,13 @@ export function FeedPost({ post }: FeedPostProps) {
 
   const isCurrentTrack = post.track && currentTrack?.id === post.track.id;
 
+  useEffect(() => { setIsLiked(Boolean(post.isLiked)); setLikes(post.likes); }, [post.isLiked, post.likes]);
+  useEffect(() => { setCommentCount(post.comments); setPlayCount(post.plays ?? post.track?.plays ?? 0); }, [post.comments, post.plays, post.track?.plays]);
   useEffect(() => {
-    if (!user || !actorId) return;
-    Promise.all([
-      loadPostLike(post.id, actorId),
-      getDoc(doc(db, 'saved_posts', `${user.uid}_${post.id}`)),
-    ]).then(([like, save]) => {
-      setIsLiked(like.liked);
-      setLikes(like.likes);
-      setIsSaved(save.exists());
-    }).catch(() => undefined);
-  }, [actorId, post.id, user]);
+    const update = (event: Event) => { const detail = (event as CustomEvent<{ postId: string; count: number }>).detail; if (detail?.postId === post.id) setCommentCount(detail.count); };
+    window.addEventListener('musicinsta:post-comment-count', update);
+    return () => window.removeEventListener('musicinsta:post-comment-count', update);
+  }, [post.id]);
 
   useEffect(() => () => {
     if (showNewBadge) sessionStorage.setItem(`musicinsta_seen_post_${post.id}`, '1');
@@ -370,7 +366,7 @@ export function FeedPost({ post }: FeedPostProps) {
             onContextMenu={post.type === 'video' ? event => event.preventDefault() : undefined}
           >
             {post.type === 'video' && post.videoUrl ? (
-              post.youtubeVideoId ? <iframe className="aspect-video h-full w-full" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(post.youtubeVideoId)}?controls=1&playsinline=1`} title={post.caption || 'YouTube video'} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen /> : <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="none" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; setPlayCount(current => current + 1); void persistPostPlay(post.id).catch(() => toast.error('This play could not be saved.')); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
+              post.youtubeVideoId ? <><iframe className="aspect-video h-full w-full" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(post.youtubeVideoId)}?controls=1&playsinline=1`} title={post.caption || 'YouTube video'} allow="autoplay; encrypted-media; picture-in-picture" /><span className="absolute bottom-2 left-2 rounded-full bg-black/75 px-2.5 py-1 text-xs font-medium text-white">{formatCount(playCount)} plays</span></> : <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="none" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; setPlayCount(current => current + 1); void persistPostPlay(post.id).catch(() => toast.error('This play could not be saved.')); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
             ) : (
               <img src={postImage} alt={post.track?.title || post.caption || 'Post'} loading="lazy" decoding="async" style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} className={cn('w-full object-contain', mediaEditState.aspectRatio === 'original' && post.type === 'image' ? 'h-auto max-h-[82vh]' : 'h-full')} />
             )}

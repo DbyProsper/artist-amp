@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDocs, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { ExternalLink, Search, Send, X } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
@@ -7,6 +7,7 @@ import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { loadShareProfiles } from '@/services/backendPersistenceService';
 
 interface Person { id: string; name: string; username: string; avatar: string }
 
@@ -17,18 +18,19 @@ export function SharePostDialog({ open, postId, title, onClose }: { open: boolea
   const [sending, setSending] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
-    void getDocs(collection(db, 'profiles')).then(snapshot => setPeople(snapshot.docs.map(item => ({ id: item.id, name: item.data().name || 'MusicInsta user', username: item.data().username || 'user', avatar: item.data().avatar_url || DEFAULT_MEDIA_IMAGE })).filter(item => item.id !== profile?.id)));
+    void loadShareProfiles().then(items => setPeople(items.map(item => ({ ...item, avatar: item.avatar || DEFAULT_MEDIA_IMAGE })).filter(item => item.id !== profile?.id))).catch(() => toast.error('People could not be loaded.'));
   }, [open, profile?.id]);
   const visible = useMemo(() => people.filter(person => `${person.name} ${person.username}`.toLowerCase().includes(search.toLowerCase())).slice(0, 30), [people, search]);
   const url = `${window.location.origin}/?post=${postId}`;
   const send = async (person: Person) => {
-    if (!user || !profile) return;
+    if (!user) return;
     setSending(person.id);
     try {
-      const conversationId = [profile.id, person.id].sort().join('_');
+      const actorId = profile?.id || user.uid;
+      const conversationId = [actorId, person.id].sort().join('_');
       const batch = writeBatch(db);
-      batch.set(doc(collection(db, 'messages')), { conversation_id: conversationId, sender_id: profile.id, actor_uid: user.uid, recipient_id: person.id, content: `Shared a post: ${title}\n${url}`, shared_post_id: postId, created_at: serverTimestamp(), read: false });
-      batch.set(doc(db, 'conversations', conversationId), { participant_ids: [profile.id, person.id], actor_uids: [user.uid], last_message: `Shared: ${title}`, last_sender_id: profile.id, updated_at: serverTimestamp() }, { merge: true });
+      batch.set(doc(collection(db, 'messages')), { conversation_id: conversationId, sender_id: actorId, actor_uid: user.uid, recipient_id: person.id, content: `Shared a post: ${title}\n${url}`, shared_post_id: postId, created_at: serverTimestamp(), read: false });
+      batch.set(doc(db, 'conversations', conversationId), { participant_ids: [actorId, person.id], actor_uids: [user.uid], last_message: `Shared: ${title}`, last_sender_id: actorId, updated_at: serverTimestamp() }, { merge: true });
       await batch.commit(); toast.success(`Sent to ${person.name}.`);
     } catch { toast.error('The post could not be sent.'); }
     finally { setSending(null); }

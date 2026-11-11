@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useState } from 'react';
-import { addDoc, arrayRemove, arrayUnion, collection, deleteDoc, doc, getDocs, increment, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { addDoc, collection, getDocs, serverTimestamp } from 'firebase/firestore';
 import { Heart, Reply, Trash2, X } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
@@ -10,6 +10,7 @@ import { EmojiPicker } from '@/components/chat/EmojiPicker';
 import { createPortal } from 'react-dom';
 import { GifStickerPicker, SocialAttachment, type SocialMediaAttachment } from '@/components/social/GifStickerPicker';
 import { useNavigate } from 'react-router-dom';
+import { createPostComment, loadPostComments, persistCommentLike, removePostComment } from '@/services/backendPersistenceService';
 
 interface CommentItem {
   id: string;
@@ -45,25 +46,21 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
   const mentionSuggestions = mentionToken == null ? [] : mentionProfiles.filter(item => item.username.toLowerCase().includes(mentionToken)).slice(0, 6);
   const chooseMention = (username: string) => setText(current => current.replace(/@([\w.-]*)$/, `@${username} `));
 
+  const refreshComments = useCallback(async () => {
+    const response = await loadPostComments(postId);
+    setComments(response.comments.map(data => ({
+      id: data.id, text: data.text || '', authorName: data.authorName || 'MusicInsta user', avatar: data.avatar || '/musicinsta-default-cover.webp',
+      authorId: data.authorId || '', likes: Number(data.likes) || 0, likedBy: Array.isArray(data.likedBy) ? data.likedBy : [],
+      parentId: data.parentId || undefined, replyToName: data.replyToName || undefined,
+      attachment: data.mediaType === 'gif' || data.mediaType === 'sticker' ? { type: data.mediaType, url: data.mediaUrl || undefined, sticker: data.sticker || undefined } : undefined,
+    })));
+    window.dispatchEvent(new CustomEvent('musicinsta:post-comment-count', { detail: { postId, count: response.count } }));
+  }, [postId]);
+
   useEffect(() => {
     if (!open) return;
-    const commentsQuery = query(collection(db, 'posts', postId, 'comments'), orderBy('created_at', 'asc'));
-    return onSnapshot(commentsQuery, snapshot => {
-      setComments(snapshot.docs.map(item => {
-        const data = item.data();
-        return {
-          id: item.id,
-          text: data.text || '',
-          authorName: data.author_name || 'MusicInsta user',
-          avatar: data.avatar_url || '/musicinsta-default-cover.webp',
-          authorId: data.author_id || '', likes: Number(data.likes) || 0,
-          likedBy: Array.isArray(data.liked_by) ? data.liked_by : [],
-          parentId: data.parent_id || undefined, replyToName: data.reply_to_name || undefined,
-          attachment: data.media_type === 'gif' || data.media_type === 'sticker' ? { type: data.media_type, url: data.media_url || undefined, sticker: data.sticker || undefined } : undefined,
-        };
-      }));
-    }, () => toast.error('Comments could not be loaded.'));
-  }, [open, postId]);
+    void refreshComments().catch(() => toast.error('Comments could not be loaded.'));
+  }, [open, refreshComments]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -71,14 +68,10 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
     const cleanText = text.trim();
     const selectedAttachment = attachment;
     setText(''); setAttachment(null);
-    await addDoc(collection(db, 'posts', postId, 'comments'), {
-      text: cleanText,
-      author_id: profile?.id || user.uid,
-      author_name: profile?.name || user.displayName || 'MusicInsta user',
-      avatar_url: profile?.avatar_url || user.photoURL || '/musicinsta-default-cover.webp',
-      media_type: selectedAttachment?.type || null, media_url: selectedAttachment?.url || null, sticker: selectedAttachment?.sticker || null,
-      created_at: serverTimestamp(),
-      likes: 0, liked_by: [], parent_id: replyingTo?.id || null, reply_to_name: replyingTo?.authorName || null,
+    await createPostComment(postId, {
+      text: cleanText, actorProfileId: profile?.id || user.uid, actorName: profile?.name || user.displayName || 'MusicInsta user',
+      actorAvatar: profile?.avatar_url || user.photoURL || '/musicinsta-default-cover.webp', mediaType: selectedAttachment?.type || null,
+      mediaUrl: selectedAttachment?.url || null, sticker: selectedAttachment?.sticker || null, parentId: replyingTo?.id || null, replyToName: replyingTo?.authorName || null,
     });
     if (ownerId && ownerId !== (profile?.id || user.uid)) {
       await addDoc(collection(db, 'notifications'), {
@@ -95,6 +88,7 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
     const mentioned = mentionProfiles.filter(item => mentionedNames.includes(item.username.toLowerCase()) && item.id !== (profile?.id || user.uid));
     await Promise.all(mentioned.map(item => addDoc(collection(db, 'notifications'), { profile_id: item.id, from_profile_id: profile?.id || user.uid, post_id: postId, type: 'mention', message: `${profile?.name || user.displayName || 'Someone'} mentioned you in a comment`, read: false, created_at: serverTimestamp() })));
     onAdded?.();
+    await refreshComments();
     setReplyingTo(null);
   };
 
@@ -102,13 +96,14 @@ export function PostCommentsModal({ postId, ownerId, open, onClose, onAdded }: P
     if (!user) { toast.info('Sign in to like comments.'); return; }
     const actor = profile?.id || user.uid;
     const liked = comment.likedBy.includes(actor);
-    await updateDoc(doc(db, 'posts', postId, 'comments', comment.id), { likes: increment(liked ? -1 : 1), liked_by: liked ? arrayRemove(actor) : arrayUnion(actor) });
+    await persistCommentLike(postId, comment.id, !liked, actor);
+    await refreshComments();
   };
 
   const removeComment = async (comment: CommentItem) => {
     if (!user || (comment.authorId !== (profile?.id || user.uid) && ownerId !== (profile?.id || user.uid))) return;
-    await deleteDoc(doc(db, 'posts', postId, 'comments', comment.id));
-    await updateDoc(doc(db, 'posts', postId), { comments: increment(-1) }).catch(() => undefined);
+    await removePostComment(postId, comment.id, profile?.id || user.uid);
+    await refreshComments();
   };
 
   const renderComment = (comment: CommentItem, nested = false) => {

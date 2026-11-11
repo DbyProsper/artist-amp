@@ -310,6 +310,7 @@ export default function UploadPage() {
       let createdPostId: string | null = null;
 
       const creatorId = profile?.id || user.uid;
+      publishUploadProgress({ active: true, progress: 12, label: 'Preparing media and metadata' });
       const hashtags = [...new Set((formData.caption.match(/#[\p{L}\p{N}_-]+/gu) || []).map(value => value.slice(1).toLowerCase()))];
       const mentionUsernames = [...new Set((formData.caption.match(/@[\w.-]+/g) || []).map(value => value.slice(1).toLowerCase()))];
       const mentionedProfileIds = mentionProfiles.filter(item => mentionUsernames.includes(item.username.toLowerCase())).map(item => item.id);
@@ -346,6 +347,7 @@ export default function UploadPage() {
         coverUrl = sourcePost.imageUrl || sourcePost.track?.coverArt || null;
       }
       if (!fileUrl) throw new Error('Failed to upload file');
+      publishUploadProgress({ active: true, progress: 62, label: 'Media ready — creating your post' });
 
       if (uploadType === 'audio' && formData.coverFile) {
         const fileExt = formData.coverFile.name.split('.').pop();
@@ -452,15 +454,18 @@ export default function UploadPage() {
       }
 
       await Promise.all(hashtags.map(tag => setDoc(doc(db, 'hashtags', tag), { tag, count: increment(1), updated_at: new Date() }, { merge: true })));
+      publishUploadProgress({ active: true, progress: 88, label: 'Finishing your post' });
       await Promise.all(mentionedProfileIds.filter(id => id !== creatorId).map(id => addDoc(collection(db, 'notifications'), { profile_id: id, from_profile_id: creatorId, post_id: createdPostId, type: 'mention', message: `${profile?.name || 'Someone'} mentioned you in a post`, read: false, created_at: new Date() })));
 
       if (formData.addToStory && uploadType !== 'story') {
+        const youtubeStory = uploadType === 'video' && Boolean(youtubeSourceId);
         await addDoc(collection(db, 'posts'), {
           profile_id: creatorId,
-          type: uploadType,
+          type: youtubeStory ? 'image' : uploadType,
           track_id: createdTrackId,
           image_url: uploadType === 'audio' ? coverUrl : uploadType === 'image' ? fileUrl : uploadType === 'video' ? coverUrl : null,
-          video_url: uploadType === 'video' ? fileUrl : null,
+          video_url: uploadType === 'video' && !youtubeStory ? fileUrl : null,
+          youtube_video_id: youtubeStory ? youtubeSourceId : null,
           story_start_time: uploadType === 'video' ? storyClipStart : null,
           story_end_time: uploadType === 'video' ? storyClipEnd : null,
           caption: formData.caption,
@@ -480,7 +485,10 @@ export default function UploadPage() {
       }
 
       toast.success(uploadType === 'story' ? 'Story published!' : 'Post published!');
+      if (createdPostId && uploadType !== 'story') sessionStorage.setItem('musicinsta:priority-post-id', createdPostId);
+      publishUploadProgress({ active: true, progress: 98, label: formData.addToStory ? 'Publishing post and story' : 'Publishing post' });
       window.dispatchEvent(new Event('musicinsta:feed-refresh'));
+      window.dispatchEvent(new Event('musicinsta:stories-refresh'));
       await deletePostDraft(user.uid); setDraftAvailable(false);
       publishUploadProgress({ active: false, progress: 100, label: uploadType === 'story' ? 'Story published' : 'Post published' });
     } catch (error: unknown) {

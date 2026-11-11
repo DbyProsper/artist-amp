@@ -9,9 +9,15 @@ const SEED_LANES=[[0,1,2,3],[0,2,1,3],[1,0,3,2],[2,1,3,0],[0,3,1,2],[3,1,2,0]] a
 
 export function generatePianoChart(track:PianoTrack,difficulty:PianoDifficulty):PianoNote[]{
   if(track.id==='keys-at-full-tilt'){
-    const imported=(keysAtFullTiltChart as Array<{id:string;lane:number;timestampMs:number;durationMs?:number;type:'TAP'|'HOLD'|'CHORD'}>).map((note,index)=>({
+    const raw=(keysAtFullTiltChart as Array<{id:string;lane:number;timestampMs:number;durationMs?:number;type:'TAP'|'HOLD'|'CHORD'}>).map((note,index)=>({
       id:note.id,lane:note.lane as 0|1|2|3,time:note.timestampMs/1000,duration:(note.durationMs||0)/1000,type:note.type.toLowerCase() as PianoNoteType,pitch:60+note.lane*3+(index%2),
     }));
+    // Retain the musical anchors without reproducing every transcription event.
+    // Normal presents one note at a time; harder modes permit limited chords.
+    const spacing=difficulty==='normal'?.34:difficulty==='hard'?.25:.19;
+    const simultaneous=difficulty==='normal'?1:2;
+    const imported:PianoNote[]=[];let lastAccepted=-10;let group='';let groupCount=0;
+    for(const note of raw){const key=note.time.toFixed(3);if(key!==group){group=key;groupCount=0;}if(groupCount>=simultaneous)continue;if(note.time-lastAccepted<spacing&&groupCount===0)continue;imported.push({...note,type:simultaneous===1&&note.type==='chord'?'tap':note.type,duration:Math.min(note.duration,1.4)});groupCount++;lastAccepted=note.time;}
     for(let lane=0;lane<4;lane++){
       const laneNotes=imported.filter(note=>note.lane===lane).sort((a,b)=>a.time-b.time);
       laneNotes.forEach((note,index)=>{const next=laneNotes[index+1];if(next&&note.duration&&note.time+note.duration>next.time-.05)note.duration=Math.max(.05,next.time-note.time-.05);});

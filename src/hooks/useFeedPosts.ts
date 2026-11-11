@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, query, orderBy, limit, getDocs, getDoc, doc, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track, Album } from '@/types';
 import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
 import { useAuth } from '@/context/FirebaseAuthContext';
+import { loadPostLikes } from '@/services/backendPersistenceService';
 
 interface DatabasePost {
   id: string;
@@ -86,6 +87,7 @@ export function useFeedPosts() {
   const [posts, setPosts] = useState<Post[]>(() => feedPostsCache);
   const [loading, setLoading] = useState(() => !feedCacheReady);
   const [error, setError] = useState<string | null>(null);
+  const likesHydrationKey = useRef('');
 
   const fetchPosts = async (showLoading = true, suppliedDocs?: QueryDocumentSnapshot<DocumentData>[]) => {
     if (showLoading) setLoading(true);
@@ -228,6 +230,7 @@ export function useFeedPosts() {
           caption: post.caption || '',
           likes: post.likes || 0,
           comments: post.comments || 0,
+          plays: Number(post.plays) || 0,
           shares: post.shares || 0,
           saves: 0,
           createdAt: post.created_at?.toDate?.() || (post.created_at ? new Date(post.created_at) : new Date(0)),
@@ -287,6 +290,22 @@ export function useFeedPosts() {
       window.removeEventListener('musicinsta:post-like-updated', patchLike);
     };
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const profileId = profile?.id || user.uid;
+    const postIdsKey = posts.map(post => post.id).sort().join('|');
+    const hydrationKey = `${user.uid}:${profileId}:${postIdsKey}`;
+    if (!postIdsKey || likesHydrationKey.current === hydrationKey) return;
+    likesHydrationKey.current = hydrationKey;
+    void loadPostLikes(profileId).then(({ postIds }) => {
+      const liked = new Set(postIds);
+      const next = feedPostsCache.map(post => ({ ...post, isLiked: liked.has(post.id) }));
+      if (next.every((post, index) => post.isLiked === feedPostsCache[index]?.isLiked)) return;
+      saveFeedCache(next);
+      window.dispatchEvent(new CustomEvent(FEED_STATE_EVENT, { detail: next }));
+    }).catch(() => { likesHydrationKey.current = ''; });
+  }, [posts, profile?.id, user?.uid]);
 
   const identityIds = new Set([user?.uid, profile?.id].filter(Boolean));
   const visiblePosts = posts.filter(post => post.artist.id === profile?.id || !post.excludedUserIds?.some(id => identityIds.has(id)));
