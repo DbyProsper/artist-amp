@@ -720,7 +720,7 @@ export function FlappyGame({ profile, onExit, onVerified }: FlappyGameProps) {
           />
           <div className="hidden h-7 w-px bg-white/20 sm:block" />
           <h1 className="font-display text-base font-black sm:text-xl">
-            Flappy Bird
+            MusicInsta Mascot
           </h1>
           <div className="ml-auto flex gap-2">
             <button

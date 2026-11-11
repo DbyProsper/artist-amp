@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Youtube, Play, ExternalLink } from "lucide-react";
+import { Youtube, Play, ExternalLink, SquarePlus } from "lucide-react";
 import { API_BASE } from "@/config/api";
+import { useNavigate } from "react-router-dom";
 
 interface YouTubeEmbedProps {
   channelUrl: string;
@@ -24,6 +25,7 @@ function buildEmbedUrl(url: string): string | null {
 }
 
 export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
+  const navigate = useNavigate();
   const [isLoaded, setIsLoaded] = useState(false);
   const [iframeUrl, setIframeUrl] = useState<string | null>(() =>
     buildEmbedUrl(channelUrl),
@@ -92,7 +94,7 @@ export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
           </div>
           <span className="font-semibold text-sm">YouTube Channel</span>
         </div>
-        <a
+        <div className="flex items-center gap-2"><button type="button" onClick={() => navigate('/upload?type=video')} className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs font-semibold hover:bg-muted"><SquarePlus className="h-3.5 w-3.5" />Post a video</button><a
           href={channelUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -100,7 +102,7 @@ export function YouTubeEmbed({ channelUrl, artistName }: YouTubeEmbedProps) {
         >
           View Channel
           <ExternalLink className="w-3 h-3" />
-        </a>
+        </a></div>
       </div>
 
       <motion.div

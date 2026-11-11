@@ -26,7 +26,7 @@ import { SharePostDialog } from '@/components/social/SharePostDialog';
 import { SocialMediaEditor } from '@/components/social/SocialMediaEditor';
 import { EMPTY_SOCIAL_EDIT_STATE, aspectRatioValue, socialFilter, type SocialEditState } from '@/types/socialEditor';
 import { renderSocialImage } from '@/lib/socialMediaEditor';
-import { persistPostLike, persistPostPlay } from '@/services/backendPersistenceService';
+import { loadPostLike, persistPostLike, persistPostPlay } from '@/services/backendPersistenceService';
 
 interface FeedPostProps {
   post: Post;
@@ -114,10 +114,11 @@ export function FeedPost({ post }: FeedPostProps) {
   useEffect(() => {
     if (!user || !actorId) return;
     Promise.all([
-      getDoc(doc(db, 'post_likes', `${post.id}_${actorId}`)),
+      loadPostLike(post.id, actorId),
       getDoc(doc(db, 'saved_posts', `${user.uid}_${post.id}`)),
     ]).then(([like, save]) => {
-      setIsLiked(like.exists());
+      setIsLiked(like.liked);
+      setLikes(like.likes);
       setIsSaved(save.exists());
     }).catch(() => undefined);
   }, [actorId, post.id, user]);
@@ -187,7 +188,9 @@ export function FeedPost({ post }: FeedPostProps) {
         name: profile?.name || user.displayName || 'MusicInsta user',
         avatar: profile?.avatar_url || user.photoURL || DEFAULT_MEDIA_IMAGE,
       });
+      setIsLiked(result.liked);
       setLikes(result.likes);
+      window.dispatchEvent(new CustomEvent('musicinsta:post-like-updated', { detail: { postId: post.id, liked: result.liked, likes: result.likes } }));
       if (nextLiked && post.artist.id !== actorId) await addDoc(collection(db, 'notifications'), {
         profile_id: post.artist.id, from_profile_id: actorId, post_id: post.id,
         type: 'like', message: 'liked your post', read: false, created_at: serverTimestamp(),
@@ -367,7 +370,7 @@ export function FeedPost({ post }: FeedPostProps) {
             onContextMenu={post.type === 'video' ? event => event.preventDefault() : undefined}
           >
             {post.type === 'video' && post.videoUrl ? (
-              <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="none" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; setPlayCount(current => current + 1); void persistPostPlay(post.id).catch(() => toast.error('This play could not be saved.')); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
+              post.youtubeVideoId ? <iframe className="aspect-video h-full w-full" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(post.youtubeVideoId)}?controls=1&playsinline=1`} title={post.caption || 'YouTube video'} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen /> : <><video ref={videoRef} src={post.videoUrl} poster={post.imageUrl} style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} muted controls controlsList="nodownload nofullscreen noremoteplayback" disablePictureInPicture loop playsInline preload="none" onDoubleClick={event => { event.preventDefault(); event.stopPropagation(); likeFromMedia(); }} onPlay={() => { if (playCountedRef.current) return; playCountedRef.current = true; setPlayCount(current => current + 1); void persistPostPlay(post.id).catch(() => toast.error('This play could not be saved.')); }} className="h-full w-full object-contain" /><label className="absolute right-3 top-3 z-30 rounded-lg bg-black/70 px-2 py-1 text-xs text-white">Speed <select value={videoSpeed} onChange={event => { const speed = Number(event.target.value); setVideoSpeed(speed); if (videoRef.current) videoRef.current.playbackRate = speed; }} className="bg-transparent"><option value={0.5}>0.5×</option><option value={1}>1×</option><option value={1.5}>1.5×</option><option value={2}>2×</option></select></label></>
             ) : (
               <img src={postImage} alt={post.track?.title || post.caption || 'Post'} loading="lazy" decoding="async" style={{ filter: socialFilter(mediaEditState.adjustments) || post.visualFilter }} className={cn('w-full object-contain', mediaEditState.aspectRatio === 'original' && post.type === 'image' ? 'h-auto max-h-[82vh]' : 'h-full')} />
             )}

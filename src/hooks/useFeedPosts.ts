@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, getDocs, getDoc, doc, onSnapshot, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, getDoc, doc, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track, Album } from '@/types';
 import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
@@ -42,11 +42,30 @@ const profileCache = new Map<string, DocumentData | null>();
 const trackCache = new Map<string, DocumentData | null>();
 const albumCache = new Map<string, DocumentData | null>();
 const documentRequests = new Map<string, Promise<DocumentData | null>>();
+const FEED_CACHE_KEY = 'musicinsta_feed_cache_v3';
+const FEED_CACHE_TTL = 30 * 60 * 1000;
 let feedPostsCache: Post[] = [];
 let feedCacheReady = false;
-let sharedFeedUnsubscribe: (() => void) | null = null;
+let feedCacheSavedAt = 0;
+
+try {
+  const stored = JSON.parse(localStorage.getItem(FEED_CACHE_KEY) || 'null') as { savedAt?: number; posts?: Array<Post & { createdAt: string }> } | null;
+  if (stored?.savedAt && Date.now() - stored.savedAt < FEED_CACHE_TTL && Array.isArray(stored.posts)) {
+    feedPostsCache = stored.posts.map(post => ({ ...post, createdAt: new Date(post.createdAt), track: post.track ? { ...post.track, createdAt: post.track.createdAt ? new Date(post.track.createdAt) : undefined } : undefined }));
+    feedCacheSavedAt = stored.savedAt;
+    feedCacheReady = true;
+  }
+} catch { localStorage.removeItem(FEED_CACHE_KEY); }
 
 const FEED_STATE_EVENT = 'musicinsta:feed-state';
+
+function saveFeedCache(posts: Post[]) {
+  feedPostsCache = posts;
+  feedCacheReady = true;
+  feedCacheSavedAt = Date.now();
+  try { localStorage.setItem(FEED_CACHE_KEY, JSON.stringify({ savedAt: feedCacheSavedAt, posts })); } catch { /* storage can be unavailable in private mode */ }
+  document.cookie = `musicinsta_feed_cached_at=${feedCacheSavedAt}; Max-Age=1800; Path=/; SameSite=Lax; Secure`;
+}
 
 async function cachedDocument(collectionName: string, id: string, cache: Map<string, DocumentData | null>) {
   if (cache.has(id)) return cache.get(id) ?? null;
@@ -81,8 +100,7 @@ export function useFeedPosts() {
       const postDocs = suppliedDocs ?? (await getDocs(postsQuery)).docs;
 
       if (!postDocs.length) {
-        feedPostsCache = [];
-        feedCacheReady = true;
+        saveFeedCache([]);
         setPosts([]);
         window.dispatchEvent(new CustomEvent(FEED_STATE_EVENT, { detail: [] }));
         return;
@@ -206,6 +224,7 @@ export function useFeedPosts() {
           album,
           imageUrl: post.image_url || undefined,
           videoUrl: post.video_url || undefined,
+          youtubeVideoId: post.youtube_video_id || undefined,
           caption: post.caption || '',
           likes: post.likes || 0,
           comments: post.comments || 0,
@@ -232,8 +251,7 @@ export function useFeedPosts() {
       }
 
       transformedPosts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      feedPostsCache = transformedPosts;
-      feedCacheReady = true;
+      saveFeedCache(transformedPosts);
       setPosts(transformedPosts);
       window.dispatchEvent(new CustomEvent(FEED_STATE_EVENT, { detail: transformedPosts }));
     } catch (err) {
@@ -251,19 +269,22 @@ export function useFeedPosts() {
       setLoading(false);
     };
     window.addEventListener(FEED_STATE_EVENT, syncCachedPosts);
-    if (feedCacheReady) { setPosts(feedPostsCache); setLoading(false); }
-    if (!sharedFeedUnsubscribe) {
-      const postsQuery = query(collection(db, 'posts'), orderBy('created_at', 'desc'), limit(50));
-      sharedFeedUnsubscribe = onSnapshot(postsQuery, snapshot => void fetchPosts(false, snapshot.docs), () => {
-        setError('Failed to listen for new posts');
-        setLoading(false);
-      });
-    }
+    if (feedCacheReady && Date.now() - feedCacheSavedAt < FEED_CACHE_TTL) {
+      setPosts(feedPostsCache); setLoading(false);
+    } else void fetchPosts(!feedCacheReady);
     const refresh = () => void fetchPosts(false);
+    const patchLike = (event: Event) => {
+      const detail = (event as CustomEvent<{ postId: string; liked: boolean; likes: number }>).detail;
+      const next = feedPostsCache.map(post => post.id === detail.postId ? { ...post, isLiked: detail.liked, likes: detail.likes } : post);
+      saveFeedCache(next);
+      window.dispatchEvent(new CustomEvent(FEED_STATE_EVENT, { detail: next }));
+    };
     window.addEventListener('musicinsta:feed-refresh', refresh);
+    window.addEventListener('musicinsta:post-like-updated', patchLike);
     return () => {
       window.removeEventListener(FEED_STATE_EVENT, syncCachedPosts);
       window.removeEventListener('musicinsta:feed-refresh', refresh);
+      window.removeEventListener('musicinsta:post-like-updated', patchLike);
     };
   }, []);
 

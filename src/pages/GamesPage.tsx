@@ -240,7 +240,7 @@ export default function GamesPage() {
                           <img
                             src={game.cover}
                             alt=""
-                            className={`absolute h-full w-full transition duration-500 group-hover:scale-[1.02] ${game.id === "flappy" ? "inset-x-0 -top-1 object-contain bg-[#10061f]" : "inset-0 object-cover"}`}
+                            className={`absolute inset-0 h-full w-full transition duration-500 group-hover:scale-[1.02] ${game.id === "flappy" ? "object-fill bg-[#10061f]" : "object-cover"}`}
                           />
                           <div className="absolute inset-0 bg-gradient-to-r from-black/75 via-black/30 to-black/45" />
                         </>

@@ -50,6 +50,20 @@ const queryClient = new QueryClient();
 
 const routeFallback = <div className="grid min-h-screen place-items-center"><div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div>;
 
+function CookieConsentBanner() {
+  const [visible, setVisible] = useState(() => !document.cookie.split('; ').some(value => value.startsWith('musicinsta_cookie_consent=')));
+  const choose = (value: 'all' | 'essential') => {
+    document.cookie = `musicinsta_cookie_consent=${value}; Max-Age=31536000; Path=/; SameSite=Lax; Secure`;
+    setVisible(false);
+  };
+  if (!visible) return null;
+  return <aside role="dialog" aria-label="Cookie preferences" className="fixed inset-x-3 bottom-20 z-[200] mx-auto max-w-2xl rounded-2xl border border-border bg-card/95 p-4 shadow-2xl backdrop-blur sm:bottom-5">
+    <h2 className="font-bold">Choose your cookie preference</h2>
+    <p className="mt-1 text-sm text-muted-foreground">MusicInsta uses essential cookies and a 30-minute local feed cache to keep pages fast and remember playback. Optional cookies help us remember non-essential preferences. We do not use this choice to sell personal data.</p>
+    <div className="mt-4 flex flex-wrap gap-2"><button onClick={() => choose('all')} className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Accept all</button><button onClick={() => choose('essential')} className="rounded-xl border border-border px-4 py-2 text-sm font-semibold">Essential only</button><a href="/privacy" className="self-center px-2 text-sm text-primary hover:underline">Privacy policy</a></div>
+  </aside>;
+}
+
 const SERVER_QUOTA_KEYS: Record<string, QuotaKey> = {
   full_songs: 'fullSongs',
   beats: 'clips30s',
@@ -172,6 +186,7 @@ const AppRoutes = () => {
       <ClearGuestPlayerOnAuth />
       <GlobalQuotaPrompt />
       <GlobalCallManager />
+      <CookieConsentBanner />
       <StudioBrandReveal />
       <Suspense fallback={routeFallback}>
       <Routes>

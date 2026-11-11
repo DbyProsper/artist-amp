@@ -39,7 +39,10 @@ export default function UploadPage() {
   const studioGenerated = searchParams.get('studioGenerated') === '1';
   const existingTrackId = searchParams.get('existingTrack');
   const requestedType = searchParams.get('type');
-  const [uploadType, setUploadType] = useState<UploadType | null>(() => requestedType === 'story' ? 'story' : null);
+  const youtubeVideoId = searchParams.get('youtubeVideoId') || '';
+  const [youtubeSourceId, setYoutubeSourceId] = useState(youtubeVideoId);
+  const [youtubeUrl, setYoutubeUrl] = useState(youtubeVideoId ? `https://www.youtube.com/watch?v=${youtubeVideoId}` : '');
+  const [uploadType, setUploadType] = useState<UploadType | null>(() => requestedType === 'story' ? 'story' : youtubeVideoId ? 'video' : null);
   const [loading, setLoading] = useState(false);
   const [coverGenerating, setCoverGenerating] = useState(false);
   const [generatedCoverUrl, setGeneratedCoverUrl] = useState('');
@@ -82,6 +85,22 @@ export default function UploadPage() {
   const [editingImageType, setEditingImageType] = useState<'main' | 'cover'>('main');
 
   const sourcePost = (location.state as { sourcePost?: { id: string; imageUrl?: string; videoUrl?: string; caption?: string; track?: { id: string; title: string; audioUrl?: string; coverArt?: string; artist?: { name?: string } } } } | null)?.sourcePost;
+
+  useEffect(() => {
+    if (!youtubeVideoId) return;
+    const title = searchParams.get('title') || 'YouTube music video';
+    const artist = searchParams.get('artist') || 'YouTube artist';
+    const thumbnail = searchParams.get('thumbnail') || `https://i.ytimg.com/vi/${encodeURIComponent(youtubeVideoId)}/hqdefault.jpg`;
+    setUploadType('video');
+    setFormData(current => ({ ...current, title, caption: current.caption || `${title} — ${artist}`, filePreview: `https://www.youtube.com/watch?v=${youtubeVideoId}`, coverPreview: thumbnail }));
+  }, [searchParams, youtubeVideoId]);
+
+  const selectYouTubeVideo = () => {
+    const id = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{6,})/)?.[1] || '';
+    if (!id) { toast.error('Paste a valid YouTube video link.'); return; }
+    setYoutubeSourceId(id);
+    setFormData(current => ({ ...current, title: current.title || 'YouTube music video', filePreview: `https://www.youtube.com/watch?v=${id}`, coverPreview: `https://i.ytimg.com/vi/${id}/hqdefault.jpg` }));
+  };
 
   useEffect(() => {
     if (!sourcePost || requestedType !== 'story') return;
@@ -276,7 +295,7 @@ export default function UploadPage() {
   };
 
   const handleSubmit = async () => {
-    if ((!formData.file && !existingTrackId && !(uploadType === 'story' && sourcePost && formData.filePreview)) || !uploadType) { toast.error('Please select a file to upload'); return; }
+    if ((!formData.file && !existingTrackId && !youtubeSourceId && !(uploadType === 'story' && sourcePost && formData.filePreview)) || !uploadType) { toast.error('Please select a file to upload'); return; }
     if (uploadType === 'audio' && !formData.title.trim()) { toast.error('Please enter a title'); return; }
     if (uploadType === 'audio' && !formData.genre) { toast.error('Please select a genre'); return; }
     if ((uploadType === 'story' || formData.addToStory) && formData.file?.type.startsWith('video/') && storyClipEnd - storyClipStart < (socialEditState.attachedMusic ? 15 : 5)) { toast.error(socialEditState.attachedMusic ? 'A story with music must be at least 15 seconds.' : 'Select a story clip between 5 and 60 seconds.'); return; }
@@ -315,6 +334,9 @@ export default function UploadPage() {
         const fileExt = formData.file.name.split('.').pop();
         const fileName = `audio/${user.uid}/${Date.now()}.${fileExt}`;
         fileUrl = await uploadFile(formData.file, fileName);
+      } else if (youtubeSourceId) {
+        fileUrl = `https://www.youtube.com/watch?v=${youtubeSourceId}`;
+        coverUrl = formData.coverPreview || `https://i.ytimg.com/vi/${youtubeSourceId}/hqdefault.jpg`;
       } else if (formData.file) {
         const fileExt = formData.file.name.split('.').pop();
         const fileName = `uploads/${user.uid}/${Date.now()}.${fileExt}`;
@@ -408,6 +430,7 @@ export default function UploadPage() {
           type: uploadType,
           image_url: uploadType === 'image' ? fileUrl : uploadType === 'video' ? coverUrl : null,
           video_url: uploadType === 'video' ? fileUrl : null,
+          youtube_video_id: uploadType === 'video' && youtubeSourceId ? youtubeSourceId : null,
           caption: formData.caption,
           is_story: false,
           expires_at: null,
@@ -545,7 +568,7 @@ export default function UploadPage() {
             <X className="w-5 h-5" />
           </button>
           <h1 className="font-display font-bold text-lg">{uploadType ? `New ${uploadType === 'story' ? 'Story' : 'Post'}` : 'Create'}</h1>
-          <div className="flex items-center gap-2">{uploadType && <Button size="sm" variant="outline" onClick={() => void saveDraft()} disabled={loading}><Save className="mr-1 h-4 w-4" />Draft</Button>}<Button size="sm" onClick={handleSubmit} disabled={loading || !uploadType || (!formData.file && !existingTrackId && !(uploadType === 'story' && sourcePost && formData.filePreview))}>
+          <div className="flex items-center gap-2">{uploadType && <Button size="sm" variant="outline" onClick={() => void saveDraft()} disabled={loading}><Save className="mr-1 h-4 w-4" />Draft</Button>}<Button size="sm" onClick={handleSubmit} disabled={loading || !uploadType || (!formData.file && !existingTrackId && !youtubeSourceId && !(uploadType === 'story' && sourcePost && formData.filePreview))}>
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Post'}
           </Button></div>
         </div>
@@ -586,8 +609,8 @@ export default function UploadPage() {
                     </div>
                   ) : uploadType === 'video' || (uploadType === 'story' && (formData.file?.type.startsWith('video/') || sourcePost?.videoUrl)) ? (
                     <>
-                      <video ref={storyVideoRef} src={formData.filePreview} style={{ filter: formData.visualFilter }} className="mx-auto max-h-[70vh] w-full rounded-xl bg-black object-contain" controls onTimeUpdate={event => { if ((uploadType === 'story' || formData.addToStory) && event.currentTarget.currentTime >= storyClipEnd) { event.currentTarget.pause(); event.currentTarget.currentTime = storyClipStart; } }} />
-                      <Button size="sm" variant="outline" onClick={() => setShowSocialEditor(true)} className="absolute top-2 right-12 gap-2"><Edit2 className="w-4 h-4" />Edit</Button>
+                      {youtubeSourceId ? <iframe className="mx-auto aspect-video w-full rounded-xl bg-black" src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(youtubeSourceId)}?controls=1&playsinline=1`} title={formData.title || 'YouTube video'} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen /> : <video ref={storyVideoRef} src={formData.filePreview} style={{ filter: formData.visualFilter }} className="mx-auto max-h-[70vh] w-full rounded-xl bg-black object-contain" controls onTimeUpdate={event => { if ((uploadType === 'story' || formData.addToStory) && event.currentTarget.currentTime >= storyClipEnd) { event.currentTarget.pause(); event.currentTarget.currentTime = storyClipStart; } }} />}
+                      {!youtubeSourceId && <Button size="sm" variant="outline" onClick={() => setShowSocialEditor(true)} className="absolute top-2 right-12 gap-2"><Edit2 className="w-4 h-4" />Edit</Button>}
                     </>
                   ) : (
                     <>
@@ -609,6 +632,7 @@ export default function UploadPage() {
                   <input type="file" accept={uploadType === 'audio' ? 'audio/*' : uploadType === 'video' ? 'video/*' : uploadType === 'story' ? 'image/*,video/*' : 'image/*'} className="hidden" onChange={event => void handleFileChange(event)} />
                 </label>
               )}
+              {uploadType === 'video' && !formData.filePreview && <div className="mx-auto mt-5 max-w-xl border-t border-border pt-5 text-left"><Label>Or paste one of your YouTube video links</Label><div className="mt-2 flex gap-2"><Input value={youtubeUrl} onChange={event => setYoutubeUrl(event.target.value)} placeholder="https://youtube.com/watch?v=..." /><Button type="button" variant="outline" onClick={selectYouTubeVideo}>Use video</Button></div><p className="mt-1 text-xs text-muted-foreground">Only post videos you own or have permission to share.</p></div>}
             </div>
 
             {formData.file?.type.startsWith('video/') && (uploadType === 'story' || formData.addToStory) && mediaDuration >= 5 && (

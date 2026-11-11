@@ -25,6 +25,7 @@ import { addDoc, collection, deleteDoc, getDocs, query, serverTimestamp, where }
 import { db } from '@/lib/firebase';
 import { toast } from 'sonner';
 import { YouTubeDiscoverResults } from '@/components/discover/YouTubeDiscoverResults';
+import { loadYouTubeHistory, youtubeMediaToTrack } from '@/services/youtubeDiscoveryService';
 
 type SortOption = 'trending' | 'newest' | 'popular';
 
@@ -34,10 +35,16 @@ export default function DiscoverPage() {
   const { user, profile } = useAuth();
   const { catalog, listeningHistory, preferredGenres, catalogLoading } = usePlayer();
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
+  const [youtubeQuery, setYoutubeQuery] = useState(() => searchParams.get('q') || '');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('musicinsta_discover_searches') || '[]'); } catch { return []; }
+  });
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') === 'trending' ? 'trending' : 'for-you');
   const [sortBy, setSortBy] = useState<SortOption>('trending');
   const { posts } = useFeedPosts();
+  const [youtubeHistoryTracks, setYoutubeHistoryTracks] = useState<Track[]>([]);
   const [followerCounts, setFollowerCounts] = useState<Record<string, number>>({});
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -47,7 +54,11 @@ export default function DiscoverPage() {
   }, [searchParams]);
   const liveTracks = posts.filter(post => post.track?.audioUrl).map(post => post.track!).filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
   const liveArtists = posts.map(post => post.artist).filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
-  const catalogTracks = catalog.length ? catalog : liveTracks;
+  useEffect(() => {
+    if (!user) { setYoutubeHistoryTracks([]); return; }
+    void loadYouTubeHistory().then(response => setYoutubeHistoryTracks((response.results || []).map(youtubeMediaToTrack))).catch(() => setYoutubeHistoryTracks([]));
+  }, [user]);
+  const catalogTracks = [...youtubeHistoryTracks, ...(catalog.length ? catalog : liveTracks)].filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);
   const isOfficialAccount = (artist: { id: string; username: string }) => artist.id === 'musicinsta-official' || artist.id === 'musicinsta' || artist.username.toLowerCase() === 'musicinsta';
   const catalogArtists = [...catalogTracks.map(track => track.artist), ...liveArtists]
     .filter((artist, index, list) => !isOfficialAccount(artist) && list.findIndex(item => item.id === artist.id) === index)
@@ -169,6 +180,16 @@ export default function DiscoverPage() {
   };
 
   const isSearching = searchQuery.length > 0;
+  const commonSuggestions = ['Tyla', 'Drake', 'Amapiano', 'Tems', 'Burna Boy', 'SZA', 'The Weeknd', 'Black Coffee', 'Kabza De Small', 'R&B music'];
+  const searchSuggestions = [...new Set([...recentSearches, ...commonSuggestions])].filter(value => !searchQuery || value.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 7);
+  const submitSearch = (value = searchQuery) => {
+    const clean = value.trim();
+    if (clean.length < 2) return;
+    setSearchQuery(clean); setYoutubeQuery(clean); setSearchFocused(false);
+    const next = [clean, ...recentSearches.filter(item => item.toLowerCase() !== clean.toLowerCase())].slice(0, 10);
+    setRecentSearches(next);
+    localStorage.setItem('musicinsta_discover_searches', JSON.stringify(next));
+  };
 
   const handleArtistClick = (artistId: string) => {
     navigate(`/user/${artistId}`);
@@ -185,16 +206,19 @@ export default function DiscoverPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 glass border-b border-border p-4">
         <div className="flex items-center gap-3 mb-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <form className="relative flex flex-1 gap-2" onSubmit={event => { event.preventDefault(); submitSearch(); }}>
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
               type="text"
               placeholder="Search real artists and songs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-muted border-none h-12 rounded-xl"
+              onFocus={() => setSearchFocused(true)}
+              className="pl-10 pr-20 bg-muted border-none h-12 rounded-xl"
             />
-          </div>
+            <button type="submit" className="absolute right-1 top-1 h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground">Search</button>
+            {searchFocused && searchSuggestions.length > 0 && <div className="absolute inset-x-0 top-14 z-50 overflow-hidden rounded-xl border border-border bg-popover shadow-xl">{searchSuggestions.map(value => <button type="button" key={value} onMouseDown={event => event.preventDefault()} onClick={() => submitSearch(value)} className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm hover:bg-muted"><Search className="h-4 w-4 text-muted-foreground" />{value}</button>)}</div>}
+          </form>
           
           {/* Filter Button */}
           <DropdownMenu>
@@ -251,7 +275,7 @@ export default function DiscoverPage() {
       {isSearching ? (
         // Search Results
         <div className="space-y-6 px-4 py-4">
-          <YouTubeDiscoverResults query={searchQuery} />
+          <YouTubeDiscoverResults query={youtubeQuery} />
           <Tabs defaultValue="all" onValueChange={setActiveTab}>
             <TabsList className="w-full bg-muted/50 mb-4">
               <TabsTrigger value="all" className="flex-1">All</TabsTrigger>
@@ -262,7 +286,7 @@ export default function DiscoverPage() {
             <TabsContent value="all" className="space-y-6">
               {filteredTracks.length > 0 && (
                 <div>
-                  <h3 className="font-display font-bold text-lg mb-3">Tracks</h3>
+                  <h3 className="font-display font-bold text-lg mb-3">MusicInsta tracks</h3>
                   <div className="space-y-1">
                     {sortTracks(filteredTracks).slice(0, 3).map((track, index) => (
                       <TrackRow key={track.id} track={track} index={index + 1} showIndex queue={sortTracks(filteredTracks)} />

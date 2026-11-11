@@ -353,12 +353,12 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Trending Artists Section */}
+      {/* Upcoming Artists Section */}
       <section className="px-4 py-4 border-b border-border">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-primary" />
-            <h2 className="font-display font-bold text-lg">Trending Artists</h2>
+            <h2 className="font-display font-bold text-lg">Upcoming Artists</h2>
           </div>
           <button
             onClick={() => navigate("/discover?tab=trending#trending-artists")}

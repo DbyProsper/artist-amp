@@ -6,6 +6,7 @@ import { buildPersonalizedQueue, shuffleUpcoming, type ListeningHistoryEntry } f
 import { incrementTrackPlay, loadListeningHistory, loadMusicCatalog, recordListeningInteraction, syncLikedTrack } from '@/services/musicCatalogService';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { loadYouTubeHistory, saveYouTubeHistory, youtubeMediaToTrack } from '@/services/youtubeDiscoveryService';
 
 interface PlayerContextType {
   currentTrack: Track | null;
@@ -46,6 +47,8 @@ interface PlayerContextType {
   openInMainPlayer: (track: Track, queueSource?: Track[]) => void;
   refreshCatalog: () => Promise<void>;
   clearPlayer: () => void;
+  syncExternalPlayback: (time: number, duration: number, playing?: boolean) => void;
+  externalEnded: () => void;
 }
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
@@ -134,7 +137,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [profile?.genres, user?.uid]);
 
   const setQueue = useCallback((tracks: Track[]) => {
-    const playable = tracks.filter((track, index, items) => Boolean(track.audioUrl) && items.findIndex(item => item.id === track.id) === index);
+    const playable = tracks.filter((track, index, items) => Boolean(track.audioUrl || track.provider === 'youtube') && items.findIndex(item => item.id === track.id) === index);
     queueRef.current = playable;
     setQueueState(playable);
   }, []);
@@ -143,13 +146,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCatalogLoading(true);
     try {
       const userId = user?.uid;
-      const [nextCatalog, nextHistory] = await Promise.all([
+      const [nextCatalog, nextHistory, youtubeHistory] = await Promise.all([
         loadMusicCatalog(userId),
         userId ? loadListeningHistory(userId) : Promise.resolve([]),
+        userId ? loadYouTubeHistory().then(value => value.results || []).catch(() => []) : Promise.resolve([]),
       ]);
-      catalogRef.current = nextCatalog;
+      const mergedCatalog = [...youtubeHistory.map(youtubeMediaToTrack), ...nextCatalog].filter((track, index, all) => all.findIndex(item => item.id === track.id) === index);
+      catalogRef.current = mergedCatalog;
       historyRef.current = nextHistory;
-      setCatalog(nextCatalog);
+      setCatalog(mergedCatalog);
       setListeningHistory(nextHistory);
     } finally {
       setCatalogLoading(false);
@@ -174,7 +179,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [preferredGenres]);
 
   const selectTrack = useCallback((track: Track, nextQueue?: Track[], countPlay = true) => {
-    if (!track.audioUrl) {
+    if (!track.audioUrl && track.provider !== 'youtube') {
       setPlaybackError('This track does not have playable audio.');
       return;
     }
@@ -191,17 +196,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // playback when it is deferred until a later React effect.
     const audio = audioRef.current ?? new Audio();
     audioRef.current = audio;
-    if (audio.src !== track.audioUrl) {
+    if (track.provider === 'youtube') {
+      audio.pause();
+      audio.removeAttribute('src');
+    } else if (audio.src !== track.audioUrl) {
       audio.src = track.audioUrl;
       audio.load();
     }
-    void audio.play().catch(() => {
+    if (track.provider !== 'youtube') void audio.play().catch(() => {
       setIsPlaying(false);
       setPlaybackError('Tap play to start this track.');
     });
     if (countPlay) {
       updateHistory(track, 'play');
-      void incrementTrackPlay(track).catch(() => {
+      if (track.provider === 'youtube' && track.youtubeVideoId) void saveYouTubeHistory({ id: track.youtubeVideoId, title: track.title, artistOrChannel: track.artist.name, thumbnail: track.coverArt, publishedAt: '' }).catch(() => undefined);
+      if (track.provider !== 'youtube') void incrementTrackPlay(track).catch(() => {
         toast.error('This play could not be saved. Check your connection and try again.');
       });
       setCatalog(current => current.map(item => item.id === track.id ? { ...item, plays: item.plays + 1 } : item));
@@ -284,7 +293,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const pauseTrack = useCallback(() => setIsPlaying(false), []);
   const resumeTrack = useCallback(() => {
-    if (!currentTrackRef.current?.audioUrl) return;
+    if (!currentTrackRef.current?.audioUrl && currentTrackRef.current?.provider !== 'youtube') return;
     setPlaybackError(null);
     setIsPlaying(true);
   }, []);
@@ -341,12 +350,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const handleSetProgress = useCallback((nextProgress: number) => {
     const safeProgress = Math.max(0, Math.min(100, nextProgress));
     setProgress(safeProgress);
+    if (currentTrackRef.current?.provider === 'youtube') {
+      window.dispatchEvent(new CustomEvent('musicinsta:youtube-seek', { detail: { percent: safeProgress, duration } }));
+      return;
+    }
     const audio = audioRef.current;
     if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
       audio.currentTime = (safeProgress / 100) * audio.duration;
       setCurrentTime(audio.currentTime);
     }
-  }, []);
+  }, [duration]);
 
   const toggleShuffle = useCallback(() => {
     setIsShuffled(current => {
@@ -364,7 +377,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addToQueue = useCallback((track: Track) => {
-    if (!track.audioUrl) return;
+    if (!track.audioUrl && track.provider !== 'youtube') return;
     setQueue([...queueRef.current.filter(item => item.id !== track.id), track]);
   }, [setQueue]);
 
@@ -394,6 +407,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setIsExpanded(true);
   }, [playTrack]);
 
+  const syncExternalPlayback = useCallback((time: number, externalDuration: number, playing?: boolean) => {
+    setCurrentTime(Number.isFinite(time) ? time : 0);
+    setDuration(Number.isFinite(externalDuration) ? externalDuration : 0);
+    if (externalDuration > 0) setProgress(Math.max(0, Math.min(100, time / externalDuration * 100)));
+    if (typeof playing === 'boolean') setIsPlaying(playing);
+  }, []);
+  const externalEnded = useCallback(() => advance('ended'), [advance]);
+
   useEffect(() => () => {
     if (sleepTimerRef.current) window.clearTimeout(sleepTimerRef.current);
     audioRef.current?.pause();
@@ -407,7 +428,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setProgress: handleSetProgress, setVolume, toggleShuffle, toggleRepeat,
       toggleLyrics: () => setShowLyrics(current => !current), addToQueue, setQueue, startRadio, likeTrack, setSleepTimer,
       closeMiniPlayer: () => setIsMiniPlayerVisible(false), openMiniPlayer: () => setIsMiniPlayerVisible(true),
-      openInMainPlayer, refreshCatalog, clearPlayer,
+      openInMainPlayer, refreshCatalog, clearPlayer, syncExternalPlayback, externalEnded,
     }}>
       {children}
     </PlayerContext.Provider>

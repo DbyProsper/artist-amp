@@ -48,9 +48,11 @@ export interface Track {
   loudness?: number;
   tags?: string[];
   storagePath?: string;
-  source?: 'firestore' | 'gcs' | 'generated' | 'demo';
-  sourceCollection?: 'tracks' | 'songs';
+  source?: 'firestore' | 'gcs' | 'generated' | 'demo' | 'youtube';
+  sourceCollection?: 'tracks' | 'songs' | 'external_media';
   sourceDocumentId?: string;
+  provider?: 'youtube';
+  youtubeVideoId?: string;
   isPublic?: boolean;
   createdAt?: Date;
   albumId?: string;
@@ -91,6 +93,7 @@ export interface Post {
   album?: Album;
   imageUrl?: string;
   videoUrl?: string;
+  youtubeVideoId?: string;
   caption: string;
   likes: number;
   comments: number;

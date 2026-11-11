@@ -1,5 +1,6 @@
 import { API_BASE } from '@/config/api';
 import { auth } from '@/lib/firebase';
+import type { Track } from '@/types';
 
 export interface YouTubeMedia {
   id: string;
@@ -7,6 +8,25 @@ export interface YouTubeMedia {
   artistOrChannel: string;
   thumbnail: string;
   publishedAt: string;
+  play_count?: number;
+}
+
+export function youtubeMediaToTrack(item: YouTubeMedia): Track {
+  return {
+    id: `youtube-${item.id}`,
+    title: item.title,
+    artist: { id: `youtube-channel-${item.artistOrChannel.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name: item.artistOrChannel, username: item.artistOrChannel, avatar: item.thumbnail, coverImage: item.thumbnail, bio: '', location: 'YouTube', genres: ['Music'], isVerified: false, followers: 0, following: 0, tracks: 0 },
+    coverArt: item.thumbnail,
+    duration: 0,
+    plays: Number(item.play_count) || 0,
+    likes: 0,
+    source: 'youtube',
+    sourceCollection: 'external_media',
+    sourceDocumentId: `youtube-${item.id}`,
+    provider: 'youtube',
+    youtubeVideoId: item.id,
+    genre: 'Music',
+  };
 }
 
 interface SearchResponse {

@@ -81,13 +81,13 @@ export function difficultyAt(
   const eased = progress * progress * (3 - 2 * progress);
   const levelIndex = Math.max(0, Math.min(9, level - 1));
   const start = {
-    speed: 145 + levelIndex * 4,
+    speed: 165 + levelIndex * 7,
     gap: 196 - levelIndex * 2.5,
     spacing: 270 - levelIndex * 2,
     variation: 34 + levelIndex * 2,
   };
   const end = {
-    speed: 210 + levelIndex * 5.5,
+    speed: 235 + levelIndex * 7.5,
     gap: Math.max(116, 148 - levelIndex * 3.2),
     spacing: Math.max(218, 238 - levelIndex * 2),
     variation: 76 + levelIndex * 3,

@@ -29,13 +29,17 @@ export function persistPostLike(postId: string, liked: boolean, actor: { profile
   });
 }
 
+export function loadPostLike(postId: string, profileId: string) {
+  return request<{ liked: boolean; likes: number }>(`/api/social/posts/${encodeURIComponent(postId)}/like?profile_id=${encodeURIComponent(profileId)}`);
+}
+
 export function persistPostPlay(postId: string) {
   return request<{ saved: boolean }>(`/api/social/posts/${encodeURIComponent(postId)}/play`, {});
 }
 
 export function persistTrackLike(userId: string, creatorId: string, track: Track, liked: boolean) {
-  const sourceCollection = track.sourceCollection ?? (track.id.startsWith('song-') ? 'songs' : 'tracks');
-  const sourceDocumentId = track.sourceDocumentId ?? (track.id.startsWith('song-') ? track.id.slice(5) : track.id);
+  const sourceCollection = track.sourceCollection ?? (track.provider === 'youtube' ? 'external_media' : track.id.startsWith('song-') ? 'songs' : 'tracks');
+  const sourceDocumentId = track.sourceDocumentId ?? (track.provider === 'youtube' ? track.id : track.id.startsWith('song-') ? track.id.slice(5) : track.id);
   return request<{ liked: boolean; changed: boolean; playlistId: string }>('/api/social/tracks/like', {
     liked,
     trackId: track.id,
