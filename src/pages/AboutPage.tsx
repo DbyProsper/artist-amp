@@ -11,9 +11,9 @@ export default function AboutPage() {
       <article className="mx-auto max-w-3xl px-5 py-8">
         <div className="rounded-3xl bg-gradient-to-br from-primary/25 via-card to-accent/20 p-7">
           <img
-            src="/musicinsta-default-cover.webp"
+            src="/musicinsta-legacy-logo-transparent-v2.png"
             alt="MusicInsta"
-            className="h-20 w-20 rounded-2xl object-cover"
+            className="h-20 w-auto object-contain"
           />
           <h2 className="mt-5 text-3xl font-bold">
             Built around independent artists.

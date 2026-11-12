@@ -65,7 +65,7 @@ const MEMORY_IMAGES = [
   ["/landing/music-discovery.webp", "Headphones"],
   ["/landing/artist-collaboration.webp", "Artist collaboration"],
   ["/musicinsta-default-cover.webp", "MusicInsta record"],
-  ["/MusicInsta_Logo.png", "MusicInsta logo"],
+  ["/musicinsta-universe-logo-v2.png", "MusicInsta logo"],
   ["/Gemini_Generated_Image_hwb7wfhwb7wfhwb7.png", "Original music artwork"],
   ["/Gemini_Generated_Image_ybqu6mybqu6mybqu.png", "Original stage artwork"],
   ["/landing/vocal-studio.webp", "Vocal booth lights"],
@@ -986,7 +986,7 @@ function MemoryHeist({
                   />
                 ) : (
                   <img
-                    src="/MusicInsta_Logo.png"
+                    src="/musicinsta-universe-logo-v2.png"
                     alt=""
                     className="musicinsta-brand-logo h-full w-full object-contain p-3"
                   />

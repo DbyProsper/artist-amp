@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'musicinsta-light-v1';
+const CACHE_VERSION = 'musicinsta-light-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 const IMAGE_LIMIT = 80;

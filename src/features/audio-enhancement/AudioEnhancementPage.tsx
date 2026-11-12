@@ -237,7 +237,7 @@ export default function AudioEnhancementPage({ onBack, generatedAudioUrl, genera
             <button onClick={activeBack} className="p-2 hover:bg-secondary rounded-lg transition-colors">
               <ChevronLeft size={20} />
             </button>
-            <img src="/MusicInsta_Logo.png" alt="MusicInsta" className="musicinsta-brand-logo h-9 w-auto object-contain" />
+            <img src="/musicinsta-universe-logo-v2.png" alt="MusicInsta" className="musicinsta-brand-logo h-9 w-auto object-contain" />
             <div>
               <h1 className="text-xl font-semibold">Audio Enhancement</h1>
               <p className="text-sm text-muted-foreground">Preview mastering in your browser, then download the preview or render the full-quality version.</p>

@@ -87,7 +87,7 @@ export default function AuthPage() {
         className="flex items-center gap-3 mb-8"
       >
         <motion.img 
-          src="/MusicInsta_Logo.png"
+          src="/musicinsta-universe-logo-v2.png"
           alt="MusicInsta Logo"
           className="musicinsta-brand-logo h-16 w-auto object-contain"
           animate={{ 

@@ -15,7 +15,7 @@ const sizeClasses = {
 export function AppLogo({ size = 'md', className }: AppLogoProps) {
   return (
     <img
-      src="/MusicInsta_Logo.png"
+      src="/musicinsta-universe-logo-v2.png"
       alt="MusicInsta Logo"
       className={cn(sizeClasses[size], 'musicinsta-brand-logo w-auto object-contain', className)}
     />

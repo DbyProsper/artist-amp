@@ -159,7 +159,7 @@ export function StudioLayout({
             <ArrowLeft className="w-4 h-4" />
             Back
           </Button>
-          <div className="flex min-w-0 items-center gap-2"><img src="/MusicInsta_Logo.png" alt="MusicInsta" className="musicinsta-brand-logo h-8 w-auto object-contain" /><h1 className="truncate text-base font-bold sm:text-xl">{featureLabels[feature]}</h1></div>
+          <div className="flex min-w-0 items-center gap-2"><img src="/musicinsta-universe-logo-v2.png" alt="MusicInsta" className="musicinsta-brand-logo h-8 w-auto object-contain" /><h1 className="truncate text-base font-bold sm:text-xl">{featureLabels[feature]}</h1></div>
           <div className="flex items-center gap-2">
             <div className="hidden sm:block"><PlanBadge /></div>
             <Button

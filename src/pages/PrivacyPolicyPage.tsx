@@ -57,9 +57,9 @@ export default function PrivacyPolicyPage() {
       <article className="mx-auto max-w-3xl space-y-7 px-5 py-8">
         <div className="rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/15 via-card to-accent/10 p-6">
           <img
-            src="/musicinsta-default-cover.webp"
+            src="/musicinsta-legacy-logo-transparent-v2.png"
             alt="MusicInsta"
-            className="mb-4 h-16 w-16 rounded-2xl object-cover"
+            className="mb-4 h-16 w-auto object-contain"
           />
           <p className="text-sm font-semibold text-primary">MusicInsta</p>
           <h2 className="mt-2 text-3xl font-bold">
