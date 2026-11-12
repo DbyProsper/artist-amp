@@ -89,7 +89,7 @@ function YouTubeGlobalPlayback({ visible }: { visible: boolean }) {
   },[externalEnded,syncExternalPlayback,videoId]);
   if (!videoId) return null;
   const src = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&autoplay=1&controls=1&playsinline=1&rel=0&origin=${encodeURIComponent(window.location.origin)}`;
-  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-1/2 z-[60] aspect-square w-[calc(100%-4rem)] max-w-sm -translate-x-1/2 -translate-y-[68%] rounded-2xl lg:aspect-video lg:max-w-2xl lg:-translate-y-[82%]" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}><iframe key={videoId} ref={frame} title={`${currentTrack?.title || 'YouTube'} video`} src={src} className="h-full w-full border-0" allow="autoplay; encrypted-media; picture-in-picture" /></div>;
+  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-1/2 z-[60] aspect-square w-[calc(100%-4rem)] max-w-sm -translate-x-1/2 -translate-y-[63%] rounded-2xl lg:aspect-video lg:max-w-2xl lg:-translate-y-[74%]" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}><iframe key={videoId} ref={frame} title={`${currentTrack?.title || 'YouTube'} video`} src={src} className="h-full w-full border-0" allow="autoplay; encrypted-media; picture-in-picture" /></div>;
 }
 
 function formatTime(seconds: number): string {

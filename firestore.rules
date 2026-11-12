@@ -227,7 +227,10 @@ service cloud.firestore {
     }
 
     match /notifications/{notificationId} {
-      allow read, update, delete: if request.auth != null && resource.data.profile_id == request.auth.uid;
+      allow read, update, delete: if request.auth != null && (
+        resource.data.profile_id == request.auth.uid ||
+        ('recipient_auth_uid' in resource.data && resource.data.recipient_auth_uid == request.auth.uid)
+      );
       allow create: if request.auth != null && (request.resource.data.from_profile_id == request.auth.uid || isAdmin());
     }
 

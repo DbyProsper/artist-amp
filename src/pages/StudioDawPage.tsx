@@ -23,6 +23,7 @@ interface DawTrack {
   id: string; name: string; buffer: AudioBuffer; sourceBlob: Blob; audioUrl?: string;
   gain: number; pan: number; muted: boolean; solo: boolean;
   offset: number; trimStart: number; length: number; color: string;
+  clipPitch?: number;
   eqLow: number; eqMid: number; eqHigh: number; delay: number; reverb: number;
   effects?: DawEffects;
   eqEnabled?: boolean; delayEnabled?: boolean; reverbEnabled?: boolean; compressorEnabled?: boolean;
@@ -119,7 +120,7 @@ function tempoDelaySeconds(division: string, bpm: number) {
 
 function schedulePitchCorrection(source: AudioBufferSourceNode, track: DawTrack, when: number, bufferOffset: number, duration: number, additionalCents = 0) {
   const settings = normalizeDawEffects(track.effects, track as unknown as Record<string, unknown>).pitch;
-  source.detune.cancelScheduledValues(when); source.detune.setValueAtTime(0, when);
+  source.detune.cancelScheduledValues(when); source.detune.setValueAtTime(additionalCents, when);
   if (!settings.enabled || !track.buffer || duration <= 0) return;
   const samples = track.buffer.getChannelData(0), sampleRate = track.buffer.sampleRate;
   const windowSize = Math.min(4096, Math.max(1024, 2 ** Math.floor(Math.log2(sampleRate / Math.max(45, settings.minFrequency) * 3))));
@@ -129,7 +130,7 @@ function schedulePitchCorrection(source: AudioBufferSourceNode, track: DawTrack,
     const frequency = estimatePitch(samples.subarray(start, start + windowSize), sampleRate, settings.minFrequency, 1200);
     if (!frequency) continue;
     const corrected = nearestScaleCorrectionCents(frequency, settings) * (1 - settings.humanize / 180) + settings.octave * 1200 + additionalCents;
-    source.detune.setTargetAtTime(corrected, when + relative, timeConstant);
+    source.detune.setTargetAtTime(corrected + additionalCents, when + relative, timeConstant);
   }
 }
 
@@ -149,6 +150,9 @@ export default function StudioDawPage() {
   const [collaboratorSearch, setCollaboratorSearch] = useState('');
   const [collaboratorProfiles, setCollaboratorProfiles] = useState<CollaboratorProfile[]>([]);
   const [hasUserChanges, setHasUserChanges] = useState(false);
+  const [cloudSyncPending, setCloudSyncPending] = useState(false);
+  const [exitPromptOpen, setExitPromptOpen] = useState(false);
+  const [invitingCollaboratorId, setInvitingCollaboratorId] = useState('');
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
   const [isPlaying, setIsPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -163,6 +167,8 @@ export default function StudioDawPage() {
   const [beatMode, setBeatMode] = useState<'choice' | 'manual' | 'ai'>('choice');
   const [bpm, setBpm] = useState(112);
   const [steps, setSteps] = useState<Record<DrumName, boolean[]>>(() => Object.fromEntries(DRUMS.map(name => [name, Array(16).fill(false)])) as Record<DrumName, boolean[]>);
+  const [customDrumSounds, setCustomDrumSounds] = useState<Partial<Record<DrumName, AudioBuffer>>>({});
+  const [customDrumNames, setCustomDrumNames] = useState<Partial<Record<DrumName, string>>>({});
   const [melodySteps, setMelodySteps] = useState<Record<MelodyName, boolean[]>>(() => Object.fromEntries(MELODY_NOTES.map(note => [note.name, Array(16).fill(false)])) as Record<MelodyName, boolean[]>);
   const [aiBeatPrompt, setAiBeatPrompt] = useState('Warm amapiano groove with log drums, soulful keys and a memorable instrumental hook');
   const [aiBeatGenre, setAiBeatGenre] = useState('amapiano');
@@ -299,7 +305,7 @@ export default function StudioDawPage() {
     baselineProjectIdRef.current = id;
     baselineSignatureRef.current = projectStateSignature(restored, name, localCopy.masterGain, localCopy.compression, localCopy.masterDelay, localCopy.zoom);
     lastRemoteUpdatedRef.current = updatedAt;
-    setHasUserChanges(false);
+    setHasUserChanges(false); setCloudSyncPending(false); cloudSaveWarningRef.current = false;
     localStorage.setItem('musicinsta_active_daw_project', id);
   }, [ownerId, projectToTracks]);
 
@@ -372,52 +378,63 @@ export default function StudioDawPage() {
   }, [currentProjectSignature, loaded, projectId]);
 
   const persistCurrentProject = useCallback(async (manual = false) => {
-      if (!loaded || applyingRemoteRef.current || saving) return;
-      setSaving(true);
-      const now = new Date().toISOString();
-      const cloudOwnerId = projectOwnerId === 'local' && user ? user.uid : projectOwnerId;
-      const project: StoredDawProject = {
-        id: projectId, ownerId, cloudOwnerId, editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
-        tracks: tracks.map(({ buffer: _buffer, sourceBlob, ...track }) => ({ ...track, blob: sourceBlob })),
-        createdAt: projects.find(item => item.id === projectId)?.updatedAt || now, updatedAt: now,
-      };
-      try {
-        await saveDawProject(project);
-        localStorage.setItem('musicinsta_active_daw_project', projectId);
-        if (user) {
-          const cloudReadyTracks = await Promise.all(tracks.map(async track => {
-            if (track.audioUrl) return track;
-            const object = ref(storage, `studio-sessions/${user.uid}/${projectId}/${track.id}`);
-            await uploadBytes(object, track.sourceBlob);
-            return { ...track, audioUrl: await getDownloadURL(object) };
-          }));
-          const addedCloudUrls = cloudReadyTracks.some((track, index) => track.audioUrl !== tracks[index]?.audioUrl);
-          if (addedCloudUrls) setTracks(current => current.map(track => cloudReadyTracks.find(item => item.id === track.id) || track));
-          const cloudTracks = withoutUndefined(cloudReadyTracks.map(({ buffer: _buffer, sourceBlob: _blob, ...track }) => track));
-          await setDoc(doc(db, 'studio_projects', projectId), {
-            owner_id: cloudOwnerId, editor_ids: editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
-            tracks: cloudTracks, track_count: cloudTracks.length, version: 2,
-            created_at: projects.find(item => item.id === projectId)?.updatedAt || serverTimestamp(), updated_at: serverTimestamp(), updated_by: user.uid,
-          }, { merge: true });
-          const savedSignature = projectStateSignature(cloudReadyTracks, projectName, masterGain, compression, masterDelay, zoom);
-          baselineProjectIdRef.current = projectId;
-          baselineSignatureRef.current = savedSignature;
-          lastRemoteUpdatedRef.current = now;
-          setHasUserChanges(false);
-          cloudSaveWarningRef.current = false;
-        } else {
-          baselineProjectIdRef.current = projectId;
-          baselineSignatureRef.current = currentProjectSignature;
-          setHasUserChanges(false);
-        }
-        await refreshProjects();
-        if (manual) toast.success(user ? 'Project saved locally and to the cloud.' : 'Project saved on this device. Sign in to enable cloud backup.');
-      } catch (error) {
-        console.warn('DAW project cloud save failed; local copy is intact', error);
-        cloudSaveWarningRef.current = true;
-        toast.error('The project is safe locally, but cloud sync failed. Use “Save to cloud” before leaving the studio.');
-      }
+    if (!loaded || applyingRemoteRef.current || saving) return false;
+    setSaving(true);
+    const now = new Date().toISOString();
+    const cloudOwnerId = projectOwnerId === 'local' && user ? user.uid : projectOwnerId;
+    const project: StoredDawProject = {
+      id: projectId, ownerId, cloudOwnerId, editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
+      tracks: tracks.map(({ buffer: _buffer, sourceBlob, ...track }) => ({ ...track, blob: sourceBlob })),
+      createdAt: projects.find(item => item.id === projectId)?.updatedAt || now, updatedAt: now,
+    };
+    try {
+      await saveDawProject(project);
+      localStorage.setItem('musicinsta_active_daw_project', projectId);
+      baselineProjectIdRef.current = projectId;
+      baselineSignatureRef.current = currentProjectSignature;
+      setHasUserChanges(false);
+      await refreshProjects();
+    } catch (error) {
+      console.error('DAW local save failed', error);
+      if (manual) toast.error('This project could not be saved on this device. Please export your mix before leaving.');
       setSaving(false);
+      return false;
+    }
+    if (!user) {
+      if (manual) toast.success('Project saved on this device. Sign in to enable cloud backup.');
+      setSaving(false);
+      return true;
+    }
+    try {
+      const cloudReadyTracks = await Promise.all(tracks.map(async track => {
+        if (track.audioUrl) return track;
+        const object = ref(storage, `studio-sessions/${user.uid}/${projectId}/${track.id}`);
+        await uploadBytes(object, track.sourceBlob);
+        return { ...track, audioUrl: await getDownloadURL(object) };
+      }));
+      const addedCloudUrls = cloudReadyTracks.some((track, index) => track.audioUrl !== tracks[index]?.audioUrl);
+      if (addedCloudUrls) setTracks(current => current.map(track => cloudReadyTracks.find(item => item.id === track.id) || track));
+      const cloudTracks = withoutUndefined(cloudReadyTracks.map(({ buffer: _buffer, sourceBlob: _blob, ...track }) => track));
+      await setDoc(doc(db, 'studio_projects', projectId), {
+        owner_id: cloudOwnerId, editor_ids: editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
+        tracks: cloudTracks, track_count: cloudTracks.length, version: 2,
+        created_at: projects.find(item => item.id === projectId)?.updatedAt || serverTimestamp(), updated_at: serverTimestamp(), updated_by: user.uid,
+      }, { merge: true });
+      baselineSignatureRef.current = projectStateSignature(cloudReadyTracks, projectName, masterGain, compression, masterDelay, zoom);
+      lastRemoteUpdatedRef.current = now;
+      cloudSaveWarningRef.current = false;
+      setCloudSyncPending(false);
+      if (manual) toast.success('Project saved locally and to the cloud.');
+      setSaving(false);
+      return true;
+    } catch (error) {
+      if (!cloudSaveWarningRef.current) console.info('Cloud sync is pending; the local DAW copy remains current.', error);
+      cloudSaveWarningRef.current = true;
+      setCloudSyncPending(true);
+      if (manual) toast.error('Saved on this device, but cloud sync is still pending. MusicInsta will keep retrying quietly.');
+      setSaving(false);
+      return false;
+    }
   }, [compression, currentProjectSignature, editorIds, loaded, masterDelay, masterGain, ownerId, projectId, projectName, projectOwnerId, projects, refreshProjects, saving, tracks, user, zoom]);
 
   useEffect(() => {
@@ -427,6 +444,12 @@ export default function StudioDawPage() {
     }, 700);
     return () => window.clearTimeout(timer);
   }, [currentProjectSignature, hasUserChanges, loaded, persistCurrentProject]);
+
+  useEffect(() => {
+    if (!cloudSyncPending || !user) return;
+    const retry = window.setInterval(() => void persistCurrentProject(false), 20000);
+    return () => window.clearInterval(retry);
+  }, [cloudSyncPending, persistCurrentProject, user]);
 
   useEffect(() => {
     if (!user || !loaded || !projectId) return;
@@ -454,21 +477,37 @@ export default function StudioDawPage() {
   }, [collaboratorsOpen, user]);
 
   const inviteCollaborator = async (collaborator: CollaboratorProfile) => {
-    if (!user || (projectOwnerId !== user.uid && projectOwnerId !== 'local')) return;
-    const projectRef = doc(db, 'studio_projects', projectId);
-    const snapshot = await getDoc(projectRef);
-    if (!snapshot.exists()) { toast.error('Make one change and wait for this project to save before inviting an editor.'); return; }
-    await setDoc(projectRef, { editor_ids: arrayUnion(collaborator.authUid), updated_at: serverTimestamp(), updated_by: user.uid }, { merge: true });
-    setEditorIds(current => current.includes(collaborator.authUid) ? current : [...current, collaborator.authUid]);
-    await setDoc(doc(collection(db, 'notifications')), { profile_id: collaborator.authUid, target_profile_id: collaborator.id, from_profile_id: user.uid, type: 'daw_collaboration', message: `${profile?.name || user.displayName || 'A MusicInsta artist'} invited you to edit “${projectName}”.`, project_id: projectId, read: false, created_at: serverTimestamp() });
-    toast.success(`${collaborator.name} can now edit this project.`);
+    if (!user || (projectOwnerId !== user.uid && projectOwnerId !== 'local') || invitingCollaboratorId) return;
+    setInvitingCollaboratorId(collaborator.authUid);
+    try {
+      const projectRef = doc(db, 'studio_projects', projectId);
+      let snapshot = await getDoc(projectRef);
+      if (!snapshot.exists()) {
+        await persistCurrentProject(true);
+        snapshot = await getDoc(projectRef);
+      }
+      if (!snapshot.exists()) throw new Error('Save this project to the cloud before inviting an editor.');
+      await setDoc(projectRef, { editor_ids: arrayUnion(collaborator.authUid), updated_at: serverTimestamp(), updated_by: user.uid }, { merge: true });
+      setEditorIds(current => current.includes(collaborator.authUid) ? current : [...current, collaborator.authUid]);
+      try {
+        await setDoc(doc(collection(db, 'notifications')), { profile_id: collaborator.id, recipient_auth_uid: collaborator.authUid, target_profile_id: collaborator.id, from_profile_id: user.uid, type: 'daw_collaboration', message: `${profile?.name || user.displayName || 'A MusicInsta artist'} invited you to edit “${projectName}”.`, project_id: projectId, read: false, created_at: serverTimestamp() });
+      } catch (notificationError) { console.warn('Collaborator access was granted, but the notification could not be created.', notificationError); }
+      toast.success(`${collaborator.name} can now edit this project.`);
+    } catch (error) {
+      console.error('DAW collaborator invitation failed', error);
+      toast.error(error instanceof Error ? error.message : 'The collaborator invitation could not be sent.');
+    } finally { setInvitingCollaboratorId(''); }
   };
 
   const removeCollaborator = async (collaboratorId: string) => {
-    if (!user || projectOwnerId !== user.uid) return;
-    await setDoc(doc(db, 'studio_projects', projectId), { editor_ids: arrayRemove(collaboratorId), updated_at: serverTimestamp(), updated_by: user.uid }, { merge: true });
-    setEditorIds(current => current.filter(id => id !== collaboratorId));
-    toast.success('Editor access removed.');
+    if (!user || projectOwnerId !== user.uid || invitingCollaboratorId) return;
+    setInvitingCollaboratorId(collaboratorId);
+    try {
+      await setDoc(doc(db, 'studio_projects', projectId), { editor_ids: arrayRemove(collaboratorId), updated_at: serverTimestamp(), updated_by: user.uid }, { merge: true });
+      setEditorIds(current => current.filter(id => id !== collaboratorId));
+      toast.success('Editor access removed.');
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Editor access could not be removed.'); }
+    finally { setInvitingCollaboratorId(''); }
   };
 
   const addDecodedTrack = useCallback(async (buffer: AudioBuffer, blob: Blob, name: string, offset = 0) => {
@@ -476,7 +515,7 @@ export default function StudioDawPage() {
     const id = crypto.randomUUID();
     const next: DawTrack = {
       id, name, buffer, sourceBlob: blob, gain: 80, pan: 0, muted: false, solo: false,
-      offset, trimStart: 0, length: buffer.duration, color: TRACK_COLORS[tracksRef.current.length % TRACK_COLORS.length],
+      offset, trimStart: 0, length: buffer.duration, color: TRACK_COLORS[tracksRef.current.length % TRACK_COLORS.length], clipPitch: 0,
       eqLow: 0, eqMid: 0, eqHigh: 0, delay: 0, reverb: 0,
       eqEnabled: true, delayEnabled: true, reverbEnabled: true, compressorEnabled: false, compressorAmount: 0,
       pitchEnabled: true, pitchKey: 'C', pitchScale: 'Major', pitchAmount: 0,
@@ -628,9 +667,9 @@ export default function StudioDawPage() {
       const { source, harmonySource, nodes } = connectTrack(context, track, master);
       const startDelay = Math.max(0, track.offset - playbackStart), consumed = Math.max(0, playbackStart - track.offset);
       const when = context.currentTime + startDelay, bufferOffset = track.trimStart + consumed, remaining = Math.max(.01, track.length - consumed);
-      if (normalizeDawEffects(track.effects, track as unknown as Record<string, unknown>).order.includes('pitch')) schedulePitchCorrection(source, track, when, bufferOffset, remaining);
+      schedulePitchCorrection(source, track, when, bufferOffset, remaining, (track.clipPitch || 0) * 100);
       source.start(when, bufferOffset, remaining);
-      if (harmonySource) { const pitch = normalizeDawEffects(track.effects).pitch; schedulePitchCorrection(harmonySource, track, when, bufferOffset, remaining, pitch.harmony * 100); harmonySource.start(when, bufferOffset, remaining); sourcesRef.current.push(harmonySource); }
+      if (harmonySource) { const pitch = normalizeDawEffects(track.effects).pitch; schedulePitchCorrection(harmonySource, track, when, bufferOffset, remaining, (pitch.harmony + (track.clipPitch || 0)) * 100); harmonySource.start(when, bufferOffset, remaining); sourcesRef.current.push(harmonySource); }
       sourcesRef.current.push(source); activeNodesRef.current.set(track.id, nodes);
     });
     playbackStartedAt.current = context.currentTime - playbackStart;
@@ -686,7 +725,7 @@ export default function StudioDawPage() {
     rememberTracks();
     const nextTracks = tracksRef.current.map(track => track.id === id ? { ...track, ...patch } : track);
     setTracks(nextTracks);
-    if (patch.effects && isPlayingRef.current) { void startPlayback(nextTracks, playheadRef.current); return; }
+    if ((patch.effects || patch.clipPitch != null) && isPlayingRef.current) { void startPlayback(nextTracks, playheadRef.current); return; }
     const nodes = activeNodesRef.current.get(id), now = getContext().currentTime;
     if (!nodes) return;
     const currentTrack = tracksRef.current.find(track => track.id === id);
@@ -757,7 +796,7 @@ export default function StudioDawPage() {
     const master = offline.createGain(), compressor = offline.createDynamicsCompressor();
     master.gain.value = masterGain / 100; compressor.threshold.value = -8 - compression / 3; compressor.ratio.value = 2 + compression / 12; master.connect(compressor).connect(offline.destination);
     const soloed = selection.some(track => track.solo);
-    selection.filter(track => !track.muted && (!soloed || track.solo)).forEach(track => { const { source, harmonySource } = connectTrack(offline, track, master); const effects = normalizeDawEffects(track.effects, track as unknown as Record<string, unknown>); if (effects.order.includes('pitch')) schedulePitchCorrection(source, track, track.offset, track.trimStart, track.length); source.start(track.offset, track.trimStart, track.length); if (harmonySource) { schedulePitchCorrection(harmonySource, track, track.offset, track.trimStart, track.length, effects.pitch.harmony * 100); harmonySource.start(track.offset, track.trimStart, track.length); } });
+    selection.filter(track => !track.muted && (!soloed || track.solo)).forEach(track => { const { source, harmonySource } = connectTrack(offline, track, master); const effects = normalizeDawEffects(track.effects, track as unknown as Record<string, unknown>); schedulePitchCorrection(source, track, track.offset, track.trimStart, track.length, (track.clipPitch || 0) * 100); source.start(track.offset, track.trimStart, track.length); if (harmonySource) { schedulePitchCorrection(harmonySource, track, track.offset, track.trimStart, track.length, (effects.pitch.harmony + (track.clipPitch || 0)) * 100); harmonySource.start(track.offset, track.trimStart, track.length); } });
     return offline.startRendering();
   };
 
@@ -837,6 +876,16 @@ export default function StudioDawPage() {
     toast.success(splits ? `Split ${splits} selected track${splits === 1 ? '' : 's'}.` : 'Move the playhead inside a selected clip first.');
   };
 
+  const loadCustomDrumSound = async (drum: DrumName, file?: File) => {
+    if (!file) return;
+    try {
+      const buffer = await decodeBlob(file);
+      setCustomDrumSounds(current => ({ ...current, [drum]: buffer }));
+      setCustomDrumNames(current => ({ ...current, [drum]: file.name }));
+      toast.success(`${file.name} is now the ${drum} sound.`);
+    } catch { toast.error('That instrument sound could not be decoded. Try WAV, MP3, M4A or OGG.'); }
+  };
+
   const makeBeatBuffer = () => {
     const context = getContext(), sampleRate = context.sampleRate, stepDuration = 60 / bpm / 4, bars = 4, duration = stepDuration * 16 * bars;
     const buffer = context.createBuffer(2, Math.ceil(duration * sampleRate), sampleRate);
@@ -845,9 +894,19 @@ export default function StudioDawPage() {
       const add = (channel: Float32Array, index: number, value: number) => { if (index < channel.length) channel[index] = Math.max(-1, Math.min(1, channel[index] + value)); };
       for (let channelIndex = 0; channelIndex < 2; channelIndex += 1) {
         const channel = buffer.getChannelData(channelIndex);
-        if (steps.Kick[step]) for (let i = 0; i < sampleRate * .35; i += 1) add(channel, start + i, Math.sin(2 * Math.PI * (120 - 75 * i / (sampleRate * .35)) * i / sampleRate) * Math.exp(-i / (sampleRate * .09)) * .9);
-        if (steps.Snare[step] || steps.Clap[step]) for (let i = 0; i < sampleRate * .18; i += 1) add(channel, start + i, (Math.random() * 2 - 1) * Math.exp(-i / (sampleRate * (steps.Clap[step] ? .05 : .09))) * .45);
-        if (steps['Hi-hat'][step]) for (let i = 0; i < sampleRate * .06; i += 1) add(channel, start + i, (Math.random() * 2 - 1) * Math.exp(-i / (sampleRate * .018)) * .28);
+        const addCustomSample = (drum: DrumName) => {
+          const sample = customDrumSounds[drum];
+          if (!steps[drum][step] || !sample) return false;
+          const sampleData = sample.getChannelData(Math.min(channelIndex, sample.numberOfChannels - 1));
+          const outputLength = Math.ceil(sample.duration * sampleRate);
+          for (let i = 0; i < outputLength && start + i < channel.length; i += 1) add(channel, start + i, sampleData[Math.min(sampleData.length - 1, Math.floor(i * sample.sampleRate / sampleRate))] * .85);
+          return true;
+        };
+        const customKick = addCustomSample('Kick'), customSnare = addCustomSample('Snare'), customClap = addCustomSample('Clap'), customHat = addCustomSample('Hi-hat');
+        if (steps.Kick[step] && !customKick) for (let i = 0; i < sampleRate * .35; i += 1) add(channel, start + i, Math.sin(2 * Math.PI * (120 - 75 * i / (sampleRate * .35)) * i / sampleRate) * Math.exp(-i / (sampleRate * .09)) * .9);
+        if (steps.Snare[step] && !customSnare) for (let i = 0; i < sampleRate * .18; i += 1) add(channel, start + i, (Math.random() * 2 - 1) * Math.exp(-i / (sampleRate * .09)) * .45);
+        if (steps.Clap[step] && !customClap) for (let i = 0; i < sampleRate * .18; i += 1) add(channel, start + i, (Math.random() * 2 - 1) * Math.exp(-i / (sampleRate * .05)) * .45);
+        if (steps['Hi-hat'][step] && !customHat) for (let i = 0; i < sampleRate * .06; i += 1) add(channel, start + i, (Math.random() * 2 - 1) * Math.exp(-i / (sampleRate * .018)) * .28);
         MELODY_NOTES.forEach(note => {
           if (!melodySteps[note.name][step]) return;
           const noteLength = Math.min(Math.floor(stepDuration * sampleRate * .92), Math.floor(sampleRate * .55));
@@ -918,7 +977,11 @@ export default function StudioDawPage() {
   }).slice(0, 30);
 
   const requestExit = () => {
-    if ((hasUserChanges || cloudSaveWarningRef.current) && !window.confirm('Exit the DAW? Unsaved or unsynced changes may be lost. Save the project before leaving if possible.')) return;
+    setExitPromptOpen(true);
+  };
+  const saveAndExit = async () => {
+    await persistCurrentProject(true);
+    setExitPromptOpen(false);
     navigate('/studio');
   };
   useEffect(() => {
@@ -929,6 +992,16 @@ export default function StudioDawPage() {
     window.addEventListener('beforeunload', warnBeforeUnload);
     return () => window.removeEventListener('beforeunload', warnBeforeUnload);
   }, [hasUserChanges]);
+
+  useEffect(() => {
+    const preventPageZoom = (event: WheelEvent) => { if (event.ctrlKey || event.metaKey) event.preventDefault(); };
+    const preventZoomKeys = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && ['+', '-', '=', '0'].includes(event.key)) event.preventDefault();
+    };
+    window.addEventListener('wheel', preventPageZoom, { passive: false });
+    window.addEventListener('keydown', preventZoomKeys);
+    return () => { window.removeEventListener('wheel', preventPageZoom); window.removeEventListener('keydown', preventZoomKeys); };
+  }, []);
 
   const setTimelineZoom = (next: number) => setZoom(Math.max(25, Math.min(360, next)));
   const zoomTimelineWithWheel = (event: React.WheelEvent<HTMLDivElement>) => {
@@ -964,7 +1037,7 @@ export default function StudioDawPage() {
           <Button variant="ghost" size="icon" onClick={requestExit}><ArrowLeft className="h-5 w-5" /></Button>
           <img src="/musicinsta-universe-logo-v2.png" alt="MusicInsta" className="musicinsta-brand-logo h-8 w-auto object-contain" />
           <Input aria-label="Project name" value={projectName} onChange={event => setProjectName(event.target.value)} className="min-w-[190px] flex-1 sm:max-w-sm" />
-          <span className="flex items-center gap-1 text-xs text-muted-foreground"><Save className="h-3.5 w-3.5" />{!loaded ? 'Loading project…' : saving ? 'Saving…' : cloudSaveWarningRef.current ? 'Cloud save needs attention' : hasUserChanges ? 'Unsaved changes' : user ? 'Saved locally and in the cloud' : 'Saved on this device'}</span>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground"><Save className="h-3.5 w-3.5" />{!loaded ? 'Loading project…' : saving ? 'Saving…' : cloudSyncPending ? 'Saved locally · cloud sync retrying' : hasUserChanges ? 'Unsaved changes' : user ? 'Saved locally and in the cloud' : 'Saved on this device'}</span>
           <Button variant="outline" onClick={() => void persistCurrentProject(true)} disabled={!loaded || saving} title="Save a local copy and retry cloud backup"><Save className="mr-2 h-4 w-4" />Save to cloud</Button>
           <Button variant="outline" onClick={() => setProjectsOpen(true)}><FolderOpen className="mr-2 h-4 w-4" />Projects</Button>
           {user && <Button variant="outline" onClick={() => setCollaboratorsOpen(true)}><Users className="mr-2 h-4 w-4" />Collaborators</Button>}
@@ -976,13 +1049,24 @@ export default function StudioDawPage() {
         {exportState && <div className="mx-auto mt-2 max-w-[1600px]"><div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>{exportState.label}</span><span>{exportState.progress}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${exportState.progress}%` }} /></div></div>}
       </header>
 
+      {exitPromptOpen && <div className="fixed inset-0 z-[140] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md overflow-hidden rounded-3xl border border-primary/35 bg-card shadow-[0_30px_100px_hsl(var(--primary)/.22)]"><div className="bg-gradient-to-r from-primary/25 via-violet-500/15 to-transparent p-6"><div className="flex items-center gap-3"><img src="/musicinsta-universe-logo-v2.png" alt="MusicInsta" className="h-12 w-12 object-contain" /><div><p className="text-xs font-semibold uppercase tracking-[.2em] text-primary">MusicInsta Studio</p><h2 className="text-xl font-bold">Leave this DAW project?</h2></div></div><p className="mt-4 text-sm text-muted-foreground">Your local copy is protected. Save once more before leaving to retry any pending cloud sync.</p></div><div className="flex flex-col gap-2 p-5 sm:flex-row sm:justify-end"><Button variant="ghost" onClick={() => setExitPromptOpen(false)}>Keep editing</Button><Button variant="outline" onClick={() => { setExitPromptOpen(false); navigate('/studio'); }}>Exit without retry</Button><Button onClick={() => void saveAndExit()} disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save and exit</Button></div></div></div>}
+
       {projectsOpen && <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4" onClick={() => setProjectsOpen(false)}><div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex items-center justify-between"><div><h2 className="text-xl font-bold">DAW projects</h2><p className="text-sm text-muted-foreground">Your projects and projects shared with you stay available across devices.</p></div><Button onClick={newProject}><Plus className="mr-2 h-4 w-4" />New project</Button></div><div className="space-y-2">{projects.map(project => <div key={project.id} className={`flex items-center gap-3 rounded-xl border p-3 ${project.id === projectId ? 'border-primary bg-primary/5' : 'border-border'}`}><button className="min-w-0 flex-1 text-left" onClick={() => void loadProject(project.id)}><p className="truncate font-semibold">{project.name}</p><p className="text-xs text-muted-foreground">{project.trackCount} tracks · {new Date(project.updatedAt).toLocaleString()}{user && project.ownerId !== user.uid ? ' · Shared with you' : ''}</p></button>{!user || project.ownerId === user.uid ? <Button variant="ghost" size="icon" aria-label={`Delete ${project.name}`} onClick={() => void removeProject(project)}><Trash2 className="h-4 w-4" /></Button> : null}</div>)}{!projects.length && <p className="py-8 text-center text-muted-foreground">No saved projects yet.</p>}</div></div></div>}
 
-      {collaboratorsOpen && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4" onClick={() => setCollaboratorsOpen(false)}><div className="max-h-[82vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}><div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">Project collaborators</h2><p className="text-sm text-muted-foreground">Invite MusicInsta users to edit this project. Changes synchronize in real time.</p></div><Button variant="ghost" size="icon" onClick={() => setCollaboratorsOpen(false)}><X className="h-4 w-4" /></Button></div><Input value={collaboratorSearch} onChange={event => setCollaboratorSearch(event.target.value)} placeholder="Search users by name or username" /><div className="mt-4 space-y-2">{visibleCollaborators.map(person => { const invited = editorIds.includes(person.authUid); return <div key={person.id} className="flex items-center gap-3 rounded-xl border border-border p-3"><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-muted">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <Users className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><p className="truncate font-medium">{person.name}</p><p className="truncate text-xs text-muted-foreground">{person.username ? `@${person.username.replace(/^@/, '')}` : 'MusicInsta user'}</p></div><Button size="sm" variant={invited ? 'outline' : 'default'} onClick={() => void (invited ? removeCollaborator(person.authUid) : inviteCollaborator(person))}>{invited ? <UserMinus className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}{invited ? 'Remove' : 'Invite'}</Button></div>; })}</div></div></div>}
+      {collaboratorsOpen && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/70 p-4" onClick={() => setCollaboratorsOpen(false)}>
+        <div className="max-h-[82vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card p-5" onClick={event => event.stopPropagation()}>
+          <div className="mb-4 flex items-start justify-between gap-3"><div><h2 className="text-xl font-bold">Project collaborators</h2><p className="text-sm text-muted-foreground">Invite MusicInsta users to edit this project. Changes synchronize in real time.</p></div><Button variant="ghost" size="icon" onClick={() => setCollaboratorsOpen(false)}><X className="h-4 w-4" /></Button></div>
+          <Input value={collaboratorSearch} onChange={event => setCollaboratorSearch(event.target.value)} placeholder="Search users by name or username" />
+          <div className="mt-4 space-y-2">{visibleCollaborators.map(person => {
+            const invited = editorIds.includes(person.authUid), pending = invitingCollaboratorId === person.authUid;
+            return <div key={person.id} className="flex items-center gap-3 rounded-xl border border-border p-3"><div className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-muted">{person.avatarUrl ? <img src={person.avatarUrl} alt="" className="h-full w-full object-cover" /> : <Users className="h-4 w-4" />}</div><div className="min-w-0 flex-1"><p className="truncate font-medium">{person.name}</p><p className="truncate text-xs text-muted-foreground">{person.username ? `@${person.username.replace(/^@/, '')}` : 'MusicInsta user'}</p></div><Button size="sm" variant={invited ? 'outline' : 'default'} disabled={Boolean(invitingCollaboratorId)} onClick={() => void (invited ? removeCollaborator(person.authUid) : inviteCollaborator(person))}>{pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : invited ? <UserMinus className="mr-2 h-4 w-4" /> : <UserPlus className="mr-2 h-4 w-4" />}{pending ? 'Sending…' : invited ? 'Remove' : 'Invite'}</Button></div>;
+          })}</div>
+        </div>
+      </div>}
 
       {beatOpen && <section className="mx-auto mt-4 max-w-[1550px] rounded-2xl border border-border bg-card p-4">
         {beatMode === 'choice' && <div><h2 className="text-lg font-bold">Create a beat</h2><p className="mt-1 text-sm text-muted-foreground">Build the rhythm and melody yourself, or describe a beat for MusicInsta AI.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><button onClick={() => setBeatMode('manual')} className="rounded-2xl border border-border p-5 text-left transition hover:border-primary"><SlidersHorizontal className="mb-3 h-6 w-6 text-primary" /><p className="font-semibold">Manual beat maker</p><p className="mt-1 text-sm text-muted-foreground">Program drums and a five-note melody on the 16-step sequencer.</p></button><button onClick={() => setBeatMode('ai')} className="rounded-2xl border border-border p-5 text-left transition hover:border-primary"><Sparkles className="mb-3 h-6 w-6 text-primary" /><p className="font-semibold">Generate with AI</p><p className="mt-1 text-sm text-muted-foreground">Use the same MusicInsta beat generator, preview here, then send the result to the playlist.</p></button></div></div>}
-        {beatMode === 'manual' && <><div className="mb-4 flex flex-wrap items-center gap-3"><Button size="sm" variant="ghost" onClick={() => setBeatMode('choice')}><ArrowLeft className="mr-2 h-4 w-4" />Methods</Button><div><h2 className="font-bold">16-step beat and melody maker</h2><p className="text-xs text-muted-foreground">Program a four-bar loop, preview it, then insert it at the playhead.</p></div><label className="ml-auto flex items-center gap-2 text-sm">BPM <Input className="w-24" type="number" min={60} max={200} value={bpm} onChange={event => setBpm(Math.max(60, Math.min(200, Number(event.target.value) || 60)))} /></label><Button variant="outline" onClick={previewBeat}><Play className="mr-2 h-4 w-4" />Preview</Button><Button onClick={() => void insertBeat()}><Plus className="mr-2 h-4 w-4" />Add to playlist</Button></div><div className="overflow-x-auto"><div className="min-w-[780px] space-y-2">{DRUMS.map(drum => <div key={drum} className="grid grid-cols-[90px_repeat(16,1fr)] gap-1"><span className="py-2 text-sm font-medium">{drum}</span>{steps[drum].map((active, index) => <button key={index} aria-label={`${drum} step ${index + 1}`} onClick={() => setSteps(current => ({ ...current, [drum]: current[drum].map((value, i) => i === index ? !value : value) }))} className={`aspect-square rounded ${active ? 'bg-primary shadow-[0_0_12px_hsl(var(--primary)/.55)]' : index % 4 === 0 ? 'bg-muted-foreground/30' : 'bg-muted'}`} />)}</div>)}<div className="my-3 border-t border-border" />{MELODY_NOTES.map(note => <div key={note.name} className="grid grid-cols-[90px_repeat(16,1fr)] gap-1"><span className="py-2 text-sm font-medium text-primary">{note.name}</span>{melodySteps[note.name].map((active, index) => <button key={index} aria-label={`${note.name} step ${index + 1}`} onClick={() => setMelodySteps(current => ({ ...current, [note.name]: current[note.name].map((value, i) => i === index ? !value : value) }))} className={`aspect-square rounded ${active ? 'bg-accent shadow-[0_0_12px_hsl(var(--accent)/.55)]' : index % 4 === 0 ? 'bg-muted-foreground/30' : 'bg-muted'}`} />)}</div>)}</div></div></>}
+        {beatMode === 'manual' && <><div className="mb-4 flex flex-wrap items-center gap-3"><Button size="sm" variant="ghost" onClick={() => setBeatMode('choice')}><ArrowLeft className="mr-2 h-4 w-4" />Methods</Button><div><h2 className="font-bold">16-step beat and melody maker</h2><p className="text-xs text-muted-foreground">Program a four-bar loop, preview it, then insert it at the playhead.</p></div><label className="ml-auto flex items-center gap-2 text-sm">BPM <Input className="w-24" type="number" min={60} max={200} value={bpm} onChange={event => setBpm(Math.max(60, Math.min(200, Number(event.target.value) || 60)))} /></label><Button variant="outline" onClick={previewBeat}><Play className="mr-2 h-4 w-4" />Preview</Button><Button onClick={() => void insertBeat()}><Plus className="mr-2 h-4 w-4" />Add to playlist</Button></div><div className="mb-4 rounded-xl border border-primary/20 bg-primary/5 p-3"><p className="text-sm font-semibold">Your instrument sounds</p><p className="mb-3 text-xs text-muted-foreground">Replace any built-in drum with your own one-shot sample. The uploaded sounds are rendered into the loop sent to the playlist.</p><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{DRUMS.map(drum => <label key={drum} className="cursor-pointer rounded-lg border border-border bg-background/70 p-3 transition hover:border-primary"><span className="block text-xs font-semibold">{drum}</span><span className="mt-1 block truncate text-[11px] text-muted-foreground">{customDrumNames[drum] || 'Built-in sound'}</span><span className="mt-2 inline-flex items-center text-xs text-primary"><Upload className="mr-1 h-3.5 w-3.5" />Choose sound</span><input type="file" accept="audio/*" className="hidden" onChange={event => void loadCustomDrumSound(drum, event.target.files?.[0])} /></label>)}</div></div><div className="overflow-x-auto"><div className="min-w-[780px] space-y-2">{DRUMS.map(drum => <div key={drum} className="grid grid-cols-[90px_repeat(16,1fr)] gap-1"><span className="py-2 text-sm font-medium">{drum}</span>{steps[drum].map((active, index) => <button key={index} aria-label={`${drum} step ${index + 1}`} onClick={() => setSteps(current => ({ ...current, [drum]: current[drum].map((value, i) => i === index ? !value : value) }))} className={`aspect-square rounded ${active ? 'bg-primary shadow-[0_0_12px_hsl(var(--primary)/.55)]' : index % 4 === 0 ? 'bg-muted-foreground/30' : 'bg-muted'}`} />)}</div>)}<div className="my-3 border-t border-border" />{MELODY_NOTES.map(note => <div key={note.name} className="grid grid-cols-[90px_repeat(16,1fr)] gap-1"><span className="py-2 text-sm font-medium text-primary">{note.name}</span>{melodySteps[note.name].map((active, index) => <button key={index} aria-label={`${note.name} step ${index + 1}`} onClick={() => setMelodySteps(current => ({ ...current, [note.name]: current[note.name].map((value, i) => i === index ? !value : value) }))} className={`aspect-square rounded ${active ? 'bg-accent shadow-[0_0_12px_hsl(var(--accent)/.55)]' : index % 4 === 0 ? 'bg-muted-foreground/30' : 'bg-muted'}`} />)}</div>)}</div></div></>}
         {beatMode === 'ai' && <div><div className="mb-4 flex items-center gap-3"><Button size="sm" variant="ghost" onClick={() => setBeatMode('choice')}><ArrowLeft className="mr-2 h-4 w-4" />Methods</Button><div><h2 className="font-bold">MusicInsta AI beat generator</h2><p className="text-xs text-muted-foreground">Your generated beat stays in the DAW until you add it to the playlist.</p></div></div><textarea value={aiBeatPrompt} onChange={event => setAiBeatPrompt(event.target.value)} placeholder="Describe the rhythm, instruments and vibe…" className="min-h-28 w-full rounded-xl border border-input bg-background p-3 text-sm outline-none focus:ring-2 focus:ring-primary" /><div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="text-xs text-muted-foreground">Genre<Input className="mt-1" value={aiBeatGenre} onChange={event => setAiBeatGenre(event.target.value)} /></label><label className="text-xs text-muted-foreground">Mood<Input className="mt-1" value={aiBeatMood} onChange={event => setAiBeatMood(event.target.value)} /></label><label className="text-xs text-muted-foreground">BPM<Input className="mt-1" type="number" min={60} max={180} value={bpm} onChange={event => setBpm(Math.max(60, Math.min(180, Number(event.target.value) || 60)))} /></label></div><div className="mt-4 flex flex-wrap items-center gap-3"><Button onClick={() => void generateAiBeat()} disabled={aiGenerating}>{aiGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{aiGenerating ? 'Generating beat…' : 'Generate beat'}</Button>{aiBeatUrl && <><audio src={aiBeatUrl} controls className="h-10 min-w-64 flex-1" /><Button onClick={() => void insertAiBeat()}><Plus className="mr-2 h-4 w-4" />Send to playlist</Button></>}</div></div>}
       </section>}
 
@@ -994,7 +1078,6 @@ export default function StudioDawPage() {
             <select aria-label="Recording microphone" value={microphoneId} onChange={event => setMicrophoneId(event.target.value)} className="h-10 max-w-52 rounded-md border border-input bg-background px-3 text-sm"><option value="">Default microphone</option>{microphones.map(device => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${microphones.indexOf(device) + 1}`}</option>)}</select>
             {isFinalizingRecording && <span className="text-xs text-muted-foreground">Finishing the recorded take…</span>}
             <Button asChild variant="outline"><label className="cursor-pointer"><Upload className="mr-2 h-4 w-4" />Upload audio<input multiple type="file" accept="audio/*" className="hidden" onChange={event => void handleFiles(event.target.files)} /></label></Button>
-            <Button variant="outline" onClick={() => void addEmptyTrack()}><Plus className="mr-2 h-4 w-4" />Empty track</Button>
             <Button variant="ghost" size="icon" aria-label="Undo" disabled={!canUndo} onClick={undo}><Undo2 className="h-4 w-4" /></Button>
             <Button variant="ghost" size="icon" aria-label="Redo" disabled={!canRedo} onClick={redo}><Redo2 className="h-4 w-4" /></Button>
             <Button variant="outline" disabled={!tracks.length} onClick={splitSelected}><Scissors className="mr-2 h-4 w-4" />Split selected</Button>
@@ -1013,9 +1096,11 @@ export default function StudioDawPage() {
                 <div className="space-y-3 border-r border-border p-3">
                   <div className="flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded text-xs text-white" style={{ backgroundColor: track.color }}>{index + 1}</span><input value={track.name} onChange={event => updateTrack(track.id, { name: event.target.value })} className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none" /><input aria-label="Track color" type="color" value={track.color} onChange={event => updateTrack(track.id, { color: event.target.value })} className="h-6 w-6 rounded border-0 bg-transparent p-0" /><button onClick={() => { rememberTracks(); setTracks(current => current.filter(item => item.id !== track.id)); }}><Trash2 className="h-4 w-4 text-muted-foreground" /></button></div>
                   <div className="flex gap-1"><button title="Mute" onClick={() => updateAudibility(track.id, 'muted')} className={`rounded px-2 py-1 text-xs ${track.muted ? 'bg-destructive text-destructive-foreground' : 'bg-muted'}`}>M</button><button title="Solo this track and mute all others" onClick={() => updateAudibility(track.id, 'solo')} className={`rounded px-2 py-1 text-xs ${track.solo ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>S</button><button title="Move track up" onClick={() => moveTrack(index, -1)}><ArrowUp className="h-3.5 w-3.5" /></button><button title="Move track down" onClick={() => moveTrack(index, 1)}><ArrowDown className="h-3.5 w-3.5" /></button><button title="Enhance track" onClick={() => void enhance(track)}><Sparkles className="h-3.5 w-3.5 text-primary" /></button><button title="Extract vocals and instrumental" onClick={() => openSeparator(track.id)}><Mic className="h-3.5 w-3.5 text-accent" /></button></div>
+                  <label className="flex items-center gap-2 text-[11px] text-muted-foreground"><span className="w-14">Pitch</span><input aria-label={`${track.name} clip pitch`} type="range" min={-12} max={12} step={1} value={track.clipPitch || 0} onChange={event => updateTrack(track.id, { clipPitch: Number(event.target.value) })} className="min-w-0 flex-1 accent-pink-500" /><span className="w-8 text-right tabular-nums">{track.clipPitch || 0}st</span></label>
                 </div>
-                <div className="relative h-24 overflow-hidden" style={{ backgroundImage: 'linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px)', backgroundSize: `${zoom}px 100%` }}><div data-testid="daw-playhead" className="absolute inset-y-0 z-20 w-0.5 bg-primary" style={{ left: playhead * zoom }} /><div onPointerDown={event => dragClip(track, event)} className={`absolute top-3 h-16 cursor-grab overflow-hidden rounded-lg border-2 shadow-sm ${selectedTrackIds.has(track.id) ? 'border-white ring-2 ring-primary' : 'border-white/20'} ${track.muted ? 'opacity-35' : ''}`} style={{ left: track.offset * zoom, width: Math.max(18, track.length * zoom), background: `linear-gradient(90deg, ${track.color}, ${track.color}bb)` }}><button data-resize="true" aria-label="Trim clip start" onPointerDown={event => resizeClip(track, 'left', event)} className="absolute inset-y-0 left-0 z-10 w-3 cursor-ew-resize bg-white/25" /><Waveform buffer={track.buffer} color={track.color} trimStart={track.trimStart} length={track.length} /><span className="absolute left-4 top-1 text-[10px] font-medium text-white drop-shadow">{track.name}</span><button data-resize="true" aria-label="Trim clip end" onPointerDown={event => resizeClip(track, 'right', event)} className="absolute inset-y-0 right-0 z-10 w-3 cursor-ew-resize bg-white/25" /></div></div>
+                <div className="relative h-28 overflow-hidden" style={{ backgroundImage: 'linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px)', backgroundSize: `${zoom}px 100%` }}><div data-testid="daw-playhead" className="absolute inset-y-0 z-20 w-0.5 bg-primary" style={{ left: playhead * zoom }} /><div onPointerDown={event => dragClip(track, event)} className={`absolute top-3 h-20 cursor-grab overflow-hidden rounded-lg border-2 shadow-sm ${selectedTrackIds.has(track.id) ? 'border-white ring-2 ring-primary' : 'border-white/20'} ${track.muted ? 'opacity-35' : ''}`} style={{ left: track.offset * zoom, width: Math.max(18, track.length * zoom), background: `linear-gradient(90deg, ${track.color}, ${track.color}bb)` }}><button data-resize="true" aria-label="Trim clip start" onPointerDown={event => resizeClip(track, 'left', event)} className="absolute inset-y-0 left-0 z-10 w-3 cursor-ew-resize bg-white/25" /><Waveform buffer={track.buffer} color={track.color} trimStart={track.trimStart} length={track.length} /><span className="pointer-events-none absolute left-4 top-1 text-[10px] font-medium text-white drop-shadow">{track.name} · {track.clipPitch || 0}st</span><button data-resize="true" aria-label="Delete clip" title="Delete this clip" onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); rememberTracks(); setTracks(current => current.filter(item => item.id !== track.id)); }} className="absolute right-4 top-1 z-30 rounded-full bg-black/65 p-1 text-white hover:bg-destructive"><X className="h-3 w-3" /></button><button data-resize="true" aria-label="Trim clip end" onPointerDown={event => resizeClip(track, 'right', event)} className="absolute inset-y-0 right-0 z-10 w-3 cursor-ew-resize bg-white/25" /></div></div>
               </div>)}
+              <div className="grid grid-cols-[240px_1fr] border-b border-border"><div className="border-r border-border p-3"><Button variant="outline" className="w-full border-dashed" onClick={() => void addEmptyTrack()}><Plus className="mr-2 h-4 w-4" />Add empty track</Button></div><div className="grid min-h-16 place-items-center bg-muted/10 text-xs text-muted-foreground">Add a new channel below the last playlist track</div></div>
             </div>
           </div>
         </section>
