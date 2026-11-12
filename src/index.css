@@ -61,8 +61,8 @@
 
 /* Audio Enhancement brand tokens (do not remove existing vars) */
 :root {
-  /* Global MusicInsta logo size. Change 0.82 to a smaller or larger value. */
-  --musicinsta-logo-scale: 0.82;
+  /* Shared MusicInsta logo scale for the landing, auth and homepage headers. */
+  --musicinsta-logo-scale: 0.72;
   --ae-bg:           #0d0d0d;
   --ae-bg-2:         #111111;
   --ae-bg-3:         #1a1a1a;
