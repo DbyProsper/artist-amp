@@ -89,7 +89,7 @@ export default function AuthPage() {
         <motion.img 
           src="/MusicInsta_Logo.png"
           alt="MusicInsta Logo"
-          className="h-16 w-auto"
+          className="musicinsta-brand-logo h-16 w-auto object-contain"
           animate={{ 
             filter: [
               'drop-shadow(0 0 10px hsla(330, 85%, 60%, 0.3))',

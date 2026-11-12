@@ -877,7 +877,7 @@ export default function StudioDawPage() {
       <header className="sticky top-0 z-30 border-b border-border bg-background/95 px-3 py-3 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => navigate('/studio')}><ArrowLeft className="h-5 w-5" /></Button>
-          <img src="/MusicInsta_Logo.png" alt="MusicInsta" className="h-8 w-auto" />
+          <img src="/MusicInsta_Logo.png" alt="MusicInsta" className="musicinsta-brand-logo h-8 w-auto object-contain" />
           <Input aria-label="Project name" value={projectName} onChange={event => setProjectName(event.target.value)} className="min-w-[190px] flex-1 sm:max-w-sm" />
           <span className="flex items-center gap-1 text-xs text-muted-foreground"><Save className="h-3.5 w-3.5" />{!loaded ? 'Loading project…' : saving ? 'Saving…' : hasUserChanges ? 'Unsaved changes' : user ? 'Saved locally and in the cloud' : 'Saved on this device'}</span>
           <Button variant="outline" onClick={() => setProjectsOpen(true)}><FolderOpen className="mr-2 h-4 w-4" />Projects</Button>

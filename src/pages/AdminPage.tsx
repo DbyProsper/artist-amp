@@ -279,7 +279,7 @@ export default function AdminPage() {
     try {
       let imageUrl = officialImageUrl.trim();
       if (officialImageFile) { const object = ref(storage, `official-posts/${Date.now()}-${officialImageFile.name}`); await uploadBytes(object, officialImageFile); imageUrl = await getDownloadURL(object); }
-      await setDoc(doc(db, 'profiles', 'musicinsta-official'), { user_id: 'musicinsta-official', name: 'MusicInsta', username: 'musicinsta', avatar_url: '/musicinsta-default-cover.webp', cover_url: '/musicinsta-default-cover.webp', is_verified: true, is_artist: false, is_system: true, updated_at: serverTimestamp() }, { merge: true });
+      await setDoc(doc(db, 'profiles', 'musicinsta-official'), { user_id: 'musicinsta-official', name: 'MusicInsta', username: 'musicinsta', avatar_url: '/MusicInsta_Logo.png', cover_url: '/MusicInsta_Logo.png', is_verified: true, is_artist: false, is_system: true, updated_at: serverTimestamp() }, { merge: true });
       let trackId: string | null = null;
       if (officialAudioFile) {
         if (!officialTrackTitle.trim()) throw new Error('Add a title for the uploaded audio.');
@@ -287,10 +287,10 @@ export default function AdminPage() {
         await uploadBytes(audioObject, officialAudioFile);
         const audioUrl = await getDownloadURL(audioObject);
         const duration = await readMediaDuration(officialAudioFile);
-        const track = await addDoc(collection(db, 'tracks'), { profile_id: 'musicinsta-official', title: officialTrackTitle.trim(), audio_url: audioUrl, cover_url: imageUrl || '/musicinsta-default-cover.webp', duration, plays: 0, likes: 0, is_public: true, created_by_admin: user.uid, created_at: serverTimestamp() });
+        const track = await addDoc(collection(db, 'tracks'), { profile_id: 'musicinsta-official', title: officialTrackTitle.trim(), audio_url: audioUrl, cover_url: imageUrl || '/MusicInsta_Logo.png', duration, plays: 0, likes: 0, is_public: true, created_by_admin: user.uid, created_at: serverTimestamp() });
         trackId = track.id;
       }
-      await addDoc(collection(db, 'posts'), { profile_id: 'musicinsta-official', type: trackId ? 'audio' : 'image', track_id: trackId, image_url: imageUrl || '/musicinsta-default-cover.webp', caption: officialCaption.trim(), cta_label: officialCtaEnabled ? officialCtaLabel.trim() : null, cta_target: officialCtaEnabled ? officialCtaTarget : null, likes: 0, comments: 0, shares: 0, is_story: false, is_new_post: true, created_by_admin: user.uid, created_at: serverTimestamp() });
+      await addDoc(collection(db, 'posts'), { profile_id: 'musicinsta-official', type: trackId ? 'audio' : 'image', track_id: trackId, image_url: imageUrl || '/MusicInsta_Logo.png', caption: officialCaption.trim(), cta_label: officialCtaEnabled ? officialCtaLabel.trim() : null, cta_target: officialCtaEnabled ? officialCtaTarget : null, likes: 0, comments: 0, shares: 0, is_story: false, is_new_post: true, created_by_admin: user.uid, created_at: serverTimestamp() });
       setOfficialCaption(''); setOfficialImageUrl(''); setOfficialImageFile(null); setOfficialAudioFile(null); setOfficialTrackTitle(''); setOfficialCtaEnabled(false); await fetchOfficialPosts(); toast.success('Posted as MusicInsta.');
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Official post could not be created.'); }
     finally { setPostingOfficial(false); }
@@ -308,7 +308,7 @@ export default function AdminPage() {
 
   const saveOfficialPost = async (postId: string) => {
     const current = officialPosts.find(post => post.id === postId);
-    let imageUrl = current?.image_url || '/musicinsta-default-cover.webp';
+    let imageUrl = current?.image_url || '/MusicInsta_Logo.png';
     if (editingPostImage) { const object = ref(storage, `official-posts/${Date.now()}-${editingPostImage.name}`); await uploadBytes(object, editingPostImage); imageUrl = await getDownloadURL(object); }
     await updateDoc(doc(db, 'posts', postId), { caption: editingPostCaption.trim(), image_url: imageUrl, updated_at: serverTimestamp() });
     if (current?.track_id && editingPostImage) await updateDoc(doc(db, 'tracks', current.track_id), { cover_url: imageUrl, updated_at: serverTimestamp() });
@@ -360,7 +360,7 @@ export default function AdminPage() {
       <div className="p-4">
         <section className="mb-5 flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">AI tool availability</h2><p className="text-sm text-muted-foreground">One-click emergency control for general access. Administrators and users granted access below remain enabled.</p></div><Button disabled={savingAiTools || !isAdmin} variant={aiToolsEnabled ? 'destructive' : 'default'} onClick={() => void toggleAiTools()}>{savingAiTools ? 'Saving…' : aiToolsEnabled ? 'Disable AI tools' : 'Enable AI tools'}</Button></section>
         <section className="mb-5 space-y-3 rounded-2xl border border-border bg-card p-4">
-          <div className="flex items-center gap-3"><img src="/musicinsta-default-cover.webp" alt="MusicInsta" className="h-10 w-10 rounded-full object-cover" /><div><h2 className="font-bold">Post as MusicInsta</h2><p className="text-xs text-muted-foreground">Publish an announcement, image, or playable track as the official account.</p></div></div>
+          <div className="flex items-center gap-3"><img src="/MusicInsta_Logo.png" alt="MusicInsta" className="musicinsta-brand-logo h-10 w-auto object-contain" /><div><h2 className="font-bold">Post as MusicInsta</h2><p className="text-xs text-muted-foreground">Publish an announcement, image, or playable track as the official account.</p></div></div>
           <Textarea value={officialCaption} onChange={event => setOfficialCaption(event.target.value)} placeholder="Official announcement or community update..." className="min-h-24" />
           <Input value={officialImageUrl} onChange={event => setOfficialImageUrl(event.target.value)} placeholder="Optional image URL" />
           <div className="grid gap-2 sm:grid-cols-2">

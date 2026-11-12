@@ -988,7 +988,7 @@ function MemoryHeist({
                   <img
                     src="/MusicInsta_Logo.png"
                     alt=""
-                    className="h-full w-full object-contain p-3"
+                    className="musicinsta-brand-logo h-full w-full object-contain p-3"
                   />
                 )}
               </button>

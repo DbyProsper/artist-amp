@@ -107,7 +107,7 @@ export function StudioEntryScreen({ onFeatureSelect }: StudioEntryScreenProps) {
         transition={{ delay: 0.1 }}
         className="text-center mb-16 max-w-2xl"
       >
-        <img src="/MusicInsta_Logo.png" alt="MusicInsta" className="mx-auto mb-5 h-20 w-20 rounded-full object-cover shadow-lg" />
+        <img src="/MusicInsta_Logo.png" alt="MusicInsta" className="musicinsta-brand-logo mx-auto mb-5 h-20 w-auto object-contain drop-shadow-lg" />
         <h1 className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent mb-4">
           What do you want to create?
         </h1>

@@ -61,6 +61,8 @@
 
 /* Audio Enhancement brand tokens (do not remove existing vars) */
 :root {
+  /* Global MusicInsta logo size. Change 0.82 to a smaller or larger value. */
+  --musicinsta-logo-scale: 0.82;
   --ae-bg:           #0d0d0d;
   --ae-bg-2:         #111111;
   --ae-bg-3:         #1a1a1a;
@@ -74,6 +76,11 @@
   --ae-text-3:       #444444;
   --ae-success:      #22c55e;
   --ae-radius:       10px;
+}
+
+.musicinsta-brand-logo {
+  scale: var(--musicinsta-logo-scale);
+  transform-origin: center;
 }
 
 /* Slider styles used by audio enhancement */

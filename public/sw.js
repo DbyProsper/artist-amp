@@ -63,8 +63,8 @@ self.addEventListener('push', event => {
   const title = notification.title || `MusicInsta ${data.callType || ''} call`.trim();
   const options = {
     body: notification.body || `${data.callerName || 'A MusicInsta user'} is calling`,
-    icon: notification.icon || '/MusicInsta_Logo.png',
-    badge: notification.badge || '/favicon.ico',
+    icon: notification.icon || '/musicinsta-icon-192.png',
+    badge: notification.badge || '/musicinsta-favicon.png',
     image: notification.image,
     tag: notification.tag || (data.callId ? `musicinsta-call-${data.callId}` : 'musicinsta-notification'),
     requireInteraction: notification.requireInteraction ?? data.type === 'incoming_call',
