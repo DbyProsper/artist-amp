@@ -30,7 +30,7 @@ interface DawTrack {
 }
 interface ProjectSummary { id: string; name: string; updatedAt: string; trackCount: number; ownerId: string; editorIds: string[] }
 interface CollaboratorProfile { id: string; authUid: string; name: string; username: string; avatarUrl: string }
-interface ActiveNodes { source: AudioBufferSourceNode; harmonySource?: AudioBufferSourceNode; gain: GainNode; pan: StereoPannerNode; eq: BiquadFilterNode[]; compressor: DynamicsCompressorNode; compressorWet: GainNode; delay: DelayNode; delayWet: GainNode; delayFeedback: GainNode; reverbWet: GainNode }
+interface ActiveNodes { source: AudioBufferSourceNode; harmonySource?: AudioBufferSourceNode; gain: GainNode; pan: StereoPannerNode; analyser: AnalyserNode; eq: BiquadFilterNode[]; compressor: DynamicsCompressorNode; compressorWet: GainNode; delay: DelayNode; delayWet: GainNode; delayFeedback: GainNode; reverbWet: GainNode }
 
 const TRACK_COLORS = ['#ec4899', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444'];
 const DRUMS = ['Kick', 'Snare', 'Hi-hat', 'Clap'] as const;
@@ -63,27 +63,42 @@ function projectStateSignature(tracks: DawTrack[], name: string, masterGain: num
   });
 }
 
-function Waveform({ buffer, color }: { buffer: AudioBuffer; color: string }) {
+function Waveform({ buffer, color, trimStart, length }: { buffer: AudioBuffer; color: string; trimStart: number; length: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const width = 1000, height = 80;
-    canvas.width = width; canvas.height = height;
-    const context = canvas.getContext('2d');
-    if (!context) return;
-    const data = buffer.getChannelData(0);
-    const step = Math.max(1, Math.floor(data.length / width));
-    context.clearRect(0, 0, width, height);
-    context.strokeStyle = 'rgba(255,255,255,.92)'; context.lineWidth = 1.2; context.beginPath();
-    for (let x = 0; x < width; x += 1) {
-      let min = 1, max = -1;
-      for (let index = x * step; index < Math.min(data.length, (x + 1) * step); index += 1) { min = Math.min(min, data[index]); max = Math.max(max, data[index]); }
-      context.moveTo(x, (1 + min) * height / 2); context.lineTo(x, (1 + max) * height / 2);
-    }
-    context.stroke();
-  }, [buffer, color]);
-  return <canvas ref={canvasRef} className="h-full w-full" />;
+    const draw = () => {
+      const width = Math.max(1, Math.round(canvas.clientWidth));
+      const height = Math.max(1, Math.round(canvas.clientHeight));
+      const ratio = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      const data = buffer.getChannelData(0);
+      const firstSample = Math.max(0, Math.floor(trimStart * buffer.sampleRate));
+      const lastSample = Math.min(data.length, Math.ceil((trimStart + length) * buffer.sampleRate));
+      const visibleSamples = Math.max(1, lastSample - firstSample);
+      const step = Math.max(1, Math.floor(visibleSamples / width));
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = 'rgba(255,255,255,.12)'; context.fillRect(0, height / 2 - .5, width, 1);
+      context.strokeStyle = 'rgba(255,255,255,.98)'; context.lineWidth = 1; context.beginPath();
+      for (let x = 0; x < width; x += 1) {
+        let min = 1, max = -1;
+        const start = firstSample + x * step;
+        const end = Math.min(lastSample, start + step);
+        for (let index = start; index < end; index += 1) { min = Math.min(min, data[index]); max = Math.max(max, data[index]); }
+        if (max < min) { min = 0; max = 0; }
+        context.moveTo(x + .5, (1 + min) * height / 2); context.lineTo(x + .5, (1 + max) * height / 2);
+      }
+      context.stroke();
+    };
+    draw();
+    const observer = new ResizeObserver(draw); observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [buffer, color, length, trimStart]);
+  return <canvas ref={canvasRef} className="block h-full w-full [image-rendering:auto]" />;
 }
 
 function createImpulse(context: BaseAudioContext, seconds = 1.3, decay = 2.5, damping = .5) {
@@ -159,6 +174,8 @@ export default function StudioDawPage() {
   const [recordingLevels, setRecordingLevels] = useState<number[]>([]);
   const [mixerOpen, setMixerOpen] = useState(false);
   const [mixerMinimized, setMixerMinimized] = useState(false);
+  const [channelLevels, setChannelLevels] = useState<Record<string, number>>({});
+  const [masterLevel, setMasterLevel] = useState(0);
   const [separatorOpen, setSeparatorOpen] = useState(false);
   const [separatorTrackId, setSeparatorTrackId] = useState('');
   const [microphones, setMicrophones] = useState<MediaDeviceInfo[]>([]);
@@ -168,6 +185,7 @@ export default function StudioDawPage() {
   const contextRef = useRef<AudioContext | null>(null);
   const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const activeNodesRef = useRef<Map<string, ActiveNodes>>(new Map());
+  const masterAnalyserRef = useRef<AnalyserNode | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -186,6 +204,8 @@ export default function StudioDawPage() {
   const baselineProjectIdRef = useRef<string | null>(null);
   const lastRemoteUpdatedRef = useRef(new Date(0).toISOString());
   const applyingRemoteRef = useRef(false);
+  const timelinePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchDistanceRef = useRef<number | null>(null);
 
   const getContext = () => contextRef.current ||= new AudioContext();
   const timelineDuration = useMemo(() => Math.max(30, ...tracks.map(track => track.offset + track.length)), [tracks]);
@@ -286,7 +306,7 @@ export default function StudioDawPage() {
   function stopSources() {
     cancelAnimationFrame(animationRef.current || 0);
     sourcesRef.current.forEach(source => { try { source.stop(); } catch { /* already stopped */ } });
-    sourcesRef.current = []; activeNodesRef.current.clear(); setIsPlaying(false);
+    sourcesRef.current = []; activeNodesRef.current.clear(); masterAnalyserRef.current = null; setChannelLevels({}); setMasterLevel(0); setIsPlaying(false);
   }
 
   const loadProject = useCallback(async (id: string) => {
@@ -351,9 +371,8 @@ export default function StudioDawPage() {
     setHasUserChanges(currentProjectSignature !== baselineSignatureRef.current);
   }, [currentProjectSignature, loaded, projectId]);
 
-  useEffect(() => {
-    if (!loaded || !hasUserChanges || applyingRemoteRef.current) return;
-    const timer = window.setTimeout(async () => {
+  const persistCurrentProject = useCallback(async (manual = false) => {
+      if (!loaded || applyingRemoteRef.current || saving) return;
       setSaving(true);
       const now = new Date().toISOString();
       const cloudOwnerId = projectOwnerId === 'local' && user ? user.uid : projectOwnerId;
@@ -392,14 +411,22 @@ export default function StudioDawPage() {
           setHasUserChanges(false);
         }
         await refreshProjects();
+        if (manual) toast.success(user ? 'Project saved locally and to the cloud.' : 'Project saved on this device. Sign in to enable cloud backup.');
       } catch (error) {
         console.warn('DAW project cloud save failed; local copy is intact', error);
-        if (!cloudSaveWarningRef.current) { toast.error('The project is safe locally, but cloud sync needs to retry.'); cloudSaveWarningRef.current = true; }
+        cloudSaveWarningRef.current = true;
+        toast.error('The project is safe locally, but cloud sync failed. Use “Save to cloud” before leaving the studio.');
       }
       setSaving(false);
+  }, [compression, currentProjectSignature, editorIds, loaded, masterDelay, masterGain, ownerId, projectId, projectName, projectOwnerId, projects, refreshProjects, saving, tracks, user, zoom]);
+
+  useEffect(() => {
+    if (!loaded || !hasUserChanges || applyingRemoteRef.current) return;
+    const timer = window.setTimeout(() => {
+      void persistCurrentProject(false);
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [tracks, projectId, projectName, masterGain, compression, masterDelay, zoom, loaded, hasUserChanges, ownerId, user, projectOwnerId, editorIds, currentProjectSignature, refreshProjects, projects]);
+  }, [currentProjectSignature, hasUserChanges, loaded, persistCurrentProject]);
 
   useEffect(() => {
     if (!user || !loaded || !projectId) return;
@@ -539,8 +566,9 @@ export default function StudioDawPage() {
 
   const connectTrack = (context: AudioContext | OfflineAudioContext, track: DawTrack, master: AudioNode) => {
     const effects = normalizeDawEffects(track.effects, track as unknown as Record<string, unknown>);
-    const source = context.createBufferSource(), gain = context.createGain(), pan = context.createStereoPanner(); source.buffer = track.buffer;
-    gain.gain.value = track.gain / 100; pan.pan.value = track.pan / 100; gain.connect(pan).connect(master);
+    const source = context.createBufferSource(), gain = context.createGain(), pan = context.createStereoPanner(), analyser = context.createAnalyser(); source.buffer = track.buffer;
+    analyser.fftSize = 256; analyser.smoothingTimeConstant = .72;
+    gain.gain.value = track.gain / 100; pan.pan.value = track.pan / 100; gain.connect(pan).connect(analyser).connect(master);
 
     const pitchInput = context.createGain(), pitchOutput = context.createGain(), pitchFormant = context.createBiquadFilter(), pitchPan = context.createStereoPanner();
     pitchFormant.type = 'peaking'; pitchFormant.frequency.value = 1200 * Math.pow(2, (effects.pitch.formantShift + effects.pitch.gender / 20) / 12); pitchFormant.Q.value = .75; pitchFormant.gain.value = effects.pitch.enabled ? (effects.pitch.formantShift + effects.pitch.gender / 20) * .65 : 0; pitchPan.pan.value = effects.pitch.enabled ? effects.pitch.stereoSpread / 200 : 0; pitchInput.connect(pitchFormant).connect(pitchPan).connect(pitchOutput);
@@ -580,7 +608,7 @@ export default function StudioDawPage() {
     let harmonySource: AudioBufferSourceNode | undefined;
     if (effects.pitch.enabled && effects.pitch.midiMode && effects.pitch.harmony !== 0 && effects.order.includes('pitch')) { const harmonyGain = context.createGain(); harmonyGain.gain.value = .32; harmonySource = context.createBufferSource(); harmonySource.buffer = track.buffer; harmonySource.connect(harmonyGain).connect(orderedProcessors[0]?.input || gain); }
     source.addEventListener('ended', () => { try { delayLfo.stop(); reverbLfo.stop(); } catch { /* already stopped */ } });
-    return { source, harmonySource, nodes: { source, harmonySource, gain, pan, eq: eqNodes, compressor: trackCompressor, compressorWet, delay: delayNode, delayWet, delayFeedback, reverbWet } };
+    return { source, harmonySource, nodes: { source, harmonySource, gain, pan, analyser, eq: eqNodes, compressor: trackCompressor, compressorWet, delay: delayNode, delayWet, delayFeedback, reverbWet } };
   };
 
   const startPlayback = async (playTracks = tracksRef.current, startAt = playheadRef.current) => {
@@ -591,8 +619,9 @@ export default function StudioDawPage() {
     const master = context.createGain(); master.gain.value = masterGain / 100;
     const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -8 - compression / 3; compressor.ratio.value = 2 + compression / 12;
     const masterDelayNode = context.createDelay(1); masterDelayNode.delayTime.value = masterDelay / 1000;
-    master.connect(compressor); compressor.connect(context.destination);
-    if (masterDelay > 0) { compressor.connect(masterDelayNode); masterDelayNode.connect(context.destination); }
+    const masterAnalyser = context.createAnalyser(); masterAnalyser.fftSize = 256; masterAnalyser.smoothingTimeConstant = .72; masterAnalyserRef.current = masterAnalyser;
+    master.connect(compressor); compressor.connect(masterAnalyser).connect(context.destination);
+    if (masterDelay > 0) { compressor.connect(masterDelayNode); masterDelayNode.connect(masterAnalyser); }
     const soloed = playTracks.some(track => track.solo);
     playTracks.filter(track => !track.muted && (!soloed || track.solo)).forEach(track => {
       if (track.offset + track.length <= playbackStart) return;
@@ -604,12 +633,23 @@ export default function StudioDawPage() {
       if (harmonySource) { const pitch = normalizeDawEffects(track.effects).pitch; schedulePitchCorrection(harmonySource, track, when, bufferOffset, remaining, pitch.harmony * 100); harmonySource.start(when, bufferOffset, remaining); sourcesRef.current.push(harmonySource); }
       sourcesRef.current.push(source); activeNodesRef.current.set(track.id, nodes);
     });
-    playbackStartedAt.current = performance.now() - playbackStart * 1000;
-    playheadRef.current = playbackStart; setPlayhead(playbackStart); followPlayhead(playbackStart); setIsPlaying(true);
+    playbackStartedAt.current = context.currentTime - playbackStart;
+    playbackAnchorRef.current = playbackStart; playheadRef.current = playbackStart; setPlayhead(playbackStart); followPlayhead(playbackStart); setIsPlaying(true);
+    let meterFrame = 0;
     const tick = () => {
-      const elapsed = (performance.now() - playbackStartedAt.current) / 1000;
+      const elapsed = context.currentTime - playbackStartedAt.current;
       const next = Math.min(endAt, elapsed);
-      playheadRef.current = next; setPlayhead(next); followPlayhead(next);
+      playbackAnchorRef.current = next; playheadRef.current = next; setPlayhead(next); followPlayhead(next);
+      if (++meterFrame % 3 === 0) {
+        const readPeak = (analyser: AnalyserNode | null) => {
+          if (!analyser) return 0;
+          const values = new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(values);
+          let peak = 0; for (const value of values) peak = Math.max(peak, Math.abs(value - 128) / 128);
+          return Math.min(100, peak * 120);
+        };
+        setMasterLevel(readPeak(masterAnalyserRef.current));
+        setChannelLevels(Object.fromEntries([...activeNodesRef.current.entries()].map(([id, nodes]) => [id, readPeak(nodes.analyser)])));
+      }
       if (elapsed >= endAt) {
         stopSources();
         playheadRef.current = 0; setPlayhead(0); followPlayhead(0);
@@ -628,8 +668,9 @@ export default function StudioDawPage() {
 
   const togglePlayback = useCallback(() => {
     if (isPlayingRef.current) {
+      const pausedAt = playheadRef.current;
       stopSources();
-      playheadRef.current = playbackAnchorRef.current; setPlayhead(playbackAnchorRef.current); followPlayhead(playbackAnchorRef.current);
+      playbackAnchorRef.current = pausedAt; playheadRef.current = pausedAt; setPlayhead(pausedAt); followPlayhead(pausedAt);
     } else void startPlayback(tracksRef.current, playbackAnchorRef.current);
   }, [masterGain, compression, masterDelay, followPlayhead]);
   useEffect(() => {
@@ -765,19 +806,23 @@ export default function StudioDawPage() {
     if ((event.target as HTMLElement).dataset.resize) return;
     if (event.ctrlKey || event.metaKey) setSelectedTrackIds(current => { const next = new Set(current); if (next.has(track.id)) next.delete(track.id); else next.add(track.id); return next; });
     else setSelectedTrackIds(new Set([track.id]));
+    rememberTracks();
     const startX = event.clientX, startOffset = track.offset;
-    const move = (moveEvent: PointerEvent) => updateTrack(track.id, { offset: Math.max(0, startOffset + (moveEvent.clientX - startX) / zoom) });
-    const end = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); };
+    const move = (moveEvent: PointerEvent) => setTracks(current => { const next = current.map(item => item.id === track.id ? { ...item, offset: Math.max(0, startOffset + (moveEvent.clientX - startX) / zoomRef.current) } : item); tracksRef.current = next; return next; });
+    const end = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); if (isPlayingRef.current) void startPlayback(tracksRef.current, playheadRef.current); };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', end);
   };
   const resizeClip = (track: DawTrack, edge: 'left' | 'right', event: React.PointerEvent) => {
-    event.stopPropagation(); const startX = event.clientX, startLength = track.length, startTrim = track.trimStart, startOffset = track.offset;
+    event.stopPropagation(); rememberTracks(); const startX = event.clientX, startLength = track.length, startTrim = track.trimStart, startOffset = track.offset;
     const move = (moveEvent: PointerEvent) => {
-      const delta = (moveEvent.clientX - startX) / zoom;
-      if (edge === 'right') updateTrack(track.id, { length: Math.max(.2, Math.min(track.buffer.duration - track.trimStart, startLength + delta)) });
-      else { const applied = Math.max(-startTrim, Math.min(startLength - .2, delta)); updateTrack(track.id, { trimStart: startTrim + applied, offset: Math.max(0, startOffset + applied), length: startLength - applied }); }
+      const delta = (moveEvent.clientX - startX) / zoomRef.current;
+      setTracks(current => { const next = current.map(item => {
+        if (item.id !== track.id) return item;
+        if (edge === 'right') return { ...item, length: Math.max(.2, Math.min(item.buffer.duration - item.trimStart, startLength + delta)) };
+        const applied = Math.max(-startTrim, Math.min(startLength - .2, delta)); return { ...item, trimStart: startTrim + applied, offset: Math.max(0, startOffset + applied), length: startLength - applied };
+      }); tracksRef.current = next; return next; });
     };
-    const end = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); };
+    const end = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); if (isPlayingRef.current) void startPlayback(tracksRef.current, playheadRef.current); };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', end);
   };
   const splitSelected = () => {
@@ -872,16 +917,57 @@ export default function StudioDawPage() {
     return !needle || `${item.name} ${item.username}`.toLowerCase().includes(needle);
   }).slice(0, 30);
 
+  const requestExit = () => {
+    if ((hasUserChanges || cloudSaveWarningRef.current) && !window.confirm('Exit the DAW? Unsaved or unsynced changes may be lost. Save the project before leaving if possible.')) return;
+    navigate('/studio');
+  };
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUserChanges && !cloudSaveWarningRef.current) return;
+      event.preventDefault(); event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [hasUserChanges]);
+
+  const setTimelineZoom = (next: number) => setZoom(Math.max(25, Math.min(360, next)));
+  const zoomTimelineWithWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault(); setTimelineZoom(zoomRef.current * Math.exp(-event.deltaY * .0025));
+  };
+  const timelinePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse') return;
+    timelinePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    event.currentTarget.setPointerCapture(event.pointerId);
+    if (timelinePointersRef.current.size === 2) {
+      const [first, second] = [...timelinePointersRef.current.values()];
+      pinchDistanceRef.current = Math.hypot(first.x - second.x, first.y - second.y);
+    }
+  };
+  const timelinePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!timelinePointersRef.current.has(event.pointerId)) return;
+    timelinePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (timelinePointersRef.current.size !== 2 || !pinchDistanceRef.current) return;
+    const [first, second] = [...timelinePointersRef.current.values()];
+    const distance = Math.hypot(first.x - second.x, first.y - second.y);
+    setTimelineZoom(zoomRef.current * distance / pinchDistanceRef.current);
+    pinchDistanceRef.current = distance;
+  };
+  const timelinePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    timelinePointersRef.current.delete(event.pointerId); pinchDistanceRef.current = null;
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-30 border-b border-border bg-background/95 px-3 py-3 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/studio')}><ArrowLeft className="h-5 w-5" /></Button>
+          <Button variant="ghost" size="icon" onClick={requestExit}><ArrowLeft className="h-5 w-5" /></Button>
           <img src="/musicinsta-universe-logo-v2.png" alt="MusicInsta" className="musicinsta-brand-logo h-8 w-auto object-contain" />
           <Input aria-label="Project name" value={projectName} onChange={event => setProjectName(event.target.value)} className="min-w-[190px] flex-1 sm:max-w-sm" />
-          <span className="flex items-center gap-1 text-xs text-muted-foreground"><Save className="h-3.5 w-3.5" />{!loaded ? 'Loading project…' : saving ? 'Saving…' : hasUserChanges ? 'Unsaved changes' : user ? 'Saved locally and in the cloud' : 'Saved on this device'}</span>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground"><Save className="h-3.5 w-3.5" />{!loaded ? 'Loading project…' : saving ? 'Saving…' : cloudSaveWarningRef.current ? 'Cloud save needs attention' : hasUserChanges ? 'Unsaved changes' : user ? 'Saved locally and in the cloud' : 'Saved on this device'}</span>
+          <Button variant="outline" onClick={() => void persistCurrentProject(true)} disabled={!loaded || saving} title="Save a local copy and retry cloud backup"><Save className="mr-2 h-4 w-4" />Save to cloud</Button>
           <Button variant="outline" onClick={() => setProjectsOpen(true)}><FolderOpen className="mr-2 h-4 w-4" />Projects</Button>
-          {user && (projectOwnerId === user.uid || projectOwnerId === 'local') && <Button variant="outline" onClick={() => setCollaboratorsOpen(true)}><Users className="mr-2 h-4 w-4" />Collaborators</Button>}
+          {user && <Button variant="outline" onClick={() => setCollaboratorsOpen(true)}><Users className="mr-2 h-4 w-4" />Collaborators</Button>}
           <Button variant="outline" onClick={() => { setBeatOpen(value => !value); setBeatMode('choice'); }}><Sparkles className="mr-2 h-4 w-4" />Beat maker</Button>
           <Button variant="outline" onClick={() => void createPostFromMix()} disabled={!tracks.length}><Send className="mr-2 h-4 w-4" />New post</Button>
           <Button onClick={() => void exportMix('wav')} disabled={!tracks.length || Boolean(exportState)}>{exportState?.format === 'wav' ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}{exportState?.format === 'wav' ? `${exportState.progress}%` : 'WAV'}</Button>
@@ -914,12 +1000,12 @@ export default function StudioDawPage() {
             <Button variant="outline" disabled={!tracks.length} onClick={splitSelected}><Scissors className="mr-2 h-4 w-4" />Split selected</Button>
             <Button variant="outline" disabled={!tracks.length} onClick={() => openSeparator()}><Mic className="mr-2 h-4 w-4" />Extract stems</Button>
             <Button variant={mixerOpen ? 'secondary' : 'outline'} onClick={() => { setMixerOpen(true); setMixerMinimized(false); }}><SlidersHorizontal className="mr-2 h-4 w-4" />Mixer</Button>
-            <span className="text-xs text-muted-foreground">Spacebar plays/pauses · Ctrl-click selects multiple clips</span>
+            <span className="text-xs text-muted-foreground">Spacebar plays/pauses · Ctrl-click selects clips · Ctrl/⌘ + mouse wheel or pinch zooms</span>
             <span className="ml-auto tabular-nums text-sm text-muted-foreground">{playhead.toFixed(2)}s</span>
-            <ZoomIn className="h-4 w-4 text-muted-foreground" /><Slider className="w-28" min={35} max={180} value={[zoom]} onValueChange={value => setZoom(value[0])} />
+            <ZoomIn className="h-4 w-4 text-muted-foreground" /><Slider className="w-28" min={25} max={360} value={[zoom]} onValueChange={value => setTimelineZoom(value[0])} />
           </div>
           {isRecording && <div className="flex h-16 items-end gap-1 rounded-xl border border-destructive/30 bg-destructive/5 p-3">{recordingLevels.map((level, index) => <span key={index} className="flex-1 rounded-t bg-destructive transition-all" style={{ height: `${Math.max(4, level / 3)}%` }} />)}</div>}
-          <div ref={timelineScrollRef} data-testid="daw-playlist-scroll" className="overflow-x-auto rounded-2xl border border-border bg-card">
+          <div ref={timelineScrollRef} data-testid="daw-playlist-scroll" onWheel={zoomTimelineWithWheel} onPointerDown={timelinePointerDown} onPointerMove={timelinePointerMove} onPointerUp={timelinePointerUp} onPointerCancel={timelinePointerUp} className="overflow-x-auto rounded-2xl border border-border bg-card" style={{ touchAction: 'pan-y' }}>
             <div style={{ width: 240 + timelineWidth }}>
               <div className="grid grid-cols-[240px_1fr] border-b border-border text-xs uppercase tracking-widest text-muted-foreground"><div className="p-3">Playlist tracks</div><div data-testid="daw-timeline-ruler" className="relative h-12 cursor-pointer bg-muted/30" onClick={event => { const bounds = event.currentTarget.getBoundingClientRect(); seekPlayhead((event.clientX - bounds.left) / zoom); }}>{Array.from({ length: Math.ceil(timelineDuration / 5) + 1 }, (_, i) => <span key={i} className="pointer-events-none absolute top-2" style={{ left: i * 5 * zoom }}>{i * 5}s</span>)}</div></div>
               {tracks.length === 0 && <div className="w-[calc(100vw-2rem)] p-14 text-center text-muted-foreground">Upload audio, build a beat, or record a synchronized overdub to begin.</div>}
@@ -928,7 +1014,7 @@ export default function StudioDawPage() {
                   <div className="flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded text-xs text-white" style={{ backgroundColor: track.color }}>{index + 1}</span><input value={track.name} onChange={event => updateTrack(track.id, { name: event.target.value })} className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none" /><input aria-label="Track color" type="color" value={track.color} onChange={event => updateTrack(track.id, { color: event.target.value })} className="h-6 w-6 rounded border-0 bg-transparent p-0" /><button onClick={() => { rememberTracks(); setTracks(current => current.filter(item => item.id !== track.id)); }}><Trash2 className="h-4 w-4 text-muted-foreground" /></button></div>
                   <div className="flex gap-1"><button title="Mute" onClick={() => updateAudibility(track.id, 'muted')} className={`rounded px-2 py-1 text-xs ${track.muted ? 'bg-destructive text-destructive-foreground' : 'bg-muted'}`}>M</button><button title="Solo this track and mute all others" onClick={() => updateAudibility(track.id, 'solo')} className={`rounded px-2 py-1 text-xs ${track.solo ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>S</button><button title="Move track up" onClick={() => moveTrack(index, -1)}><ArrowUp className="h-3.5 w-3.5" /></button><button title="Move track down" onClick={() => moveTrack(index, 1)}><ArrowDown className="h-3.5 w-3.5" /></button><button title="Enhance track" onClick={() => void enhance(track)}><Sparkles className="h-3.5 w-3.5 text-primary" /></button><button title="Extract vocals and instrumental" onClick={() => openSeparator(track.id)}><Mic className="h-3.5 w-3.5 text-accent" /></button></div>
                 </div>
-                <div className="relative h-24 overflow-hidden" style={{ backgroundImage: 'linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px)', backgroundSize: `${zoom}px 100%` }}><div data-testid="daw-playhead" className="absolute inset-y-0 z-20 w-0.5 bg-primary" style={{ left: playhead * zoom }} /><div onPointerDown={event => dragClip(track, event)} className={`absolute top-3 h-16 cursor-grab overflow-hidden rounded-lg border-2 shadow-sm ${selectedTrackIds.has(track.id) ? 'border-white ring-2 ring-primary' : 'border-white/20'} ${track.muted ? 'opacity-35' : ''}`} style={{ left: track.offset * zoom, width: Math.max(18, track.length * zoom), background: `linear-gradient(90deg, ${track.color}, ${track.color}bb)` }}><button data-resize="true" aria-label="Trim clip start" onPointerDown={event => resizeClip(track, 'left', event)} className="absolute inset-y-0 left-0 z-10 w-3 cursor-ew-resize bg-white/25" /><Waveform buffer={track.buffer} color={track.color} /><span className="absolute left-4 top-1 text-[10px] font-medium text-white drop-shadow">{track.name}</span><button data-resize="true" aria-label="Trim clip end" onPointerDown={event => resizeClip(track, 'right', event)} className="absolute inset-y-0 right-0 z-10 w-3 cursor-ew-resize bg-white/25" /></div></div>
+                <div className="relative h-24 overflow-hidden" style={{ backgroundImage: 'linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px)', backgroundSize: `${zoom}px 100%` }}><div data-testid="daw-playhead" className="absolute inset-y-0 z-20 w-0.5 bg-primary" style={{ left: playhead * zoom }} /><div onPointerDown={event => dragClip(track, event)} className={`absolute top-3 h-16 cursor-grab overflow-hidden rounded-lg border-2 shadow-sm ${selectedTrackIds.has(track.id) ? 'border-white ring-2 ring-primary' : 'border-white/20'} ${track.muted ? 'opacity-35' : ''}`} style={{ left: track.offset * zoom, width: Math.max(18, track.length * zoom), background: `linear-gradient(90deg, ${track.color}, ${track.color}bb)` }}><button data-resize="true" aria-label="Trim clip start" onPointerDown={event => resizeClip(track, 'left', event)} className="absolute inset-y-0 left-0 z-10 w-3 cursor-ew-resize bg-white/25" /><Waveform buffer={track.buffer} color={track.color} trimStart={track.trimStart} length={track.length} /><span className="absolute left-4 top-1 text-[10px] font-medium text-white drop-shadow">{track.name}</span><button data-resize="true" aria-label="Trim clip end" onPointerDown={event => resizeClip(track, 'right', event)} className="absolute inset-y-0 right-0 z-10 w-3 cursor-ew-resize bg-white/25" /></div></div>
               </div>)}
             </div>
           </div>
@@ -939,6 +1025,8 @@ export default function StudioDawPage() {
 
       {mixerOpen && <DawMixerPopup
         tracks={tracks}
+        channelLevels={channelLevels}
+        masterLevel={masterLevel}
         minimized={mixerMinimized}
         masterGain={masterGain}
         compression={compression}

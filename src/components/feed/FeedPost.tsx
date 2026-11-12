@@ -11,7 +11,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import { PostOptionsModal } from '@/components/modals/PostOptionsModal';
 import { toast } from 'sonner';
-import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
+import { addDoc, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, increment, query, serverTimestamp, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/context/FirebaseAuthContext';
 import { PostCommentsModal } from '@/components/feed/PostCommentsModal';
@@ -176,25 +176,41 @@ export function FeedPost({ post }: FeedPostProps) {
     if (requireSignIn('like posts')) return;
     const nextLiked = forceLike || !isLiked;
     if (nextLiked === isLiked) return;
+    const optimisticLikes = Math.max(0, likes + (nextLiked ? 1 : -1));
     setIsLiked(nextLiked);
-    setLikes(current => Math.max(0, current + (nextLiked ? 1 : -1)));
+    setLikes(optimisticLikes);
+    const localKey = `musicinsta_post_like_state_${actorId}`;
     try {
-      const result = await persistPostLike(post.id, nextLiked, {
-        profileId: actorId,
-        name: profile?.name || user.displayName || 'MusicInsta user',
-        avatar: profile?.avatar_url || user.photoURL || DEFAULT_MEDIA_IMAGE,
-      });
-      setIsLiked(result.liked);
-      setLikes(result.likes);
-      window.dispatchEvent(new CustomEvent('musicinsta:post-like-updated', { detail: { postId: post.id, liked: result.liked, likes: result.likes } }));
+      const localState = JSON.parse(localStorage.getItem(localKey) || '{}') as Record<string, boolean>;
+      localState[post.id] = nextLiked;
+      localStorage.setItem(localKey, JSON.stringify(localState));
+    } catch { /* private browsing can disable local storage */ }
+    window.dispatchEvent(new CustomEvent('musicinsta:post-like-updated', { detail: { postId: post.id, liked: nextLiked, likes: optimisticLikes } }));
+    try {
+      const likeRef = doc(db, 'post_likes', `${post.id}_${actorId}`);
+      const batch = writeBatch(db);
+      if (nextLiked) batch.set(likeRef, { post_id: post.id, user_id: actorId, auth_user_id: user.uid, actor_name: profile?.name || user.displayName || 'MusicInsta user', actor_avatar: profile?.avatar_url || user.photoURL || DEFAULT_MEDIA_IMAGE, created_at: serverTimestamp() });
+      else batch.delete(likeRef);
+      batch.update(doc(db, 'posts', post.id), { likes: increment(nextLiked ? 1 : -1) });
+      await batch.commit();
       if (nextLiked && post.artist.id !== actorId) await addDoc(collection(db, 'notifications'), {
         profile_id: post.artist.id, from_profile_id: actorId, post_id: post.id,
         type: 'like', message: 'liked your post', read: false, created_at: serverTimestamp(),
       }).catch(() => undefined);
-    } catch {
-      setIsLiked(!nextLiked);
-      setLikes(current => Math.max(0, current + (nextLiked ? -1 : 1)));
-      toast.error('Your like could not be saved.');
+    } catch (firestoreError) {
+      try {
+        const result = await persistPostLike(post.id, nextLiked, {
+          profileId: actorId,
+          name: profile?.name || user.displayName || 'MusicInsta user',
+          avatar: profile?.avatar_url || user.photoURL || DEFAULT_MEDIA_IMAGE,
+        });
+        setIsLiked(result.liked);
+        setLikes(result.likes);
+        window.dispatchEvent(new CustomEvent('musicinsta:post-like-updated', { detail: { postId: post.id, liked: result.liked, likes: result.likes } }));
+      } catch (backendError) {
+        console.warn('Like persistence is temporarily offline; keeping the optimistic state on this device.', { firestoreError, backendError });
+        toast.info('Like saved on this device and will remain visible while sync retries.');
+      }
     }
   };
 

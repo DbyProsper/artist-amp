@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, query, orderBy, limit, getDocs, getDoc, doc, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, getDoc, doc, where, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Post, Artist, Track, Album } from '@/types';
 import { DEFAULT_MEDIA_IMAGE } from '@/lib/media';
@@ -292,19 +292,38 @@ export function useFeedPosts() {
   }, []);
 
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      if (feedPostsCache.some(post => post.isLiked)) {
+        const signedOutPosts = feedPostsCache.map(post => ({ ...post, isLiked: false }));
+        saveFeedCache(signedOutPosts);
+        window.dispatchEvent(new CustomEvent(FEED_STATE_EVENT, { detail: signedOutPosts }));
+      }
+      likesHydrationKey.current = '';
+      return;
+    }
     const profileId = profile?.id || user.uid;
     const postIdsKey = posts.map(post => post.id).sort().join('|');
     const hydrationKey = `${user.uid}:${profileId}:${postIdsKey}`;
     if (!postIdsKey || likesHydrationKey.current === hydrationKey) return;
     likesHydrationKey.current = hydrationKey;
-    void loadPostLikes(profileId).then(({ postIds }) => {
+    void (async () => {
+      const [firestoreLikes, backendLikes] = await Promise.allSettled([
+        getDocs(query(collection(db, 'post_likes'), where('user_id', '==', profileId))),
+        loadPostLikes(profileId),
+      ]);
+      const postIds = new Set<string>();
+      if (firestoreLikes.status === 'fulfilled') firestoreLikes.value.docs.forEach(item => { const postId = String(item.data().post_id || ''); if (postId) postIds.add(postId); });
+      if (backendLikes.status === 'fulfilled') backendLikes.value.postIds.forEach(postId => postIds.add(postId));
+      if (firestoreLikes.status === 'rejected' && backendLikes.status === 'rejected') throw backendLikes.reason;
+      let localState: Record<string, boolean> = {};
+      try { localState = JSON.parse(localStorage.getItem(`musicinsta_post_like_state_${profileId}`) || '{}'); } catch { /* ignore unavailable storage */ }
       const liked = new Set(postIds);
+      Object.entries(localState).forEach(([postId, value]) => value ? liked.add(postId) : liked.delete(postId));
       const next = feedPostsCache.map(post => ({ ...post, isLiked: liked.has(post.id) }));
       if (next.every((post, index) => post.isLiked === feedPostsCache[index]?.isLiked)) return;
       saveFeedCache(next);
       window.dispatchEvent(new CustomEvent(FEED_STATE_EVENT, { detail: next }));
-    }).catch(() => { likesHydrationKey.current = ''; });
+    })().catch(() => { likesHydrationKey.current = ''; });
   }, [posts, profile?.id, user?.uid]);
 
   const identityIds = new Set([user?.uid, profile?.id].filter(Boolean));

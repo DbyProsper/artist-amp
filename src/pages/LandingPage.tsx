@@ -512,9 +512,8 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <Reveal>
-        <footer className="border-t border-border py-10">
-          <div className="mx-auto flex max-w-7xl flex-col items-center gap-6 px-6 text-center sm:items-start sm:text-left lg:flex-row lg:items-center lg:justify-between">
+      <footer className="relative z-40 border-t border-primary/25 bg-card/95 py-12 shadow-[0_-18px_55px_hsl(var(--primary)/.08)]">
+          <div className="mx-auto flex max-w-7xl flex-col items-center gap-7 px-6 text-center sm:items-start sm:text-left lg:flex-row lg:items-center lg:justify-between">
             <motion.div
               whileHover={reduceMotion ? undefined : { scale: 1.035 }}
               className="flex items-center gap-3"
@@ -524,43 +523,29 @@ export default function LandingPage() {
             </motion.div>
             <nav
               aria-label="Footer navigation"
-              className="flex flex-wrap justify-center gap-x-6 gap-y-3 text-sm font-medium sm:justify-start"
+              className="flex flex-wrap justify-center gap-3 text-sm font-semibold sm:justify-start"
             >
-              <button
-                type="button"
-                onClick={() => navigate('/about')}
-                className="text-muted-foreground transition-colors hover:text-primary"
-              >
+              <a href="/about" className="rounded-full border border-border px-4 py-2 text-muted-foreground transition-colors hover:border-primary/60 hover:text-primary">
                 About
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/privacy')}
-                className="text-muted-foreground transition-colors hover:text-primary"
-              >
+              </a>
+              <a href="/privacy" className="rounded-full border border-border px-4 py-2 text-muted-foreground transition-colors hover:border-primary/60 hover:text-primary">
                 Privacy Policy
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/studio')}
-                className="text-muted-foreground transition-colors hover:text-primary"
-              >
+              </a>
+              <a href="/studio" className="rounded-full border border-border px-4 py-2 text-muted-foreground transition-colors hover:border-primary/60 hover:text-primary">
                 Studio Tools
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/games')}
-                className="text-muted-foreground transition-colors hover:text-primary"
-              >
+              </a>
+              <a href="/games" className="rounded-full border border-border px-4 py-2 text-muted-foreground transition-colors hover:border-primary/60 hover:text-primary">
                 Games
-              </button>
+              </a>
+              <a href="mailto:mthabisisebata113@gmail.com?subject=MusicInsta%20Support" className="rounded-full bg-primary px-4 py-2 text-primary-foreground transition hover:bg-primary/90">
+                Contact us
+              </a>
             </nav>
             <p className="text-sm text-muted-foreground">
               Create boldly. Connect genuinely. Grow independently.
             </p>
           </div>
-        </footer>
-      </Reveal>
+      </footer>
     </div>
   );
 }

@@ -13,7 +13,7 @@ export default function AboutPage() {
           <img
             src="/musicinsta-legacy-logo-transparent-v2.png"
             alt="MusicInsta"
-            className="h-20 w-auto object-contain"
+            className="h-32 w-auto object-contain sm:h-36"
           />
           <h2 className="mt-5 text-3xl font-bold">
             Built around independent artists.

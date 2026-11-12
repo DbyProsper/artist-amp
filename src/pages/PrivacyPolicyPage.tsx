@@ -59,7 +59,7 @@ export default function PrivacyPolicyPage() {
           <img
             src="/musicinsta-legacy-logo-transparent-v2.png"
             alt="MusicInsta"
-            className="mb-4 h-16 w-auto object-contain"
+            className="mb-5 h-28 w-auto object-contain sm:h-32"
           />
           <p className="text-sm font-semibold text-primary">MusicInsta</p>
           <h2 className="mt-2 text-3xl font-bold">

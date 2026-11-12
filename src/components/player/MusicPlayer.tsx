@@ -89,7 +89,7 @@ function YouTubeGlobalPlayback({ visible }: { visible: boolean }) {
   },[externalEnded,syncExternalPlayback,videoId]);
   if (!videoId) return null;
   const src = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&autoplay=1&controls=1&playsinline=1&rel=0&origin=${encodeURIComponent(window.location.origin)}`;
-  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-1/2 z-[60] aspect-square w-[calc(100%-4rem)] max-w-sm -translate-x-1/2 -translate-y-[62%] rounded-2xl lg:aspect-video lg:max-w-2xl lg:-translate-y-[72%]" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}><iframe key={videoId} ref={frame} title={`${currentTrack?.title || 'YouTube'} video`} src={src} className="h-full w-full border-0" allow="autoplay; encrypted-media; picture-in-picture" /></div>;
+  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-1/2 z-[60] aspect-square w-[calc(100%-4rem)] max-w-sm -translate-x-1/2 -translate-y-[68%] rounded-2xl lg:aspect-video lg:max-w-2xl lg:-translate-y-[82%]" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}><iframe key={videoId} ref={frame} title={`${currentTrack?.title || 'YouTube'} video`} src={src} className="h-full w-full border-0" allow="autoplay; encrypted-media; picture-in-picture" /></div>;
 }
 
 function formatTime(seconds: number): string {
@@ -329,13 +329,15 @@ export function FullPlayer() {
             className="player-full fixed inset-0 z-50 flex flex-col overflow-hidden"
           >
             {/* Dynamic background based on album art */}
-            <div className="absolute inset-0 -z-10">
+            <div className="absolute inset-0 -z-10 overflow-hidden bg-black">
               <img
                 src={currentTrack.coverArt}
                 alt=""
-                className="h-full w-full scale-110 object-cover opacity-50 blur-3xl saturate-150"
+                className="absolute inset-0 h-full w-full scale-125 object-cover opacity-80 blur-3xl saturate-[1.9]"
               />
-              <div className="absolute inset-0 bg-gradient-to-b from-background/65 via-background/80 to-background" />
+              <img src={currentTrack.coverArt} alt="" className="absolute inset-0 h-full w-full scale-150 object-cover opacity-35 blur-[90px] mix-blend-screen saturate-[2.2]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,transparent_0%,hsl(var(--background)/.28)_48%,hsl(var(--background)/.82)_100%)]" />
+              <div className="absolute inset-0 bg-gradient-to-b from-background/15 via-background/35 to-background/80" />
             </div>
 
             {/* Header */}
