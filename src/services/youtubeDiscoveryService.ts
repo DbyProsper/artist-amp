@@ -100,6 +100,18 @@ export function saveYouTubeHistory(item: YouTubeMedia) {
   return api<{ saved: boolean }>('/api/discover/history', { method: 'POST', body: JSON.stringify({ ...item, genre: inferYouTubeGenre(item) }) });
 }
 
+export async function removeYouTubeHistory(videoId: string) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(youtubeHistoryCacheKey()) || 'null');
+    const results = Array.isArray(cached?.results)
+      ? cached.results.filter((value: YouTubeMedia) => value.id !== videoId)
+      : [];
+    localStorage.setItem(youtubeHistoryCacheKey(), JSON.stringify({ savedAt: Date.now(), results }));
+  } catch { /* keep the server as source of truth */ }
+  await api<{ deleted: boolean }>(`/api/discover/history/${encodeURIComponent(videoId)}`, { method: 'DELETE' });
+  window.dispatchEvent(new CustomEvent('musicinsta:youtube-history-updated', { detail: { removedId: videoId } }));
+}
+
 export function addYouTubeToPlaylist(playlistId: string, item: YouTubeMedia) {
   return api<{ saved: boolean; trackId: string }>('/api/discover/playlist', {
     method: 'POST',

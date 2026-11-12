@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import {
   Play,
@@ -38,6 +38,8 @@ type YouTubePlayerApi = {
   getCurrentTime?: () => number;
   getDuration?: () => number;
   getPlayerState?: () => number;
+  mute?: () => void;
+  unMute?: () => void;
 };
 let youtubeApiPromise: Promise<void> | null = null;
 function loadYouTubePlayerApi() {
@@ -51,13 +53,25 @@ function loadYouTubePlayerApi() {
   return youtubeApiPromise;
 }
 
-function YouTubeGlobalPlayback({ visible }: { visible: boolean }) {
+function YouTubeGlobalPlayback({ visible, artworkRef }: { visible: boolean; artworkRef: RefObject<HTMLDivElement> }) {
   const { currentTrack, isPlaying, isExpanded, volume, syncExternalPlayback, externalEnded } = usePlayer();
   const frame = useRef<HTMLIFrameElement>(null);
   const player = useRef<YouTubePlayerApi | null>(null);
   const wantedPlaying = useRef(isPlaying);
   const endedVideo = useRef<string | null>(null);
+  const blockedTimer = useRef(0);
+  const [mobileRect, setMobileRect] = useState<DOMRect | null>(null);
   const videoId = currentTrack?.provider === "youtube" ? currentTrack.youtubeVideoId : undefined;
+
+  useLayoutEffect(() => {
+    if (!visible || !artworkRef.current) { setMobileRect(null); return; }
+    const update = () => setMobileRect(window.innerWidth < 1024 && artworkRef.current ? artworkRef.current.getBoundingClientRect() : null);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(artworkRef.current);
+    window.addEventListener('resize', update);
+    return () => { observer.disconnect(); window.removeEventListener('resize', update); };
+  }, [artworkRef, visible]);
 
   useEffect(() => {
     wantedPlaying.current = isPlaying;
@@ -78,18 +92,24 @@ function YouTubeGlobalPlayback({ visible }: { visible: boolean }) {
       const mediaDuration=Number(instance.getDuration()) || 0;
       if(mediaDuration>0){const target=Math.max(0,Math.min(mediaDuration,mediaDuration*detail.percent/100));instance.seekTo(target,true);syncExternalPlayback(target,mediaDuration);if(wantedPlaying.current)instance.playVideo?.();}
     };
+    const forcePlay = () => {
+      wantedPlaying.current = true;
+      player.current?.playVideo?.();
+    };
     window.addEventListener('musicinsta:youtube-seek', seek);
+    window.addEventListener('musicinsta:youtube-play', forcePlay);
     void loadYouTubePlayerApi().then(() => {
       if(cancelled||!frame.current)return;
-      const instance = new (window as any).YT.Player(frame.current,{events:{onReady:(event:any)=>{const target=event.target as YouTubePlayerApi;target.setVolume?.(volume);if(wantedPlaying.current)target.playVideo?.();const duration=Number(target.getDuration?.())||0;syncExternalPlayback(Number(target.getCurrentTime?.())||0,duration,wantedPlaying.current);},onStateChange:(event:any)=>{const target=event.target as YouTubePlayerApi;const state=Number(event.data);const duration=Number(target.getDuration?.())||0;syncExternalPlayback(Number(target.getCurrentTime?.())||0,duration,state===1?true:state===2||state===0?false:undefined);if(state===1)endedVideo.current=null;if(state===0&&endedVideo.current!==videoId){endedVideo.current=videoId;externalEnded();}}}}) as YouTubePlayerApi;
+      const instance = new (window as any).YT.Player(frame.current,{events:{onReady:(event:any)=>{const target=event.target as YouTubePlayerApi;target.setVolume?.(volume);if(wantedPlaying.current){target.mute?.();target.playVideo?.();blockedTimer.current=window.setTimeout(()=>{const state=Number(target.getPlayerState?.());if(state===1){target.unMute?.();target.setVolume?.(volume);}else syncExternalPlayback(Number(target.getCurrentTime?.())||0,Number(target.getDuration?.())||0,false);},1200);}const duration=Number(target.getDuration?.())||0;syncExternalPlayback(Number(target.getCurrentTime?.())||0,duration,wantedPlaying.current);},onStateChange:(event:any)=>{const target=event.target as YouTubePlayerApi;const state=Number(event.data);const duration=Number(target.getDuration?.())||0;if(state===1){window.clearTimeout(blockedTimer.current);target.unMute?.();target.setVolume?.(volume);}syncExternalPlayback(Number(target.getCurrentTime?.())||0,duration,state===1?true:state===2||state===0?false:undefined);if(state===1)endedVideo.current=null;if(state===0&&endedVideo.current!==videoId){endedVideo.current=videoId;externalEnded();}}}}) as YouTubePlayerApi;
       player.current=instance;
       poll=window.setInterval(()=>{const active=player.current;if(!active||typeof active.getDuration!=='function'||typeof active.getCurrentTime!=='function')return;const mediaDuration=Number(active.getDuration())||0;if(mediaDuration>0)syncExternalPlayback(Number(active.getCurrentTime())||0,mediaDuration);},250);
     });
-    return()=>{cancelled=true;window.removeEventListener('musicinsta:youtube-seek',seek);window.clearInterval(poll);player.current?.pauseVideo?.();player.current=null;};
+    return()=>{cancelled=true;window.removeEventListener('musicinsta:youtube-seek',seek);window.removeEventListener('musicinsta:youtube-play',forcePlay);window.clearInterval(poll);window.clearTimeout(blockedTimer.current);player.current?.pauseVideo?.();player.current=null;};
   },[externalEnded,syncExternalPlayback,videoId]);
   if (!videoId) return null;
   const src = `https://www.youtube.com/embed/${encodeURIComponent(videoId)}?enablejsapi=1&autoplay=1&controls=1&playsinline=1&rel=0&origin=${encodeURIComponent(window.location.origin)}`;
-  return <div className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? "fixed left-1/2 top-1/2 z-[60] aspect-square w-[calc(100%-4rem)] max-w-sm -translate-x-1/2 -translate-y-[63%] rounded-2xl lg:aspect-video lg:max-w-2xl lg:-translate-y-[74%]" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}><iframe key={videoId} ref={frame} title={`${currentTrack?.title || 'YouTube'} video`} src={src} className="h-full w-full border-0" allow="autoplay; encrypted-media; picture-in-picture" /></div>;
+  const mobileStyle = mobileRect ? { left: mobileRect.left, top: mobileRect.top, width: mobileRect.width, height: mobileRect.height } : undefined;
+  return <div style={mobileStyle} className={cn("overflow-hidden bg-black shadow-2xl", isExpanded && visible ? mobileRect ? "fixed z-[60] rounded-2xl" : "fixed left-1/2 top-1/2 z-[60] aspect-video w-[calc(100%-4rem)] max-w-2xl -translate-x-1/2 -translate-y-[74%] rounded-2xl" : "fixed -left-[9999px] top-0 h-[180px] w-[320px]")}><iframe key={videoId} ref={frame} title={`${currentTrack?.title || 'YouTube'} video`} src={src} className="h-full w-full border-0" allow="autoplay; encrypted-media; picture-in-picture" /></div>;
 }
 
 function formatTime(seconds: number): string {
@@ -243,6 +263,7 @@ export function FullPlayer() {
   const [showQueue, setShowQueue] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showYouTubeVideo, setShowYouTubeVideo] = useState(false);
+  const artworkRef = useRef<HTMLDivElement>(null);
   const lyricContainerRef = useRef<HTMLDivElement>(null);
 
   const timedLyrics = useMemo(
@@ -318,7 +339,7 @@ export function FullPlayer() {
 
   return (
     <>
-      <YouTubeGlobalPlayback visible={showYouTubeVideo && !showQueue && !showSettings} />
+      <YouTubeGlobalPlayback visible={showYouTubeVideo && !showQueue && !showSettings} artworkRef={artworkRef} />
       <AnimatePresence>
         {isExpanded && (
           <motion.div
@@ -364,7 +385,7 @@ export function FullPlayer() {
                     📝
                   </button>
                 )}
-                {currentTrack.provider === 'youtube' && <button onClick={() => setShowYouTubeVideo(value => !value)} className={cn("inline-flex items-center gap-1 rounded-full px-3 py-2 text-xs font-semibold hover:bg-muted/50", showYouTubeVideo && "bg-primary/15 text-primary")} title={showYouTubeVideo ? 'Show artwork' : 'Watch video'}><Youtube className="h-4 w-4" />{showYouTubeVideo ? 'Artwork' : 'Video'}</button>}
+                {currentTrack.provider === 'youtube' && <button onClick={() => { setShowLyrics(false); setShowYouTubeVideo(value => !value); }} className={cn("inline-flex items-center gap-1 rounded-full px-3 py-2 text-xs font-semibold hover:bg-muted/50", showYouTubeVideo && "bg-primary/15 text-primary")} title={showYouTubeVideo ? 'Show artwork' : 'Watch video'}><Youtube className="h-4 w-4" />{showYouTubeVideo ? 'Artwork' : 'Video'}</button>}
                 <button
                   className="p-2 rounded-full hover:bg-muted/50 transition-colors"
                   onClick={() => setShowSettings(true)}
@@ -405,8 +426,10 @@ export function FullPlayer() {
                 </motion.div>
               ) : (
                 <motion.div
+                  ref={artworkRef}
                   className={cn(
                     "player-artwork aspect-square w-full max-w-sm overflow-hidden rounded-2xl shadow-2xl lg:max-w-[25rem] xl:max-w-[27rem]",
+                    showYouTubeVideo && currentTrack.provider === 'youtube' && "invisible",
                   )}
                   animate={{
                     scale: isPlaying ? 1 : 0.95,

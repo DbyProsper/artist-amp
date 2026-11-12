@@ -58,7 +58,10 @@ export default function DiscoverPage() {
   const liveArtists = posts.map(post => post.artist).filter((artist, index, list) => list.findIndex(item => item.id === artist.id) === index);
   useEffect(() => {
     if (!user) { setYoutubeHistoryTracks([]); return; }
-    void loadYouTubeHistory().then(response => setYoutubeHistoryTracks((response.results || []).map(youtubeMediaToTrack))).catch(() => setYoutubeHistoryTracks([]));
+    const refresh = () => void loadYouTubeHistory().then(response => setYoutubeHistoryTracks((response.results || []).map(youtubeMediaToTrack))).catch(() => setYoutubeHistoryTracks([]));
+    refresh();
+    window.addEventListener('musicinsta:youtube-history-updated', refresh);
+    return () => window.removeEventListener('musicinsta:youtube-history-updated', refresh);
   }, [user]);
   const musicInstaTracks = (catalog.length ? catalog : liveTracks).filter(track => track.provider !== 'youtube');
   const catalogTracks = [...youtubeHistoryTracks, ...musicInstaTracks].filter((track, index, list) => list.findIndex(item => item.id === track.id) === index);

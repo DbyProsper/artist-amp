@@ -295,6 +295,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const resumeTrack = useCallback(() => {
     if (!currentTrackRef.current?.audioUrl && currentTrackRef.current?.provider !== 'youtube') return;
     setPlaybackError(null);
+    // Dispatch synchronously from the user's tap so iOS treats YouTube playback
+    // as user-initiated rather than an autoplay request from a later effect.
+    if (currentTrackRef.current?.provider === 'youtube') window.dispatchEvent(new Event('musicinsta:youtube-play'));
     setIsPlaying(true);
   }, []);
   const nextTrack = useCallback(() => advance('skip'), [advance]);

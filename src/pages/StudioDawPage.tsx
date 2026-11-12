@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowLeft, ArrowUp, Download, FolderOpen, Loader2, Mic, Pause, Play, Plus, Redo2, Save, Scissors, Send, SlidersHorizontal, Sparkles, Square, Trash2, Undo2, Upload, UserMinus, UserPlus, Users, X, ZoomIn } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { arrayRemove, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -377,13 +377,14 @@ export default function StudioDawPage() {
     setHasUserChanges(currentProjectSignature !== baselineSignatureRef.current);
   }, [currentProjectSignature, loaded, projectId]);
 
-  const persistCurrentProject = useCallback(async (manual = false) => {
-    if (!loaded || applyingRemoteRef.current || saving) return false;
+  const persistCurrentProject = useCallback(async (manual = false, editorIdsOverride?: string[]) => {
+    if (!loaded || applyingRemoteRef.current || (saving && !manual)) return false;
     setSaving(true);
     const now = new Date().toISOString();
-    const cloudOwnerId = projectOwnerId === 'local' && user ? user.uid : projectOwnerId;
+    const cloudOwnerId = user && (projectOwnerId === 'local' || projectOwnerId === profile?.id) ? user.uid : projectOwnerId;
+    const effectiveEditorIds = editorIdsOverride || editorIds;
     const project: StoredDawProject = {
-      id: projectId, ownerId, cloudOwnerId, editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
+      id: projectId, ownerId, cloudOwnerId, editorIds: effectiveEditorIds, name: projectName, masterGain, compression, masterDelay, zoom,
       tracks: tracks.map(({ buffer: _buffer, sourceBlob, ...track }) => ({ ...track, blob: sourceBlob })),
       createdAt: projects.find(item => item.id === projectId)?.updatedAt || now, updatedAt: now,
     };
@@ -416,7 +417,7 @@ export default function StudioDawPage() {
       if (addedCloudUrls) setTracks(current => current.map(track => cloudReadyTracks.find(item => item.id === track.id) || track));
       const cloudTracks = withoutUndefined(cloudReadyTracks.map(({ buffer: _buffer, sourceBlob: _blob, ...track }) => track));
       await setDoc(doc(db, 'studio_projects', projectId), {
-        owner_id: cloudOwnerId, editor_ids: editorIds, name: projectName, masterGain, compression, masterDelay, zoom,
+        owner_id: cloudOwnerId, editor_ids: effectiveEditorIds, name: projectName, masterGain, compression, masterDelay, zoom,
         tracks: cloudTracks, track_count: cloudTracks.length, version: 2,
         created_at: projects.find(item => item.id === projectId)?.updatedAt || serverTimestamp(), updated_at: serverTimestamp(), updated_by: user.uid,
       }, { merge: true });
@@ -435,7 +436,7 @@ export default function StudioDawPage() {
       setSaving(false);
       return false;
     }
-  }, [compression, currentProjectSignature, editorIds, loaded, masterDelay, masterGain, ownerId, projectId, projectName, projectOwnerId, projects, refreshProjects, saving, tracks, user, zoom]);
+  }, [compression, currentProjectSignature, editorIds, loaded, masterDelay, masterGain, ownerId, profile?.id, projectId, projectName, projectOwnerId, projects, refreshProjects, saving, tracks, user, zoom]);
 
   useEffect(() => {
     if (!loaded || !hasUserChanges || applyingRemoteRef.current) return;
@@ -477,22 +478,21 @@ export default function StudioDawPage() {
   }, [collaboratorsOpen, user]);
 
   const inviteCollaborator = async (collaborator: CollaboratorProfile) => {
-    if (!user || (projectOwnerId !== user.uid && projectOwnerId !== 'local') || invitingCollaboratorId) return;
+    if (!user) { toast.info('Sign in before inviting a collaborator.'); return; }
+    if (invitingCollaboratorId) return;
+    const ownsProject = projectOwnerId === user.uid || projectOwnerId === 'local' || projectOwnerId === profile?.id;
+    if (!ownsProject) { toast.error('Only the project owner can invite collaborators.'); return; }
     setInvitingCollaboratorId(collaborator.authUid);
     try {
-      const projectRef = doc(db, 'studio_projects', projectId);
-      let snapshot = await getDoc(projectRef);
-      if (!snapshot.exists()) {
-        await persistCurrentProject(true);
-        snapshot = await getDoc(projectRef);
-      }
-      if (!snapshot.exists()) throw new Error('Save this project to the cloud before inviting an editor.');
-      await setDoc(projectRef, { editor_ids: arrayUnion(collaborator.authUid), updated_at: serverTimestamp(), updated_by: user.uid }, { merge: true });
-      setEditorIds(current => current.includes(collaborator.authUid) ? current : [...current, collaborator.authUid]);
+      if (!collaborator.authUid) throw new Error('This profile is not connected to a valid MusicInsta account.');
+      const nextEditorIds = [...new Set([...editorIds, collaborator.authUid])];
+      const saved = await persistCurrentProject(true, nextEditorIds);
+      if (!saved) throw new Error('The project could not be secured in the cloud. Try Save to cloud, then invite again.');
+      setEditorIds(nextEditorIds);
       try {
         await setDoc(doc(collection(db, 'notifications')), { profile_id: collaborator.id, recipient_auth_uid: collaborator.authUid, target_profile_id: collaborator.id, from_profile_id: user.uid, type: 'daw_collaboration', message: `${profile?.name || user.displayName || 'A MusicInsta artist'} invited you to edit “${projectName}”.`, project_id: projectId, read: false, created_at: serverTimestamp() });
       } catch (notificationError) { console.warn('Collaborator access was granted, but the notification could not be created.', notificationError); }
-      toast.success(`${collaborator.name} can now edit this project.`);
+      toast.success(`Invite sent — ${collaborator.name} can now edit this project.`);
     } catch (error) {
       console.error('DAW collaborator invitation failed', error);
       toast.error(error instanceof Error ? error.message : 'The collaborator invitation could not be sent.');

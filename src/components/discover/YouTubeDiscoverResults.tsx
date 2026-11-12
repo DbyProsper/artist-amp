@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ListPlus, LoaderCircle, Play, X } from 'lucide-react';
+import { ListPlus, LoaderCircle, Play, Trash2, X } from 'lucide-react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { toast } from 'sonner';
 
@@ -9,6 +9,7 @@ import { useAuth } from '@/context/FirebaseAuthContext';
 import {
   addYouTubeToPlaylist,
   loadYouTubeHistory,
+  removeYouTubeHistory,
   searchYouTube,
   saveYouTubeHistory,
   type YouTubeMedia,
@@ -77,6 +78,18 @@ export function YouTubeDiscoverResults({ query: searchQuery = '', historyOnly = 
     }
   };
 
+  const removeFromHistory = async (item: YouTubeMedia) => {
+    const previous = items;
+    setItems(current => current.filter(value => value.id !== item.id));
+    try {
+      await removeYouTubeHistory(item.id);
+      toast.success('Removed from YouTube Listen Again.');
+    } catch (cause) {
+      setItems(previous);
+      toast.error(cause instanceof Error ? cause.message : 'This item could not be removed.');
+    }
+  };
+
   if (!loading && !error && items.length === 0) return null;
 
   return <section className="space-y-3">
@@ -101,6 +114,7 @@ export function YouTubeDiscoverResults({ query: searchQuery = '', historyOnly = 
           <div className="mt-3 flex gap-2">
             <Button size="sm" className="flex-1" onClick={() => play(item)}><Play className="mr-1 h-4 w-4" />Play</Button>
             <Button size="icon" variant="outline" aria-label="Add to playlist" onClick={() => void openPlaylistPicker(item)}><ListPlus className="h-4 w-4" /></Button>
+            {historyOnly && <Button size="icon" variant="outline" aria-label={`Remove ${item.title} from Listen Again`} onClick={() => void removeFromHistory(item)}><Trash2 className="h-4 w-4" /></Button>}
           </div>
         </div>
       </article>)}
