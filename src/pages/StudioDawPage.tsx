@@ -137,10 +137,10 @@ function schedulePitchCorrection(source: AudioBufferSourceNode, track: DawTrack,
 export default function StudioDawPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const ownerId = user?.uid || 'local';
   const [tracks, setTracks] = useState<DawTrack[]>([]);
-  const [projectId, setProjectId] = useState(() => localStorage.getItem('musicinsta_active_daw_project') || crypto.randomUUID());
+  const [projectId, setProjectId] = useState(() => searchParams.get('project') || localStorage.getItem('musicinsta_active_daw_project') || crypto.randomUUID());
   const [projectName, setProjectName] = useState('Untitled MusicInsta Session');
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectsOpen, setProjectsOpen] = useState(false);
@@ -162,6 +162,7 @@ export default function StudioDawPage() {
   const [zoom, setZoom] = useState(75);
   const [playhead, setPlayhead] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailure, setLoadFailure] = useState('');
   const [saving, setSaving] = useState(false);
   const [beatOpen, setBeatOpen] = useState(false);
   const [beatMode, setBeatMode] = useState<'choice' | 'manual' | 'ai'>('choice');
@@ -209,6 +210,7 @@ export default function StudioDawPage() {
   const baselineSignatureRef = useRef<string | null>(null);
   const baselineProjectIdRef = useRef<string | null>(null);
   const lastRemoteUpdatedRef = useRef(new Date(0).toISOString());
+  const failedRemoteUpdatedRef = useRef('');
   const applyingRemoteRef = useRef(false);
   const timelinePointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchDistanceRef = useRef<number | null>(null);
@@ -232,6 +234,7 @@ export default function StudioDawPage() {
   const decodeBlob = useCallback(async (blob: Blob) => getContext().decodeAudioData(await blob.arrayBuffer()), []);
   const projectToTracks = useCallback(async (saved: StoredDawProject | Record<string, unknown>) => {
     const savedTracks = (saved.tracks || []) as Array<Record<string, unknown>>;
+    const failedNames: string[] = [];
     const restored = await Promise.all(savedTracks.map(async (item, index) => {
       try {
         let blob = item.blob as Blob | undefined;
@@ -253,12 +256,12 @@ export default function StudioDawPage() {
           pitchEnabled: item.pitchEnabled !== false, pitchKey: String(item.pitchKey || 'C'), pitchScale: String(item.pitchScale || 'Major'), pitchAmount: Number(item.pitchAmount || 0),
           effects: normalizeDawEffects(item.effects as Partial<DawEffects> | undefined, legacy),
         } as DawTrack;
-      } catch (error) {
-        console.error('DAW track restore failed', item.name, error);
+      } catch {
+        failedNames.push(String(item.name || `Track ${index + 1}`));
         return null;
       }
     }));
-    if (restored.some(track => !track)) throw new Error('One or more project tracks could not be restored. The saved project was left unchanged.');
+    if (restored.some(track => !track)) throw new Error(`The project audio could not be downloaded (${failedNames.join(', ')}). The cloud project was protected and no empty state was saved.`);
     return restored as DawTrack[];
   }, [decodeBlob]);
 
@@ -306,6 +309,7 @@ export default function StudioDawPage() {
     baselineSignatureRef.current = projectStateSignature(restored, name, localCopy.masterGain, localCopy.compression, localCopy.masterDelay, localCopy.zoom);
     lastRemoteUpdatedRef.current = updatedAt;
     setHasUserChanges(false); setCloudSyncPending(false); cloudSaveWarningRef.current = false;
+    setLoadFailure(''); failedRemoteUpdatedRef.current = '';
     localStorage.setItem('musicinsta_active_daw_project', id);
   }, [ownerId, projectToTracks]);
 
@@ -316,46 +320,60 @@ export default function StudioDawPage() {
   }
 
   const loadProject = useCallback(async (id: string) => {
-    stopSources(); setLoaded(false);
+    stopSources(); setLoaded(false); setLoadFailure(''); setProjectId(id);
+    baselineProjectIdRef.current = null; baselineSignatureRef.current = null; setHasUserChanges(false);
+    let succeeded = false;
     try {
       const [local, remoteSnapshot] = await Promise.all([
         getDawProject(id),
         user ? getDoc(doc(db, 'studio_projects', id)) : Promise.resolve(null),
       ]);
       const remote = remoteSnapshot?.exists() ? { id: remoteSnapshot.id, ...remoteSnapshot.data(), updatedAt: projectTimestamp(remoteSnapshot.data().updated_at || remoteSnapshot.data().updatedAt) } : null;
-      const saved = remote && (!local || projectTimestamp(remote.updatedAt) >= projectTimestamp(local.updatedAt)) ? remote : local;
-      if (saved) await applyProject(saved);
-      else toast.error('This project could not be found locally or in the cloud.');
+      const isShared = Boolean(remote && user && String(remote.owner_id || '') !== user.uid);
+      const saved = isShared ? remote : remote && (!local || projectTimestamp(remote.updatedAt) >= projectTimestamp(local.updatedAt)) ? remote : local;
+      if (!saved) throw new Error('This project could not be found locally or in the cloud.');
+      await applyProject(saved);
+      succeeded = true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'The project could not be restored.');
-    } finally { setLoaded(true); setProjectsOpen(false); }
+      const message = error instanceof Error ? error.message : 'The project could not be restored.';
+      setLoadFailure(message);
+      toast.error(message);
+    } finally { setLoaded(succeeded); setProjectsOpen(false); }
   }, [applyProject, user]);
 
   useEffect(() => {
+    if (authLoading) return;
     let cancelled = false;
     (async () => {
+      let initialized = false;
       try {
         const [existing, remoteSnapshot] = await Promise.all([
           getDawProject(projectId),
           user ? getDoc(doc(db, 'studio_projects', projectId)) : Promise.resolve(null),
         ]);
         const remote = remoteSnapshot?.exists() ? { id: remoteSnapshot.id, ...remoteSnapshot.data(), updatedAt: projectTimestamp(remoteSnapshot.data().updated_at || remoteSnapshot.data().updatedAt) } : null;
-        const newest = remote && (!existing || projectTimestamp(remote.updatedAt) >= projectTimestamp(existing.updatedAt)) ? remote : existing;
-        if (newest) await applyProject(newest);
+        const isShared = Boolean(remote && user && String(remote.owner_id || '') !== user.uid);
+        const newest = isShared ? remote : remote && (!existing || projectTimestamp(remote.updatedAt) >= projectTimestamp(existing.updatedAt)) ? remote : existing;
+        if (newest) { await applyProject(newest); initialized = true; }
         else {
           const legacyRemote = user ? await getDoc(doc(db, 'studio_sessions', user.uid)) : null;
           const legacyLocal = JSON.parse(localStorage.getItem('musicinsta_daw_state') || 'null');
           const legacy = legacyRemote?.exists() ? { id: projectId, name: legacyRemote.data().projectName, ...legacyRemote.data() } : legacyLocal ? { id: projectId, name: legacyLocal.projectName, ...legacyLocal } : null;
-          if (legacy) await applyProject(legacy);
+          if (legacy) { await applyProject(legacy); initialized = true; }
+          else initialized = true;
         }
         if (!cancelled) await refreshProjects();
-      } catch (error) { console.warn('DAW project restore failed', error); toast.error('The saved DAW project could not be completely restored, so it was not overwritten.'); }
-      if (!cancelled) setLoaded(true);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'The saved DAW project could not be restored.';
+        console.warn('DAW project restore stopped safely', message);
+        if (!cancelled) { setLoadFailure(message); toast.error(message); }
+      }
+      if (!cancelled) setLoaded(initialized);
     })();
     return () => { cancelled = true; };
     // Run once per signed-in identity; explicit project changes use loadProject.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [authLoading, user]);
 
   // Auth is restored asynchronously. A brand-new session can therefore be
   // created while the temporary local owner is still active. Promote only
@@ -378,7 +396,7 @@ export default function StudioDawPage() {
   }, [currentProjectSignature, loaded, projectId]);
 
   const persistCurrentProject = useCallback(async (manual = false, editorIdsOverride?: string[]) => {
-    if (!loaded || applyingRemoteRef.current || (saving && !manual)) return false;
+    if (!loaded || loadFailure || applyingRemoteRef.current || (saving && !manual)) return false;
     setSaving(true);
     const now = new Date().toISOString();
     const cloudOwnerId = user && (projectOwnerId === 'local' || projectOwnerId === profile?.id) ? user.uid : projectOwnerId;
@@ -436,7 +454,7 @@ export default function StudioDawPage() {
       setSaving(false);
       return false;
     }
-  }, [compression, currentProjectSignature, editorIds, loaded, masterDelay, masterGain, ownerId, profile?.id, projectId, projectName, projectOwnerId, projects, refreshProjects, saving, tracks, user, zoom]);
+  }, [compression, currentProjectSignature, editorIds, loadFailure, loaded, masterDelay, masterGain, ownerId, profile?.id, projectId, projectName, projectOwnerId, projects, refreshProjects, saving, tracks, user, zoom]);
 
   useEffect(() => {
     if (!loaded || !hasUserChanges || applyingRemoteRef.current) return;
@@ -459,13 +477,19 @@ export default function StudioDawPage() {
       const value = snapshot.data();
       const remoteUpdated = projectTimestamp(value.updated_at || value.updatedAt);
       const canAccess = value.owner_id === user.uid || (Array.isArray(value.editor_ids) && value.editor_ids.includes(user.uid));
-      if (!canAccess || value.updated_by === user.uid || remoteUpdated <= lastRemoteUpdatedRef.current || hasUserChanges) return;
+      if (!canAccess || value.updated_by === user.uid || remoteUpdated <= lastRemoteUpdatedRef.current || remoteUpdated === failedRemoteUpdatedRef.current || hasUserChanges) return;
       applyingRemoteRef.current = true;
       setLoaded(false);
       void applyProject({ id: snapshot.id, ...value, updatedAt: remoteUpdated })
-        .then(() => toast.success('Project updated by a collaborator.'))
-        .catch(error => { console.warn('Realtime DAW update could not be applied', error); toast.error('A collaborator update could not be loaded safely.'); })
-        .finally(() => { applyingRemoteRef.current = false; setLoaded(true); });
+        .then(() => { setLoaded(true); toast.success('Project updated by a collaborator.'); })
+        .catch(error => {
+          failedRemoteUpdatedRef.current = remoteUpdated;
+          const message = error instanceof Error ? error.message : 'A collaborator update could not be downloaded.';
+          setLoadFailure(message);
+          console.warn('Realtime DAW update stopped safely', message);
+          toast.error('A collaborator update could not be downloaded. Your current project was kept unchanged.');
+        })
+        .finally(() => { applyingRemoteRef.current = false; });
     }, error => console.warn('Realtime DAW sync unavailable', error));
   }, [applyProject, hasUserChanges, loaded, projectId, user]);
 
@@ -539,7 +563,6 @@ export default function StudioDawPage() {
   useEffect(() => {
     const requestedProject = searchParams.get('project');
     if (!requestedProject || !loaded || requestedProject === projectId) return;
-    localStorage.setItem('musicinsta_active_daw_project', requestedProject);
     void loadProject(requestedProject);
   }, [loadProject, loaded, projectId, searchParams]);
 
@@ -1048,6 +1071,8 @@ export default function StudioDawPage() {
         </div>
         {exportState && <div className="mx-auto mt-2 max-w-[1600px]"><div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>{exportState.label}</span><span>{exportState.progress}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${exportState.progress}%` }} /></div></div>}
       </header>
+
+      {loadFailure && <div className="fixed inset-0 z-[160] grid place-items-center bg-black/85 p-4 backdrop-blur-md"><div className="w-full max-w-lg rounded-3xl border border-destructive/35 bg-card p-6 shadow-2xl"><div className="flex items-center gap-3"><img src="/musicinsta-universe-logo-v2.png" alt="MusicInsta" className="h-12 w-12 object-contain" /><div><p className="text-xs font-semibold uppercase tracking-[.2em] text-primary">Protected cloud project</p><h2 className="text-xl font-bold">Project loading stopped safely</h2></div></div><p className="mt-4 text-sm text-muted-foreground">{loadFailure}</p><p className="mt-3 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm">MusicInsta disabled autosave before any empty or incomplete state could replace the owner’s project.</p><div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => navigate('/studio')}>Back to Studio</Button><Button onClick={() => void loadProject(projectId)}><Loader2 className="mr-2 h-4 w-4" />Retry project download</Button></div></div></div>}
 
       {exitPromptOpen && <div className="fixed inset-0 z-[140] grid place-items-center bg-black/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md overflow-hidden rounded-3xl border border-primary/35 bg-card shadow-[0_30px_100px_hsl(var(--primary)/.22)]"><div className="bg-gradient-to-r from-primary/25 via-violet-500/15 to-transparent p-6"><div className="flex items-center gap-3"><img src="/musicinsta-universe-logo-v2.png" alt="MusicInsta" className="h-12 w-12 object-contain" /><div><p className="text-xs font-semibold uppercase tracking-[.2em] text-primary">MusicInsta Studio</p><h2 className="text-xl font-bold">Leave this DAW project?</h2></div></div><p className="mt-4 text-sm text-muted-foreground">Your local copy is protected. Save once more before leaving to retry any pending cloud sync.</p></div><div className="flex flex-col gap-2 p-5 sm:flex-row sm:justify-end"><Button variant="ghost" onClick={() => setExitPromptOpen(false)}>Keep editing</Button><Button variant="outline" onClick={() => { setExitPromptOpen(false); navigate('/studio'); }}>Exit without retry</Button><Button onClick={() => void saveAndExit()} disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save and exit</Button></div></div></div>}
 
